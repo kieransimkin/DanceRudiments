@@ -96,6 +96,14 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 - **Corrective action:** publish Python on PyPI and TypeScript/WASM on npm; reserve manually attached GitHub assets for C++. Name each archive `DanceRudiments-cpp-<version>-<platform>-static.zip`, use a versioned root directory, include the MIT licence, C++ usage guide, platform manifest, complete CMake config/version files, and publish `SHA256SUMS.txt`.
 - **Verification:** ordinary CI builds a separate consumer against the installed CMake package on Linux, Windows, and macOS. Release QA must inspect archive names and contents, verify the checksum file, and confirm the README's package table links to PyPI, npm, and GitHub Releases.
 
+### An older Windows `tar.exe` cannot inspect the release ZIP
+
+- **Symptom (28 September 2026):** release QA invoked `tar -tf` but the command resolved to WinAVR 2010's `tar.exe`, which reported `Cannot open: I/O error` for the absolute Windows path even though the downloaded ZIP and checksum file were present.
+- **Cause supported by current evidence:** command resolution selected the old WinAVR utility rather than a current ZIP-capable archive reader. The error does not establish damage to the published archive.
+- **Corrective action:** use PowerShell's `Expand-Archive -LiteralPath <zip> -DestinationPath <directory>` for Windows release inspection, then compare `Get-FileHash -Algorithm SHA256` with `SHA256SUMS.txt`.
+- **Verification:** the `v0.1.3` Windows archive expanded successfully, exposed its versioned root, README, licence, package manifest, header, static library, and complete CMake configuration, and its calculated SHA-256 matched the published checksum.
+- **Research:** [Microsoft Learn: Expand-Archive](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.archive/expand-archive), accessed 28 September 2026.
+
 ### Installed-package smoke test assumes the wrong motion coordinate
 
 - **Symptom (28 September 2026):** the first installed-package consumer compiled and linked on Linux, Windows, and macOS, but its runtime assertion failed on every platform.
