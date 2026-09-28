@@ -1,0 +1,24 @@
+# CMake and direct compiler output
+/build/
+/build-*/
+/cmake-build-*/
+CMakeUserPresets.json
+
+# Compiled language bindings
+/dist/
+*.pyd
+*.so
+*.wasm
+
+# Node and Python environments
+/node_modules/
+/venv/
+/.venv/
+__pycache__/
+*.py[cod]
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

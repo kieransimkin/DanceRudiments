@@ -1,0 +1,11 @@
+{
+  "name": "@kieransimkin/dance-rudiments",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:harness": "tsc -p tsconfig.json",
+    "test": "npm run build:harness && node --test tests/typescript/*.test.js"
+  },
+  "devDependencies": { "typescript": "^5.9.0" }
+}
