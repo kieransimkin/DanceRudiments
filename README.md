@@ -96,6 +96,13 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 - **Corrective action:** publish Python on PyPI and TypeScript/WASM on npm; reserve manually attached GitHub assets for C++. Name each archive `DanceRudiments-cpp-<version>-<platform>-static.zip`, use a versioned root directory, include the MIT licence, C++ usage guide, platform manifest, complete CMake config/version files, and publish `SHA256SUMS.txt`.
 - **Verification:** ordinary CI builds a separate consumer against the installed CMake package on Linux, Windows, and macOS. Release QA must inspect archive names and contents, verify the checksum file, and confirm the README's package table links to PyPI, npm, and GitHub Releases.
 
+### Installed-package smoke test assumes the wrong motion coordinate
+
+- **Symptom (28 September 2026):** the first installed-package consumer compiled and linked on Linux, Windows, and macOS, but its runtime assertion failed on every platform.
+- **Cause:** the test incorrectly expected `circle(64)` to return `(1, 0)`. The 64-pip motion wraps that input to pip 0, whose documented phase starts at approximately `(0, -1)`.
+- **Corrective action:** test the public modulo contract by comparing `circle(64)` with `circle(0)` using a small floating-point tolerance, rather than duplicating an assumed trajectory coordinate.
+- **Verification:** require the separate installed-package consumer to pass on all three CI platforms.
+
 ### GitHub release attachment job has no Git checkout
 
 - **Symptom (28 September 2026):** all `v0.1.2` package builds and both registry publications succeeded, but `attach-github-release` failed with `failed to run git: fatal: not a git repository (or any of the parent directories): .git`.
