@@ -1,0 +1,175 @@
+name: Release packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python tools/check_release_version.py "${{ github.event.release.tag_name }}"
+
+  python-wheels:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install cibuildwheel==4.2.0
+      - run: python -m cibuildwheel --output-dir wheelhouse
+      - uses: actions/upload-artifact@v6
+        with:
+          name: wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+          if-no-files-found: error
+
+  python-sdist:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install --upgrade build
+      - run: python -m build --sdist
+      - uses: actions/upload-artifact@v6
+        with:
+          name: python-sdist
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish-pypi:
+    needs: [python-wheels, python-sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: "{wheels-*,python-sdist}"
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  publish-npm:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    container: emscripten/emsdk:4.0.15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm test
+      - run: emcmake cmake -S . -B build-wasm -DDANCERUDIMENTS_BUILD_WASM=ON -DDANCERUDIMENTS_BUILD_TESTS=OFF
+      - run: cmake --build build-wasm --config Release
+      - run: mkdir -p dist/wasm && cp build-wasm/dancerudiments.js build-wasm/dancerudiments.wasm dist/wasm/
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  cpp-archives:
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: linux-x64
+          - os: windows-latest
+            label: windows-x64
+          - os: macos-latest
+            label: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Build and install
+        shell: bash
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDANCERUDIMENTS_BUILD_TESTS=OFF
+          cmake --build build --config Release
+          cmake --install build --config Release --prefix stage
+      - name: Create archive
+        shell: bash
+        run: cmake -E tar cf "DanceRudiments-${{ github.event.release.tag_name }}-${{ matrix.label }}.zip" --format=zip stage
+      - uses: actions/upload-artifact@v6
+        with:
+          name: cpp-${{ matrix.label }}
+          path: DanceRudiments-*.zip
+          if-no-files-found: error
+
+  attach-github-release:
+    needs: [cpp-archives, python-wheels, python-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: "{cpp-*,wheels-*,python-sdist}"
+          path: release-assets
+          merge-multiple: true
+      - name: Attach verified packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" release-assets/* --clobber
+
+  publish-conan:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: conan
+    env:
+      CONAN_REMOTE_URL: ${{ vars.CONAN_REMOTE_URL }}
+      CONAN_LOGIN_USERNAME: ${{ secrets.CONAN_LOGIN_USERNAME }}
+      CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: python -m pip install "conan>=2.20,<3"
+      - run: conan profile detect --force
+      - name: Build Conan package
+        shell: bash
+        run: conan create . --version "${GITHUB_REF_NAME#v}" --build=missing
+      - name: Upload when a Conan remote is configured
+        if: ${{ env.CONAN_REMOTE_URL != '' && env.CONAN_LOGIN_USERNAME != '' && env.CONAN_PASSWORD != '' }}
+        run: |
+          conan remote add release "$CONAN_REMOTE_URL" --force
+          conan remote login release "$CONAN_LOGIN_USERNAME" --password "$CONAN_PASSWORD"
+          conan upload "dancerudiments/*" --remote release --confirm

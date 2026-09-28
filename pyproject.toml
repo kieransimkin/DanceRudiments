@@ -1,0 +1,32 @@
+[build-system]
+requires = ["scikit-build-core>=0.11", "pybind11>=3.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "dancerudiments"
+version = "0.1.0"
+description = "Integer-pip rhythmic position functions with a C++ core"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [{ name = "Kieran Simkin" }]
+classifiers = [
+  "Programming Language :: C++",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio",
+  "Topic :: Software Development :: Libraries"
+]
+
+[project.urls]
+Homepage = "https://github.com/kieransimkin/DanceRudiments"
+Repository = "https://github.com/kieransimkin/DanceRudiments"
+Issues = "https://github.com/kieransimkin/DanceRudiments/issues"
+
+[tool.scikit-build]
+cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF"]
+wheel.packages = []
+sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**"]
+
+[tool.cibuildwheel]
+build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+skip = "*-musllinux_*"
+test-command = "python -c \"import dancerudiments as d; assert len(d.catalogue()) == 15; assert d.sample('circle', 64).as_tuple() == d.sample('circle', 0).as_tuple()\""

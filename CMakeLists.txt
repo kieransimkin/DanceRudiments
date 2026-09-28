@@ -7,16 +7,27 @@ option(DANCERUDIMENTS_BUILD_WASM "Build the Emscripten JavaScript module" OFF)
 
 add_library(DanceRudiments STATIC src/dance_rudiments.cpp)
 add_library(DanceRudiments::DanceRudiments ALIAS DanceRudiments)
+set_target_properties(DanceRudiments PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_compile_features(DanceRudiments PUBLIC cxx_std_17)
 target_include_directories(DanceRudiments PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 
 if(DANCERUDIMENTS_BUILD_PYTHON)
+  set(PYBIND11_FINDPYTHON ON)
   find_package(pybind11 CONFIG REQUIRED)
   pybind11_add_module(dancerudiments_python bindings/python/module.cpp)
   set_target_properties(dancerudiments_python PROPERTIES OUTPUT_NAME dancerudiments)
   target_link_libraries(dancerudiments_python PRIVATE DanceRudiments::DanceRudiments)
+  if(MINGW)
+    target_link_options(dancerudiments_python PRIVATE -static-libgcc -static-libstdc++)
+    get_filename_component(DANCERUDIMENTS_MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(DANCERUDIMENTS_WINPTHREAD_DLL "${DANCERUDIMENTS_MINGW_BIN}/libwinpthread-1.dll")
+    if(EXISTS "${DANCERUDIMENTS_WINPTHREAD_DLL}")
+      install(FILES "${DANCERUDIMENTS_WINPTHREAD_DLL}" DESTINATION .)
+    endif()
+  endif()
+  install(TARGETS dancerudiments_python LIBRARY DESTINATION . RUNTIME DESTINATION .)
 endif()
 
 if(DANCERUDIMENTS_BUILD_WASM)

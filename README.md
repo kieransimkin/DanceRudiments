@@ -42,6 +42,26 @@ python -m http.server 4173
 
 Then open `http://localhost:4173/harness/`.
 
+## Continuous integration and releases
+
+`.github/workflows/ci.yml` builds and tests the C++ core on Linux, Windows, and macOS; builds and imports the Python package; compiles/tests the TypeScript and browser runtime; and creates a Conan package on every push to `main` and every pull request.
+
+Publishing is deliberately tied to a GitHub release with a `vMAJOR.MINOR.PATCH` tag. Before creating the release, update the matching version in `CMakeLists.txt`, `pyproject.toml`, and `package.json`. `.github/workflows/release.yml` rejects mismatches before it publishes anything, then:
+
+- builds platform Python wheels and a source distribution and publishes them to PyPI using OIDC Trusted Publishing;
+- builds the TypeScript wrapper and C++ WebAssembly module and publishes `@kieransimkin/dance-rudiments` to npm using npm Trusted Publishing and provenance;
+- builds installable C++ archives for Linux, Windows, and macOS and attaches them, along with Python distributions, to the GitHub release; and
+- builds a Conan package and uploads it only when a separate Conan remote has been configured. ConanCenter packages are submitted through `conan-center-index`; they are not directly uploaded by this repository.
+
+One-time registry configuration is required before the first release:
+
+1. On PyPI, create a pending Trusted Publisher for owner `kieransimkin`, repository `DanceRudiments`, workflow `release.yml`, environment `pypi`, and project name `dancerudiments`.
+2. On npm, configure the package's GitHub Actions Trusted Publisher for `kieransimkin/DanceRudiments`, workflow `release.yml`, environment `npm`, with direct publishing allowed. Because npm Trusted Publishers are configured from an existing package's settings, the first scoped-package registration may require a granular `NPM_TOKEN` secret in the `npm` environment. Remove that bootstrap token after Trusted Publishing is configured.
+3. Create GitHub environments named `pypi`, `npm`, and `conan`; add required reviewers if desired.
+4. For an optional private or organisational Conan repository, set environment variable `CONAN_REMOTE_URL` and secrets `CONAN_LOGIN_USERNAME` and `CONAN_PASSWORD` in the `conan` environment. If they are absent, the recipe is built and verified but not uploaded.
+
+The publishing jobs use short-lived OIDC identity for PyPI and npm and do not require long-lived PyPI or npm tokens. See the official [PyPI Trusted Publisher](https://docs.pypi.org/trusted-publishers/using-a-publisher/) and [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) documentation.
+
 ## Motion safety
 
 Apply an output to a bounded subject. DanceRudiments changes position only; it must not be used to add a repetitive full-frame tint, brightness, flash, or colour-grade effect. Under `prefers-reduced-motion`, do not autoplay the harness or production motion.
@@ -62,3 +82,27 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 - **Cause:** the restricted Windows host denied Node's child-process worker spawn.
 - **Corrective action:** run `node --test --test-isolation=none "tests/typescript/*.test.js"`.
 - **Verification:** both runtime suites passed in the single process. Keep tests free of shared mutable global state when adding more files.
+
+### An isolated Python build selects unavailable NMake on Windows
+
+- **Symptom (28 September 2026):** the first scikit-build-core attempt failed during configuration with `Running 'nmake' '-?' failed with: no such file or directory` and `CMAKE_CXX_COMPILER not set`.
+- **Cause supported by current evidence:** CMake selected the `NMake Makefiles` generator although this host provides Ninja and MinGW GCC, not NMake/MSVC. The first `uv run` invocation also attempted an unnecessary editable install of the current project before running the requested build command.
+- **Corrective action:** set `CMAKE_GENERATOR=Ninja` for this local toolchain and use `uv run --no-project --with build python -m build`, leaving CI runners free to select their native supported compiler environment.
+- **Verification:** the isolated build then produced `dancerudiments-0.1.0.tar.gz` and a CPython 3.13 Windows wheel, with the C++ extension compiled and installed successfully.
+- **Research:** CMake documents `CMAKE_GENERATOR` as the supported generator-selection mechanism, while scikit-build-core documents Ninja selection and its `ninja.make-fallback` behaviour. Sources: [CMake generator environment variable](https://cmake.org/cmake/help/latest/envvar/CMAKE_GENERATOR.html) and [scikit-build-core configuration](https://scikit-build-core.readthedocs.io/en/stable/configuration/), accessed 28 September 2026.
+
+### A MinGW-built Python wheel cannot locate its C++ runtime DLLs
+
+- **Symptom (28 September 2026):** the first locally built Windows wheel installed successfully but `import dancerudiments` failed with `ImportError: DLL load failed while importing dancerudiments: The specified module could not be found.`
+- **Cause supported by current evidence:** the MinGW-built extension dynamically referenced GCC runtime libraries that were available in the compiler directory but not in the isolated Python environment. This local toolchain differs from cibuildwheel's normal Windows MSVC environment.
+- **Corrective action:** inspect the built `.pyd` with the matching toolchain's `objdump -p`. It identified `libwinpthread-1.dll` as the remaining non-system dependency after the standard C++ runtimes were made static. Only for MinGW, link with `-static-libgcc -static-libstdc++` and install the compiler's matching `libwinpthread-1.dll` beside the extension; do not apply that bundling to MSVC or other platforms.
+- **Verification:** rebuild the wheel and import it in a fresh isolated environment; require the catalogue and modulo-sampling smoke assertions to pass. The release workflow independently runs cibuildwheel's installed-wheel test on every platform.
+- **Research:** GCC documents `-static-libstdc++` as linking the C++ runtime statically without making the whole module static, and the pybind11 issue tracker records the same generic Windows import symptom when a compiler runtime DLL is missing. Sources: [GCC link options](https://gcc.gnu.org/onlinedocs/gcc/Link-Options.html) and [pybind11 missing-runtime discussion](https://github.com/pybind/pybind11/issues/2771), accessed 28 September 2026.
+
+### Conan detects an unavailable future Visual Studio generator
+
+- **Symptom (28 September 2026):** local `conan profile detect` selected `msvc` version 195 and generated `Visual Studio 18 2026`, while CMake 3.30 on this host only exposes Visual Studio generators through 2022. The recipe consequently failed before compiling.
+- **Cause:** the host's compiler discovery evidence is inconsistent: no usable `cl.exe` is on the command path, but Conan detected a newer MSVC installation than the installed CMake understands. This is a local toolchain/profile mismatch, not a recipe failure established across supported runners.
+- **Corrective action:** do not commit the guessed local profile or hard-code a generator in the portable recipe. CI detects and builds the recipe on `ubuntu-latest` with its supported native profile; Windows consumers should use a profile naming an installed compiler and generator combination.
+- **Verification:** require the GitHub Actions Conan job to complete `conan create` from the committed recipe. Until that run passes, local recipe syntax/export is verified but the Conan binary build remains pending.
+- **Research:** Conan's profile detector warns that detected profiles are guesses and not guaranteed stable; CMake documents that the selected generator must match an available build environment. See [CMake's user interaction guide](https://cmake.org/cmake/help/latest/guide/user-interaction/index.html), accessed 28 September 2026.

@@ -1,4 +1,5 @@
 #include <emscripten/bind.h>
+#include <string>
 #include "dancerudiments/dance_rudiments.hpp"
 
 using namespace emscripten;
