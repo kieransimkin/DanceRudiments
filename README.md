@@ -68,6 +68,14 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 
 ## Potential problems
 
+### GitHub release attachment job has no Git checkout
+
+- **Symptom (28 September 2026):** all `v0.1.2` package builds and both registry publications succeeded, but `attach-github-release` failed with `failed to run git: fatal: not a git repository (or any of the parent directories): .git`.
+- **Cause:** that job intentionally downloaded build artifacts without checking out the repository, while `gh release upload` was invoked without `--repo` and therefore tried to infer its repository from local Git metadata.
+- **Corrective action:** pass `--repo "${{ github.repository }}"` explicitly. A checkout is unnecessary because the upload only needs downloaded artifacts, the release tag, and the workflow token.
+- **Verification:** upload the completed run's artifacts to `v0.1.2`, confirm them on the release page, and retain the explicit repository argument for future releases.
+- **Research:** [GitHub CLI `gh release upload` manual](https://cli.github.com/manual/gh_release_upload), accessed 28 September 2026.
+
 ### MSVC core and Python import libraries have the same filename
 
 - **Symptom (28 September 2026):** after excluding 32-bit wheels, the `v0.1.1` Windows wheel still failed at `cp39-win_amd64` with `LINK : fatal error LNK1114: cannot overwrite the original file '.../Release/dancerudiments.lib'; error code 5`.
