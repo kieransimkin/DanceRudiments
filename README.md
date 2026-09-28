@@ -68,6 +68,14 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 
 ## Potential problems
 
+### MSVC core and Python import libraries have the same filename
+
+- **Symptom (28 September 2026):** after excluding 32-bit wheels, the `v0.1.1` Windows wheel still failed at `cp39-win_amd64` with `LINK : fatal error LNK1114: cannot overwrite the original file '.../Release/dancerudiments.lib'; error code 5`.
+- **Cause:** on Windows' case-insensitive filesystem, the static core's default `DanceRudiments.lib` filename collided with the Python extension's `dancerudiments.lib` import library. Both targets were valid, but MSVC placed their archive outputs in the same configuration directory.
+- **Corrective action:** retain the public CMake target name `DanceRudiments::DanceRudiments`, but give its Windows archive the distinct physical filename `DanceRudimentsCore.lib`. Add a Windows Python-package job to ordinary CI so MSVC builds and imports the wheel before any release.
+- **Verification:** CI must build and import the Python wheel on `windows-latest`; the release workflow must then complete every `win_amd64` wheel and import test.
+- **Research:** CMake's [`OUTPUT_NAME`](https://cmake.org/cmake/help/latest/prop_tgt/OUTPUT_NAME.html) and [`add_library`](https://cmake.org/cmake/help/latest/command/add_library.html) documentation, accessed 28 September 2026, confirms that output filenames may be changed independently of logical target names and that Windows shared/module targets have associated import libraries.
+
 ### cibuildwheel attempts unsupported 32-bit Windows wheels
 
 - **Symptom (28 September 2026):** the `v0.1.0` release workflow failed in `python-wheels (windows-latest)` while building `cp39-win32`; cibuildwheel reported that its isolated `python -m build` command exited with code 1. The Linux and macOS wheel jobs were unaffected, and the npm package published successfully.

@@ -1,6 +1,6 @@
 {
   "name": "@kieransimkin/dance-rudiments",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Integer-pip rhythmic position functions with C++/WASM bindings.",
   "license": "MIT",
   "type": "module",

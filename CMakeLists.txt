@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.1.1 LANGUAGES CXX)
+project(DanceRudiments VERSION 0.1.2 LANGUAGES CXX)
 
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
@@ -8,6 +8,10 @@ option(DANCERUDIMENTS_BUILD_WASM "Build the Emscripten JavaScript module" OFF)
 add_library(DanceRudiments STATIC src/dance_rudiments.cpp)
 add_library(DanceRudiments::DanceRudiments ALIAS DanceRudiments)
 set_target_properties(DanceRudiments PROPERTIES POSITION_INDEPENDENT_CODE ON)
+if(WIN32)
+  # Avoid colliding with the dancerudiments Python module's MSVC import library.
+  set_target_properties(DanceRudiments PROPERTIES OUTPUT_NAME DanceRudimentsCore)
+endif()
 target_compile_features(DanceRudiments PUBLIC cxx_std_17)
 target_include_directories(DanceRudiments PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
