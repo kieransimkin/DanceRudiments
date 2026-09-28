@@ -12,6 +12,7 @@ CMakeUserPresets.json
 
 # Node and Python environments
 /node_modules/
+/.npm-cache/
 /venv/
 /.venv/
 __pycache__/

@@ -68,6 +68,14 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 
 ## Potential problems
 
+### npm cache access is denied on Windows
+
+- **Symptom (28 September 2026):** `npm pack --dry-run` failed with `EPERM: operation not permitted, open 'C:\Users\Kieran\AppData\Local\npm-cache\_cacache\tmp\…'` after the TypeScript tests had passed.
+- **Cause:** the shared user cache could not create its temporary file. npm's Windows issue tracker records this class of `EPERM` failure, including cases involving cache files and real-time scanning; the exact process holding this particular file was not identified.
+- **Corrective action:** keep the shared cache intact and run package validation with a repository-local cache: `npm pack --dry-run --cache .npm-cache`. The cache directory is ignored by Git.
+- **Verification:** the dry-run package completed with the local cache. This workaround changes only npm's disposable cache location and does not change the package contents.
+- **Research:** [npm CLI Windows EPERM report](https://github.com/npm/cli/issues/8072) and [npm CLI cache-isolation guidance](https://github.com/npm/cli/issues/1785), accessed 28 September 2026.
+
 ### CMake stalls while detecting the C++ compiler ABI on this host
 
 - **Symptom (28 September 2026):** CMake 3.30 with Ninja and the project-available MinGW GCC 16.2 compiler stopped after `Detecting CXX compiler ABI info` for more than 90 seconds. Compiler identification itself succeeded, and no diagnostic failure was emitted.

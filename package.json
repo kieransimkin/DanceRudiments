@@ -2,6 +2,7 @@
   "name": "@kieransimkin/dance-rudiments",
   "version": "0.1.0",
   "description": "Integer-pip rhythmic position functions with C++/WASM bindings.",
+  "license": "MIT",
   "type": "module",
   "main": "dist/typescript/index.js",
   "types": "dist/typescript/index.d.ts",
@@ -12,7 +13,7 @@
     },
     "./wasm": "./dist/wasm/dancerudiments.js"
   },
-  "files": ["dist/", "harness/", "README.md"],
+  "files": ["dist/typescript/", "dist/wasm/", "harness/", "README.md", "LICENSE"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kieransimkin/DanceRudiments.git"
