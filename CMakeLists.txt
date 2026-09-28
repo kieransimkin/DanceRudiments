@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.1.0 LANGUAGES CXX)
+project(DanceRudiments VERSION 0.1.1 LANGUAGES CXX)
 
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)

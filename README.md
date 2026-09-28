@@ -68,6 +68,14 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 
 ## Potential problems
 
+### cibuildwheel attempts unsupported 32-bit Windows wheels
+
+- **Symptom (28 September 2026):** the `v0.1.0` release workflow failed in `python-wheels (windows-latest)` while building `cp39-win32`; cibuildwheel reported that its isolated `python -m build` command exited with code 1. The Linux and macOS wheel jobs were unaffected, and the npm package published successfully.
+- **Cause:** the broad `cp39-*` through `cp314-*` build selectors also include 32-bit Windows identifiers, while DanceRudiments currently targets 64-bit package architectures.
+- **Corrective action:** add `*-win32` to `[tool.cibuildwheel].skip`, retaining the existing musllinux exclusion. Do not advertise or emit a 32-bit wheel until that architecture is deliberately supported and tested.
+- **Verification:** the patch-release workflow must complete the Windows `win_amd64` matrix and its import tests before PyPI publication.
+- **Research:** [cibuildwheel build/skip options](https://cibuildwheel.pypa.io/en/stable/options/), accessed 28 September 2026; the official examples explicitly use `*-win32` to skip 32-bit Windows builds.
+
 ### npm cache access is denied on Windows
 
 - **Symptom (28 September 2026):** `npm pack --dry-run` failed with `EPERM: operation not permitted, open 'C:\Users\Kieran\AppData\Local\npm-cache\_cacache\tmp\…'` after the TypeScript tests had passed.
