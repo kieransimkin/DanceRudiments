@@ -4,6 +4,27 @@ DanceRudiments is a small C++17 library of deterministic rhythmic position funct
 
 Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pixels, CSS units, metres, or another scale. There is deliberately no time interpolation in the public API: renderers advance with integer pips and get one exact sample per pip.
 
+## DanceFlow ecosystem
+
+DanceRudiments is the reusable motion-vocabulary layer in Kieran Simkin's DanceFlow BPM and motion-response ecosystem:
+
+- **StemLab** is the music-understanding layer. It analyses audio to produce BPM, beat, structure, stem, lyric, harmony, and related timing evidence.
+- **DanceRudiments** turns integer musical positions at 64 pips per beat into deterministic 1D, 2D, or 3D position offsets.
+- **DanceMoves** is the WordPress EPK motion runtime. It schedules and applies BPM-, cue-, and lyric-timed effects on public pages.
+
+The three components can also be used independently. They exchange explicit timing and analysis data rather than depending directly on one another. DanceRudiments' 64-pips-per-beat sampling convention is intentionally higher resolution and is not the same unit as DanceMoves' 16-ticks-per-beat runtime clock.
+
+## Which package should I use?
+
+| You are building | Install or download | What you get |
+| --- | --- | --- |
+| Python application | `pip install dancerudiments` from [PyPI](https://pypi.org/project/dancerudiments/) | Native Python extension and the catalogue/sample API |
+| TypeScript or JavaScript application | `npm install @kieransimkin/dance-rudiments` from [npm](https://www.npmjs.com/package/@kieransimkin/dance-rudiments) | TypeScript declarations, JavaScript wrapper, and WebAssembly module |
+| C++ application using a listed release platform | Download the matching `DanceRudiments-cpp-<version>-<platform>-static.zip` from [GitHub Releases](https://github.com/kieransimkin/DanceRudiments/releases) | Headers, static library, CMake package files, licence, platform manifest, and instructions |
+| C++ application using another toolchain or architecture | Build from source or use `conan create` with `conanfile.py` | A library compiled for your own settings |
+
+GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI and the TypeScript/WASM package belongs on npm, so GitHub's manually attached assets are intentionally C++-only.
+
 ## Included rudiments
 
 The general motions are `bounce`, `sway`, `circle`, `figure_eight`, `step_touch`, `box_step`, `helix`, and `clay_background`.
@@ -67,6 +88,13 @@ The publishing jobs use short-lived OIDC identity for PyPI and npm and do not re
 Apply an output to a bounded subject. DanceRudiments changes position only; it must not be used to add a repetitive full-frame tint, brightness, flash, or colour-grade effect. Under `prefers-reduced-motion`, do not autoplay the harness or production motion.
 
 ## Potential problems
+
+### GitHub release assets are ambiguous or incomplete
+
+- **Symptom (28 September 2026):** the first C++ ZIPs were named only by platform, opened into a `stage/` directory, contained no licence or instructions, and installed exported targets without the `DanceRudimentsConfig.cmake` file needed by the documented `find_package` workflow. The release page also did not explain where Python and npm packages lived.
+- **Cause:** the release job archived its temporary install directory verbatim and treated all language build artifacts as potential GitHub attachments instead of giving each package ecosystem one canonical destination.
+- **Corrective action:** publish Python on PyPI and TypeScript/WASM on npm; reserve manually attached GitHub assets for C++. Name each archive `DanceRudiments-cpp-<version>-<platform>-static.zip`, use a versioned root directory, include the MIT licence, C++ usage guide, platform manifest, complete CMake config/version files, and publish `SHA256SUMS.txt`.
+- **Verification:** ordinary CI builds a separate consumer against the installed CMake package on Linux, Windows, and macOS. Release QA must inspect archive names and contents, verify the checksum file, and confirm the README's package table links to PyPI, npm, and GitHub Releases.
 
 ### GitHub release attachment job has no Git checkout
 

@@ -119,16 +119,27 @@ jobs:
       - name: Build and install
         shell: bash
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          ROOT="package/DanceRudiments-${VERSION}"
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDANCERUDIMENTS_BUILD_TESTS=OFF
           cmake --build build --config Release
-          cmake --install build --config Release --prefix stage
+          cmake --install build --config Release --prefix "$ROOT"
+          cmake -E copy LICENSE "$ROOT/LICENSE"
+          cmake -E copy packaging/CPP_BINARY_README.md "$ROOT/README.md"
+          cmake -E echo "DanceRudiments ${VERSION}" > "$ROOT/PACKAGE-INFO.txt"
+          cmake -E echo "Platform: ${{ matrix.label }}" >> "$ROOT/PACKAGE-INFO.txt"
+          cmake -E echo "Architecture: ${{ runner.arch }}" >> "$ROOT/PACKAGE-INFO.txt"
+          cmake -E echo "Library type: C++17 static library" >> "$ROOT/PACKAGE-INFO.txt"
       - name: Create archive
         shell: bash
-        run: cmake -E tar cf "DanceRudiments-${{ github.event.release.tag_name }}-${{ matrix.label }}.zip" --format=zip stage
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd package
+          cmake -E tar cf "../DanceRudiments-cpp-${VERSION}-${{ matrix.label }}-static.zip" --format=zip "DanceRudiments-${VERSION}"
       - uses: actions/upload-artifact@v6
         with:
           name: cpp-${{ matrix.label }}
-          path: DanceRudiments-*.zip
+          path: DanceRudiments-cpp-*.zip
           if-no-files-found: error
 
   attach-github-release:
@@ -139,13 +150,16 @@ jobs:
     steps:
       - uses: actions/download-artifact@v7
         with:
-          pattern: "{cpp-*,wheels-*,python-sdist}"
+          pattern: "cpp-*"
           path: release-assets
           merge-multiple: true
+      - name: Write SHA-256 checksums
+        working-directory: release-assets
+        run: sha256sum *.zip > SHA256SUMS.txt
       - name: Attach verified packages
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" release-assets/* --repo "${{ github.repository }}" --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" release-assets/*.zip release-assets/SHA256SUMS.txt --repo "${{ github.repository }}" --clobber
 
   publish-conan:
     needs: validate

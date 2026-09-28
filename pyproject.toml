@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "dancerudiments"
-version = "0.1.2"
+version = "0.1.3"
 description = "Integer-pip rhythmic position functions with a C++ core"
 readme = "README.md"
 license = "MIT"

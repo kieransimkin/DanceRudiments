@@ -10,7 +10,7 @@ class DanceRudimentsConan(ConanFile):
     url = "https://github.com/kieransimkin/DanceRudiments"
     description = "Integer-pip rhythmic position functions"
     settings = "os", "compiler", "build_type", "arch"
-    exports_sources = "CMakeLists.txt", "include/**", "src/**"
+    exports_sources = "CMakeLists.txt", "cmake/**", "include/**", "src/**"
 
     def layout(self):
         cmake_layout(self)
@@ -36,4 +36,7 @@ class DanceRudimentsConan(ConanFile):
              dst=os.path.join(self.package_folder, "lib"), keep_path=False)
 
     def package_info(self):
-        self.cpp_info.libs = ["DanceRudiments"]
+        self.cpp_info.libs = [
+            "DanceRudimentsCore" if str(self.settings.os) == "Windows"
+            else "DanceRudiments"
+        ]

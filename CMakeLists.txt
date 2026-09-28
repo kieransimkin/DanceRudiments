@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.1.2 LANGUAGES CXX)
+project(DanceRudiments VERSION 0.1.3 LANGUAGES CXX)
 
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
@@ -57,8 +57,21 @@ if(DANCERUDIMENTS_BUILD_TESTS)
 endif()
 
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+  cmake/DanceRudimentsConfig.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments")
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfigVersion.cmake"
+  VERSION "${PROJECT_VERSION}"
+  COMPATIBILITY SameMajorVersion)
 install(TARGETS DanceRudiments EXPORT DanceRudimentsTargets
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfigVersion.cmake"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments")
 install(EXPORT DanceRudimentsTargets NAMESPACE DanceRudiments::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments)
