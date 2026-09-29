@@ -1,13 +1,14 @@
 # Default movement library
 
-The native catalogue contains **67 movements**: 15 original primitives, all
-28 user-approved Initial 01 patterns, and 24 original Expansion 02 patterns.
+The native catalogue contains **323 movements**: 15 original primitives, all
+28 user-approved Initial 01 patterns, 24 original Expansion 02 patterns, and
+256 original Motion Atlas presets.
 The default API samples each directly. No pack registration, runtime Python,
 network access, or JSON parsing is required by C++/WASM movement playback.
 
 ```python
 import dancerudiments as d
-assert len(d.catalogue()) == 67
+assert len(d.catalogue()) == 323
 print(d.sample('path_torus_knot', 48).as_tuple())
 print(d.sample('rhythm_seven_four', -1).as_tuple())
 ```
@@ -21,7 +22,7 @@ auto p = dancerudiments::sample("lfo_twin_swell", pip_count);
 import { bindNative, catalogue, sample } from '@kieransimkin/dance-rudiments';
 import createNative from '@kieransimkin/dance-rudiments/wasm';
 bindNative(await createNative());
-console.log(catalogue.length); // 67
+console.log(catalogue.length); // 323
 const p = sample('path_woven_3d', -1);
 ```
 
@@ -37,6 +38,7 @@ silently. The existing Initial 01 digest and all its tables are unchanged.
 ```sh
 python tools/build_initial_collection.py --check
 python tools/build_expansion_collection.py --check
+python tools/build_atlas_collection.py --check
 python tools/build_default_catalogue.py --check
 ```
 
@@ -50,14 +52,14 @@ bindings or render browser screenshots, as before.
 `initial_pack()` and `expansion_pack()` expose source/provenance data for authoring,
 and their `.to_native()` loaders remain idempotent for exact default copies.
 The analogous generated C++ `make_library()` and TypeScript pack loaders also
-retain 67 catalogue entries. A duplicate name in a supplied pack or an attempt
+retain 323 catalogue entries. A duplicate name in a supplied pack or an attempt
 to change a default's samples, period, or description is rejected. Customise a
 motion under a new name rather than silently overriding a default.
 
 ```python
 from dancerudiments_authoring.collections import expansion_pack
 pack = expansion_pack(['path_torus_knot'])
-assert len(pack.to_native().catalogue()) == 67
+assert len(pack.to_native().catalogue()) == 323
 ```
 
 The old 15-primitive harness and the editable Initial 01 audition page are
@@ -109,3 +111,21 @@ C++/WASM snapshot, distinct from the production Emscripten/Embind package.
 Full workflow details and local-file policy notes are in `release-demo.md`.
 
 The new pattern guide is `collections/expansion/README.md`.
+
+## Motion Atlas / Expansion 03
+
+The default total is **323 = 15 core + 28 initial + 24 Expansion 02 + 256 Atlas**.
+See [the complete Atlas reference](../collections/atlas/README.md) for all 16
+families, identifiers and durations. `d.sample("space_torus_3_5", pip)` works
+immediately without an optional-pack load. C++ and TypeScript use the same name.
+
+`from dancerudiments_authoring.collections import atlas_pack` loads the compiled
+source data for inspection or subset export. It does not implement playback in
+Python. The npm data subpath is `@kieransimkin/dance-rudiments/collections/atlas`.
+C++ clients may also include `dancerudiments/collections/atlas.hpp` and call a
+named `dancerudiments_atlas::sample_space_torus_3_5(pip)` function directly.
+
+The 256 new presets require 167,040 XYZ samples (4,008,960 bytes of double-valued
+sample payload, excluding metadata and compiled-code overhead). No runtime
+network dependency is added. Generated files are checked into the source so a
+normal C++ build does not require running Python first.

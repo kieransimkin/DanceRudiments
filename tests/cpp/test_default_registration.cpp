@@ -8,7 +8,7 @@
 using namespace dancerudiments;
 static void require(bool value) { if (!value) throw std::runtime_error("Default regression failed"); }
 int main() {
-  require(catalogue().size()==67);
+  require(catalogue().size()==323);
   std::set<std::string> names;
   for (const auto& p: catalogue()) {
     require(names.insert(std::string(p.name)).second);
@@ -22,7 +22,7 @@ int main() {
   auto p=catalogue()[15];
   for (int pip=0;pip<p.period_pips;++pip) values.push_back(sample(p.name,pip));
   SampledPattern copy(std::string(p.name),std::string(p.description),values);
-  require(PatternLibrary({copy}).catalogue().size()==67);
+  require(PatternLibrary({copy}).catalogue().size()==323);
   values[10].x=.123;
   bool rejected=false;
   try { PatternLibrary changed({SampledPattern(std::string(p.name),std::string(p.description),values)}); }

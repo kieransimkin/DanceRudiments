@@ -10,6 +10,22 @@
   const names = new Map(patterns.map((p, i) => [p.name, i]));
   const reviews = new Map(patterns.map(p => [p.name, {status: 'keep', note: ''}]));
   const compared = new Set();
+  // The catalogue stays complete in the DOM, but offscreen canvases need not
+  // allocate high-DPI backing stores or redraw on every musical-clock frame.
+  let renderedLastFrame = 0;
+  const visibility = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      const plot = entry.target.motionPlot;
+      if (!plot) continue;
+      plot.visible = entry.isIntersecting;
+      if (!plot.visible) {
+        plot.background = plot.waveBackground = null;
+        plot.stage.width = plot.wave.width = 1;
+        plot.stage.height = plot.wave.height = 1;
+      }
+    }
+    dirty = true;
+  }, {rootMargin:'160px 0px'});
   let native, plots = [], baseBeat = 0, origin = performance.now(), running = false;
   let bpm = 120, amplitude = .7, dirty = true, audioURL = null, storageOK = true;
   const audio = $('audio');
@@ -138,8 +154,10 @@
     head.append(id,node('h3','',meta.title)); c.append(head);
     const stage=node('canvas','stage'), wave=node('canvas','wave');
     stage.setAttribute('aria-label',meta.title+' motion preview');
-    wave.setAttribute('aria-label','X and Y position curves over one cycle');
-    c.append(stage,wave); plots.push({i,stage,wave,background:null,amp:-1});
+    wave.setAttribute('aria-label','X, Y and available Z position curves over one cycle');
+    c.append(stage,wave);
+    const plot={i,stage,wave,background:null,waveBackground:null,amp:-1,visible:false};
+    c.motionPlot=plot;plots.push(plot);visibility.observe(c);
     const body=node('div','card-body'); body.append(node('p','desc',p.description));
     if (!comparison) {
       const buttons=node('div','review-buttons');
@@ -171,11 +189,12 @@
   }
   function matches(p) {
     const family=$('family').value, status=$('review').value, search=$('search').value.trim().toLowerCase();
-    return (!family || p.provenance.family===family) && (!status || reviews.get(p.name).status===status) &&
+    const collection=$('collection').value;
+    return (!collection || (p.provenance.collection_id || 'core')===collection) && (!family || p.provenance.family===family) && (!status || reviews.get(p.name).status===status) &&
        (!search || [p.name,p.description,p.provenance.title,p.provenance.author].join(' ').toLowerCase().includes(search));
   }
   function render() {
-    plots=[]; $('grid').replaceChildren(); $('compare-grid').replaceChildren();
+    visibility.disconnect();plots=[]; $('grid').replaceChildren(); $('compare-grid').replaceChildren();
     let visible=0;
     patterns.forEach((p,i) => { if (matches(p)) { $('grid').append(card(i)); visible++; } });
     for (const i of compared) $('compare-grid').append(card(i,true));
@@ -191,7 +210,14 @@
   for (const family of [...new Set(patterns.map(p=>p.provenance.family))]) {
     const o=node('option','',family);o.value=family; $('family').append(o);
   }
-  for (const id of ['family','review','search']) $(id).addEventListener('input',render);
+  const collectionLabels = new Map([
+    ['core','Original core'],['initial-01','Initial collection'],
+    ['expansion-02','Expansion 02'],['atlas-03','Motion Atlas / 256 new']
+  ]);
+  for (const id of [...new Set(patterns.map(p=>p.provenance.collection_id || 'core'))]) {
+    const o=node('option','',collectionLabels.get(id) || id);o.value=id;$('collection').append(o);
+  }
+  for (const id of ['collection','family','review','search']) $(id).addEventListener('input',render);
   $('clear-compare').onclick=() => { compared.clear();render(); };
   $('clear-review').onclick=() => {
     if (confirm('Clear all Keep / Maybe / Skip choices and notes? Export your review first to save a copy.')) {
@@ -216,7 +242,7 @@
     const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
-  $('export-choices').onclick=() => download('DanceRudiments-initial-review.json',reviewDocument());
+  $('export-choices').onclick=() => download('DanceRudiments-'+data.collection_id+'-review.json',reviewDocument());
   $('export-pack').onclick=() => download('DanceRudiments-chosen.compiled.json',selectedPack());
   $('export-score').onclick=() => download('DanceRudiments-chosen.score.json',selectedScores());
   $('import-choices').onchange=async () => {
@@ -243,6 +269,8 @@
   }
   const curves=[];
   function makeBackground(plot) {
+    if (!curves[plot.i]) curves[plot.i]=Array.from(
+      {length:patterns[plot.i].period_pips},(_,pip)=>sample(plot.i,pip));
     const {stage,wave,i}=plot, w=stage.width,h=stage.height;
     const dpr=Math.min(devicePixelRatio||1,2), scale=Math.min(w*.38,h*.4)*amplitude;
     const bg=document.createElement('canvas');bg.width=w;bg.height=h;
@@ -283,7 +311,10 @@
     const pip=absolutePip;
     $('clock').textContent=`Beat ${Math.floor(beat)+1} · pip ${((absolutePip%64)+64)%64}`;
     $('seek').value=((pip%phrasePips)+phrasePips)%phrasePips;
+    renderedLastFrame=0;
     for (const plot of plots) {
+      if (!plot.visible) continue;
+      renderedLastFrame++;
       const resized=sizeCanvas(plot.stage)|sizeCanvas(plot.wave);
       if (resized || !plot.background || plot.amp!==amplitude) makeBackground(plot);
       const {stage,wave,i}=plot;
@@ -313,7 +344,7 @@
     review:reviewDocument,importReview,setStatus,selectedPack,selectedScores,
     compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
        compared.clear();ids.forEach(n=>compared.add(names.get(n)));render();},
-    state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly'}),
+    state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly',renderedLastFrame,plotCount:plots.length}),
     packSha256:data.pack_sha256};
   render();
   (async () => {
@@ -322,7 +353,6 @@
       const result=await WebAssembly.instantiate(bytes,{});native=result.instance.exports;
       if (native.pattern_count()!==patterns.length || patterns.some((p,i)=>native.pattern_period(i)!==p.period_pips))
         throw new Error('Native bank does not match the embedded collection');
-      patterns.forEach((p,i)=>curves.push(Array.from({length:p.period_pips},(_,pip)=>sample(i,pip))));
       window.audition.ready=true; $('engine').textContent='C++ / WASM · offline'; $('play').disabled=false;
       if (!storageOK) message('Browser storage is unavailable; export your review to save it.',true);
       else if (reducedMotion.matches) message('Reduced motion: starting paused. Use pip stepping or choose Play explicitly.');

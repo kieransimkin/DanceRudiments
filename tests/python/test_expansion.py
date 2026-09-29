@@ -117,7 +117,7 @@ class ExpansionTests(unittest.TestCase):
     def test_selection_lock_rejects_tampering(self):
         builder = module('defaults_builder', 'tools/build_default_catalogue.py')
         lock = json.loads((ROOT/'collections/defaults.json').read_text())
-        self.assertEqual(len(builder.selected_patterns(lock)), 52)
+        self.assertEqual(len(builder.selected_patterns(lock)), sum(len(s['patterns']) for s in lock['collections']))
         for mutation in ('digest', 'duplicate', 'unsafe', 'schema'):
             changed = copy.deepcopy(lock)
             if mutation == 'digest': changed['collections'][1]['pack_sha256'] = '0'*64
@@ -132,7 +132,7 @@ class ExpansionTests(unittest.TestCase):
 class ExpansionNativeTests(unittest.TestCase):
     def test_every_sample_and_arbitrary_seek_is_cpp(self):
         names = [p['name'] for p in native.catalogue()]
-        self.assertEqual(len(names), 67)
+        self.assertEqual(len(names), 323)
         for p in expansion_pack().patterns:
             self.assertIn(p.name, names)
             for pip, expected in enumerate(p.samples):
@@ -162,8 +162,8 @@ class ReleaseSnapshotTests(unittest.TestCase):
     def test_native_snapshot_contains_both_collections(self):
         release = module('release_demo', 'tools/release_demo.py')
         rows = release.native_snapshot()
-        self.assertEqual(len(rows), 67)
-        self.assertEqual([p['name'] for p in rows[-24:]],
+        self.assertEqual(len(rows), 323)
+        self.assertEqual([p['name'] for p in rows if p['provenance'].get('collection_id') == 'expansion-02'],
                          [p.name for p in expansion_pack().patterns])
 
     def test_stale_native_binary_is_rejected(self):

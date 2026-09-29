@@ -45,6 +45,21 @@ def render(path,chromium=None,in_memory=False):
         page.locator('#play').click();page.wait_for_timeout(150);check(page.evaluate('audition.state().beat')>11.25,'Playback advances')
         page.locator('#play').click();frozen=page.evaluate('audition.state().beat');page.wait_for_timeout(80)
         check(page.evaluate('audition.state().beat')==frozen,'Pause freezes')
+        collection_values=page.locator('#collection option').evaluate_all('(options)=>options.slice(1).map(o=>o.value)')
+        for collection in collection_values:
+            page.locator('#collection').select_option(collection)
+            expected=page.evaluate('(id)=>JSON.parse(document.getElementById("data").textContent).pack.patterns.filter(p=>(p.provenance.collection_id||"core")===id).length',collection)
+            check(page.locator('#grid .card').count()==expected,'Collection filter '+collection)
+        page.locator('#collection').select_option('')
+        page.wait_for_timeout(100)
+        counts=page.evaluate('audition.state()')
+        if manifest['pattern_count']>32:
+            check(0<counts['renderedLastFrame']<counts['plotCount'],'Only near-viewport canvases are animated')
+            page.locator('#grid .card').last.scroll_into_view_if_needed()
+            page.wait_for_timeout(150)
+            check(page.locator('#grid .card').first.locator('canvas').first.evaluate('(c)=>c.width')==1,'Offscreen canvas backing store is released')
+            check(page.locator('#grid .card').last.locator('canvas').first.evaluate('(c)=>c.width')>1,'Scrolled-to card draws from current native phase')
+            page.evaluate('window.scrollTo(0,0)');page.wait_for_timeout(100)
         families=page.locator('#family option').all_text_contents()[1:]
         for family in families:
             page.locator('#family').select_option(family);check(page.locator('#grid .card').count()>0,'Filter '+family)

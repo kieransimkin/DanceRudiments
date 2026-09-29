@@ -10,5 +10,6 @@ collections/initial/sources/akwf/*.h -whitespace
 
 # Expansion scores and hash-locked registry must retain LF on every platform.
 collections/expansion/** text eol=lf
+collections/atlas/** text eol=lf
 collections/defaults.json text eol=lf
 include/dancerudiments/detail/** text eol=lf

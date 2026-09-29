@@ -13,7 +13,8 @@
     },
     "./wasm": "./dist/wasm/dancerudiments.js",
     "./collections/initial": "./python/dancerudiments_authoring/packs/initial.json",
-    "./collections/expansion": "./python/dancerudiments_authoring/packs/expansion.json"
+    "./collections/expansion": "./python/dancerudiments_authoring/packs/expansion.json",
+    "./collections/atlas": "./python/dancerudiments_authoring/packs/atlas.json"
   },
   "files": [
     "dist/typescript/",
@@ -28,7 +29,8 @@
     "collections/initial/README.md",
     "collections/initial/THIRD_PARTY_NOTICES.md",
     "collections/expansion/",
-    "collections/defaults.json"
+    "collections/defaults.json",
+    "collections/atlas/"
   ],
   "repository": {
     "type": "git",

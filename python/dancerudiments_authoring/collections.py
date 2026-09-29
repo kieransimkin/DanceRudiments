@@ -23,6 +23,15 @@ def expansion_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
     return _select_pack('expansion.json', names)
 
 
+def atlas_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
+    """Load the 256 Motion Atlas scores' compiled data, or a named subset.
+
+    All are already C++ defaults. Explicit loading is idempotent; selection
+    does not remove entries from the native default catalogue.
+    """
+    return _select_pack('atlas.json', names)
+
+
 def _select_pack(filename: str, names: Optional[Iterable[str]]) -> CompiledPack:
     pack = load_pack(Path(__file__).parent / 'packs' / filename)
     if names is None:

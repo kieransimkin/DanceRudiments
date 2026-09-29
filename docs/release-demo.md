@@ -7,7 +7,7 @@ The **Release demo** workflow runs whenever a release is published. It checks ou
 the release tag, verifies the CMake/Python/npm versions, builds and installs that
 checkout's native Python extension, and calls the native `catalogue()` and
 `sample()` interfaces. There is no handwritten list of default movements: the current
-catalogue produces 67 cards, and future defaults are picked up in the same way.
+catalogue produces 323 cards, and future defaults are picked up in the same way.
 
 The builder embeds every native sample, source attribution, interface code, CSS
 and a newly compiled C++ WebAssembly lookup sampler in one offline HTML file.
@@ -67,7 +67,7 @@ choice so it is not misreported as a file-navigation test.
 
 ## Default collections and stale-build protection
 
-The default library now contains 67 motions: 15 original primitives, 28 approved
+The default library now contains 323 motions: 15 original primitives, 256 Atlas presets, 28 approved
 Initial 01 patterns, and 24 original Expansion 02 additions. Each published
 release runs the three generation checks before building its native module.
 The renderer verifies every required name from `collections/defaults.json` is
@@ -79,3 +79,13 @@ References:
 - https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
 - https://cli.github.com/manual/gh_release_upload
 - https://cli.github.com/manual/gh_release_download
+
+## Larger catalogues
+
+The demo now offers collection filtering as well as family, search and review
+filters. All catalogue entries remain in the page. Only cards near the viewport
+are animated; offscreen canvas backing stores are released and restored on
+scrolling. Musical phase always comes from the shared clock, so reappearing
+cards show their correct current position. No reduced-fidelity movement sampler
+or JavaScript fallback is substituted. The builder validates Atlas regeneration
+before the release native build. Existing release-asset upload behaviour is unchanged.
