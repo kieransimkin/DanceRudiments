@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DanceRudiments — v__VERSION__ release demo</title><style>/*__STYLE__*/
+[hidden]{display:none!important;} header code{overflow-wrap:anywhere;}</style></head>
+<body>
+<header>
+  <div class="eyebrow">DANCEFLOW / MOTION VOCABULARY</div>
+  <div class="heading"><div><h1>DanceRudiments in motion.</h1><p class="subtitle">v__VERSION__ · __COUNT__ movements · one shared musical clock</p></div><span id="engine" class="badge">Loading native sampler…</span></div>
+  <p class="intro">__BUILD_NOTE__ Source commit: <code>__COMMIT__</code>. These are position offsets, not full-body dance animations.</p>
+</header>
+<section class="transport" aria-label="Playback controls">
+  <div class="row"><button id="play" class="primary" disabled>Play</button><button id="reset" title="Reset musical phase">Restart</button>
+    <button id="back" title="Previous pip">−1 pip</button><button id="forward" title="Next pip">+1 pip</button>
+    <label>BPM <input id="bpm" type="number" min="30" max="240" step="1" value="120"></label>
+    <label>Size <input id="amplitude" type="range" min="10" max="100" value="70"><output id="amp-label">70%</output></label>
+    <label><input id="trails" type="checkbox" checked>Show paths</label>
+    <output id="clock">Beat 1 · pip 0</output></div>
+  <div class="row"><label class="seek">Phrase <input id="seek" type="range" min="0" max="511" step="1" value="0"></label>
+    <span class="small">64 pips per quarter note · each pattern keeps its own loop length</span></div>
+  <details><summary>Play against your own track</summary><div class="row audio-row">
+    <label class="file-label">Choose audio <input id="audio-file" type="file" accept="audio/*"></label>
+    <audio id="audio" controls preload="metadata"></audio>
+    <label>Beat-zero offset (seconds) <input id="offset" type="number" step="0.01" value="0"></label>
+    <button id="clear-audio">Remove audio</button></div>
+    <p class="small">Your file stays in this browser. Set BPM and the time of beat zero manually; this gallery does not analyse the track. Playback follows the audio clock, including seeking. No source recordings or click sounds are bundled.</p></details>
+</section>
+<main>
+<section class="filters" aria-label="Candidate filters">
+  <div class="row"><label>Family <select id="family"><option value="">All families</option></select></label>
+    <label>Review <select id="review"><option value="">All statuses</option><option value="keep">Keep</option><option value="maybe">Maybe</option><option value="skip">Skip</option><option value="unreviewed">Not reviewed</option></select></label>
+    <label class="search">Search <input id="search" type="search" placeholder="Name, source, movement…"></label>
+    <span id="counts" class="badge">0 kept</span></div>
+  <div class="row"><button id="export-choices">Export review</button><label class="file-label">Import review <input id="import-choices" type="file" accept=".json,application/json"></label>
+    <button id="export-pack" hidden disabled>Export kept pack</button><button id="export-score" hidden disabled>Export kept scores</button>
+    <button id="notices">Sources & licences</button><button id="clear-review" class="subtle">Clear review</button></div>
+  <p id="status" class="small" role="status">Starting paused. Press Play to audition. Reviews are saved locally where browser storage is available.</p>
+</section>
+<section id="comparison" class="comparison" hidden><div class="row"><h2>Side-by-side comparison</h2><span class="small">Same phase, BPM and scale. Select up to four cards.</span><button id="clear-compare">Clear comparison</button></div><div id="compare-grid" class="grid"></div></section>
+<div class="row section-label"><h2>Movement catalogue</h2><span id="visible" class="small"></span></div>
+<section id="grid" class="grid" aria-label="Motion candidates"></section>
+<p id="empty" hidden>No movements match these filters.</p>
+</main>
+<footer><strong>DanceRudiments · Kieran Simkin</strong><p>The release builder reads the tagged native catalogue. A bundled C++/WebAssembly sampler supplies every live position. No JavaScript movement fallback. All dots use the same coordinate frame and scale; +Y is down. 3D paths use an oblique projection and show a separate Z curve.</p><p>Keep, Maybe and Skip are personal review choices, not licence decisions. Attribution is embedded in this snapshot. Editable scores remain in the repository. Reduced-motion preferences are respected: nothing starts automatically.</p></footer>
+<dialog id="details"><div class="row"><h2 id="detail-title"></h2><button id="close-details" aria-label="Close details">Close</button></div><pre id="detail-body"></pre></dialog>
+<script type="application/json" id="data">__PAYLOAD__</script>
+<script>/*__APP__*/</script>
+</body></html>

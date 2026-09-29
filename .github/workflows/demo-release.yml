@@ -1,0 +1,78 @@
+name: Release demo
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing tag containing the demo-rendering tools'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: release-demo-${{ github.event.release.tag_name || inputs.release_tag }}
+  cancel-in-progress: false
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.release_tag }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Validate the tag and source version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          python - <<'PY'
+          import json, os, re, subprocess, tomllib
+          from pathlib import Path
+          v=tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          c=re.search(r'project\(DanceRudiments VERSION ([0-9.]+)',Path('CMakeLists.txt').read_text())[1]
+          n=json.loads(Path('package.json').read_text())['version']
+          if os.environ['RELEASE_TAG']!='v'+v or c!=v or n!=v:raise SystemExit('Tag/version mismatch')
+          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
+          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('DEMO_VERSION='+v+'\nDEMO_COMMIT='+sha+'\n')
+          PY
+      - name: Install build-only tools and this checkout's native library
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang lld
+          python -m pip install . playwright
+          python -m playwright install --with-deps chromium
+      - name: Generate the exact tagged native catalogue
+        run: python tools/release_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output-dir dist/demo
+      - name: Render, test, and package
+        run: python tools/render_release_demo.py "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-demo
+          path: dist/demo/*
+          if-no-files-found: error
+  attach:
+    needs: render
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          name: release-demo
+          path: demo
+      - name: Attach to the existing release and verify uploaded bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
+          (cd demo && sha256sum --check ./*.sha256)
+          gh release upload "$RELEASE_TAG" demo/* --repo "$GITHUB_REPOSITORY" --clobber
+          mkdir verified
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'DanceRudiments-demo-*' --dir verified
+          (cd verified && sha256sum --check ./*.sha256)

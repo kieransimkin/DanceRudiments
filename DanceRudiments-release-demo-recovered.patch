@@ -1,0 +1,816 @@
+From b0762cf18f9a375817e147a66b38b6fd2be3b5d4 Mon Sep 17 00:00:00 2001
+From: OpenAI Assistant <assistant@local.invalid>
+Date: Tue, 29 Sep 2026 04:35:30 +0000
+Subject: [PATCH] Generate and render native catalogue demo for every release
+
+---
+ .github/workflows/demo-release.yml      |  78 ++++++
+ docs/release-demo.md                    |  82 ++++++
+ tools/release_demo.py                   | 132 ++++++++++
+ tools/release_demo_assets/app.js        | 335 ++++++++++++++++++++++++
+ tools/release_demo_assets/style.css     |   6 +
+ tools/release_demo_assets/template.html |  47 ++++
+ tools/render_release_demo.py            |  69 +++++
+ 7 files changed, 749 insertions(+)
+ create mode 100644 .github/workflows/demo-release.yml
+ create mode 100644 docs/release-demo.md
+ create mode 100644 tools/release_demo.py
+ create mode 100644 tools/release_demo_assets/app.js
+ create mode 100644 tools/release_demo_assets/style.css
+ create mode 100644 tools/release_demo_assets/template.html
+ create mode 100644 tools/render_release_demo.py
+
+diff --git a/.github/workflows/demo-release.yml b/.github/workflows/demo-release.yml
+new file mode 100644
+index 0000000..35e387b
+--- /dev/null
++++ b/.github/workflows/demo-release.yml
+@@ -0,0 +1,78 @@
++name: Release demo
++on:
++  release:
++    types: [published]
++  workflow_dispatch:
++    inputs:
++      release_tag:
++        description: 'Existing tag containing the demo-rendering tools'
++        required: true
++        type: string
++permissions:
++  contents: read
++concurrency:
++  group: release-demo-${{ github.event.release.tag_name || inputs.release_tag }}
++  cancel-in-progress: false
++jobs:
++  render:
++    runs-on: ubuntu-latest
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          ref: refs/tags/${{ github.event.release.tag_name || inputs.release_tag }}
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - name: Validate the tag and source version
++        env:
++          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
++        run: |
++          python - <<'PY'
++          import json, os, re, subprocess, tomllib
++          from pathlib import Path
++          v=tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
++          c=re.search(r'project\(DanceRudiments VERSION ([0-9.]+)',Path('CMakeLists.txt').read_text())[1]
++          n=json.loads(Path('package.json').read_text())['version']
++          if os.environ['RELEASE_TAG']!='v'+v or c!=v or n!=v:raise SystemExit('Tag/version mismatch')
++          sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
++          with open(os.environ['GITHUB_ENV'],'a') as f:f.write('DEMO_VERSION='+v+'\nDEMO_COMMIT='+sha+'\n')
++          PY
++      - name: Install build-only tools and this checkout's native library
++        run: |
++          sudo apt-get update
++          sudo apt-get install --yes clang lld
++          python -m pip install . playwright
++          python -m playwright install --with-deps chromium
++      - name: Generate the exact tagged native catalogue
++        run: python tools/release_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output-dir dist/demo
++      - name: Render, test, and package
++        run: python tools/render_release_demo.py "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html"
++      - uses: actions/upload-artifact@v6
++        with:
++          name: release-demo
++          path: dist/demo/*
++          if-no-files-found: error
++  attach:
++    needs: render
++    runs-on: ubuntu-latest
++    permissions:
++      contents: write
++    steps:
++      - uses: actions/download-artifact@v6
++        with:
++          name: release-demo
++          path: demo
++      - name: Attach to the existing release and verify uploaded bytes
++        env:
++          GH_TOKEN: ${{ github.token }}
++          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null
++          (cd demo && sha256sum --check ./*.sha256)
++          gh release upload "$RELEASE_TAG" demo/* --repo "$GITHUB_REPOSITORY" --clobber
++          mkdir verified
++          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'DanceRudiments-demo-*' --dir verified
++          (cd verified && sha256sum --check ./*.sha256)
+diff --git a/docs/release-demo.md b/docs/release-demo.md
+new file mode 100644
+index 0000000..30550c9
+--- /dev/null
++++ b/docs/release-demo.md
+@@ -0,0 +1,82 @@
++# Versioned release demos
++
++This standalone change adds release-demo generation only. It does not register
++optional movement packs, promote patterns into the default library, change
++package versions, create releases, or configure GitHub Pages.
++
++The **Release demo** workflow runs whenever a release is published. It checks out
++the release tag, verifies the CMake/Python/npm versions, builds and installs that
++checkout's native Python extension, and calls the native `catalogue()` and
++`sample()` interfaces. There is no handwritten list of default movements: a tag
++with 15 defaults produces 15 cards, a tag with 43 produces 43, and future defaults
++are picked up in the same way.
++
++The builder embeds every native sample, source attribution, interface code, CSS
++and a newly compiled C++ WebAssembly lookup sampler in one offline HTML file.
++Python is used only during generation; live movement positions come from C++/WASM.
++The snapshot sampler is distinct from the production Emscripten/Embind package.
++
++Chromium then renders desktop/mobile screenshots, verifies every position against
++the exported snapshot (including negative/extreme pips), checks playback and
++filters, and records the results. The workflow attaches:
++
++- `DanceRudiments-demo-vX.Y.Z.html` and desktop/mobile PNG screenshots;
++- a version/commit/count/checksum JSON manifest;
++- a ZIP and SHA-256 checksums.
++
++The upload job re-downloads the attachments and verifies their bytes. Only that
++job receives write permission. Manual re-runs replace matching demo assets using
++`--clobber`; an interrupted replacement may leave an old demo asset absent, so
++use the retained workflow artifact to recover or rerun it. Package assets with
++other names are not modified. Existing package-release workflows are unchanged.
++
++## Activate
++
++Apply this patch to a checkout that does not already contain these demo tools,
++commit and push it, then publish a new release whose tag contains the tools.
++GitHub will run **Release demo** for that tag. The workflow must be present in
++the tagged source. Its manual `release_tag` input can rebuild a compatible existing
++tag; it cannot retrofit old tags that lack the builder files.
++
++A release created using a repository's `GITHUB_TOKEN` may not trigger another
++workflow in the usual way. Such release automation should invoke the demo build
++as part of the same workflow, use an appropriately authorised app/PAT, or use
++manual workflow dispatch. Ordinary user-published releases trigger `published`.
++
++## Local build
++
++```sh
++python -m pip install .
++python tools/release_demo.py --version X.Y.Z --commit YOUR_COMMIT --output-dir dist/demo
++python -m pip install playwright
++python -m playwright install chromium
++python tools/render_release_demo.py dist/demo/DanceRudiments-demo-vX.Y.Z.html
++```
++
++The HTML generator needs the native library plus `clang++` and `wasm-ld`; the
++renderer additionally needs Playwright/Chromium. Generated HTML needs none of
++those tools, nor network access. Choose a version matching the installed package.
++The page displays its version, commit, count and source notices.
++
++This is a read-only native snapshot, not an editable authoring pack. Pack and score
++export controls are intentionally hidden. Comparison, personal review notes and
++local audio/BPM synchronisation remain available. 3D paths use an oblique projection
++and a separate Z curve. Motion starts paused and respects reduced-motion settings.
++
++By default the browser checks `file://` loading. An explicit `--in-memory` option
++supports environments that forbid file navigation; the manifest records the
++choice so it is not misreported as a file-navigation test.
++
++## Scope of the recovered patch
++
++The prior combined default-promotion/release-demo files were not retained in the
++current working environment. This patch independently restores release rendering;
++it does **not** claim to recover or apply the separate 43-default promotion change.
++The supplied renderer preview uses the intact earlier 28-pattern collection and
++is labelled as a preview fixture, not as the deployed default catalogue.
++
++References:
++- https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows
++- https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
++- https://cli.github.com/manual/gh_release_upload
++- https://cli.github.com/manual/gh_release_download
+diff --git a/tools/release_demo.py b/tools/release_demo.py
+new file mode 100644
+index 0000000..4de3cf2
+--- /dev/null
++++ b/tools/release_demo.py
+@@ -0,0 +1,132 @@
++#!/usr/bin/env python3
++"""Build a self-contained demo from the installed C++ catalogue of this checkout.
++
++First: python -m pip install .
++Then:  python tools/release_demo.py --version X.Y.Z --commit COMMIT --output-dir dist/demo
++Python assembles assets; every live movement position comes from C++/WebAssembly.
++"""
++from __future__ import annotations
++import argparse
++import base64
++from hashlib import sha256
++import html
++import importlib.metadata
++import json
++import math
++from pathlib import Path
++import re
++import subprocess
++import tempfile
++
++ROOT = Path(__file__).resolve().parents[1]
++ASSETS = ROOT / 'tools/release_demo_assets'
++SAMPLER = r'''
++#include "data.inc"
++extern "C" {
++int pattern_count() { return kCount; }
++int pattern_period(int i) { return i>=0 && i<kCount ? kPatterns[i].count : 0; }
++double sample_component(int i,int pip,int axis) {
++  if(i<0 || i>=kCount || axis<0 || axis>2) return __builtin_nan("");
++  const auto& p=kPatterns[i];int n=pip%p.count;if(n<0)n+=p.count;
++  return p.values[n][axis];
++}
++}
++'''
++
++def canonical(value):
++    return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False)
++
++def native_snapshot():
++    import dancerudiments as d
++    provenance={}
++    for path in sorted((ROOT/'python/dancerudiments_authoring/packs').glob('*.json')):
++        pack=json.loads(path.read_text(encoding='utf-8'))
++        for item in pack.get('patterns',[]):
++            if isinstance(item,dict) and 'name' in item: provenance[item['name']]=item
++    rows=[]
++    for info in d.catalogue():
++        name=info['name'];period=info['period_pips']
++        values=[list(d.sample(name,pip).as_tuple()) for pip in range(period)]
++        source=provenance.get(name,{})
++        if source and (source.get('samples')!=values or source.get('period_pips')!=period):
++            raise ValueError('Native/source table mismatch: '+name)
++        metadata=dict(source.get('provenance',{}))
++        metadata.setdefault('title',name.replace('_',' ').capitalize())
++        metadata.setdefault('family','Core')
++        metadata.setdefault('author','Kieran Simkin / DanceRudiments')
++        metadata.setdefault('license','See embedded release notices')
++        metadata.setdefault('source_kind','native-catalogue-export')
++        row=dict(name=name,description=info['description'],period_pips=period,samples=values,
++                 source_sha256=source.get('source_sha256') or sha256(canonical([info,values]).encode()).hexdigest(),
++                 provenance=metadata,diagnostics=source.get('diagnostics',{}))
++        rows.append(row)
++    return rows
++
++def validate(patterns):
++    if not isinstance(patterns,list) or not 1<=len(patterns)<=1024: raise ValueError('Invalid pattern count')
++    names=set();total=0
++    for p in patterns:
++        name=p.get('name')
++        if not isinstance(name,str) or not re.fullmatch('[a-z][a-z0-9_]{0,127}',name) or name in names:
++            raise ValueError('Invalid/duplicate pattern name')
++        names.add(name);n=p['period_pips']
++        if type(n) is not int or not 1<=n<=65535 or len(p['samples'])!=n:raise ValueError('Invalid period')
++        total+=n
++        if total>1048576:raise ValueError('Demo exceeds sample limit')
++        for row in p['samples']:
++            if len(row)!=3 or any(type(x) not in (int,float) or not math.isfinite(x) or abs(x)>1 for x in row):
++                raise ValueError('Invalid position')
++    return total
++
++def build_page(patterns, version, commit, output_dir, compiler='clang++', *, native=True, notices=''):
++    """The CLI always exports native defaults. Explicit fixture calls are labelled previews."""
++    total=validate(patterns)
++    if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+(?:[-+.][A-Za-z0-9.-]+)?',version):raise ValueError('Unsafe version')
++    if not re.fullmatch('[A-Za-z0-9+._-]{1,100}',commit):raise ValueError('Unsafe commit identifier')
++    output_dir=Path(output_dir);output_dir.mkdir(parents=True,exist_ok=True)
++    with tempfile.TemporaryDirectory() as temp:
++        folder=Path(temp);lines=['struct Pattern { const double (*values)[3]; int count; };',f'constexpr int kCount={len(patterns)};']
++        for i,p in enumerate(patterns):
++            lines.append(f'constexpr double values_{i}[{p["period_pips"]}][3]={{')
++            lines.extend('{'+','.join(format(v,'.17g') for v in row)+'},' for row in p['samples']);lines.append('};')
++        lines.append('constexpr Pattern kPatterns[]={')
++        lines.extend('{values_'+str(i)+','+str(p['period_pips'])+'},' for i,p in enumerate(patterns));lines.append('};')
++        (folder/'data.inc').write_text('\n'.join(lines),encoding='utf-8')
++        (folder/'sampler.cpp').write_text(SAMPLER,encoding='utf-8')
++        wasm=folder/'demo.wasm'
++        subprocess.run([compiler,'--target=wasm32','-std=c++17','-O2','-nostdlib','-fno-exceptions','-fno-rtti',
++                        str(folder/'sampler.cpp'),'-Wl,--no-entry','-Wl,--strip-all','-Wl,--export=pattern_count',
++                        '-Wl,--export=pattern_period','-Wl,--export=sample_component','-o',str(wasm)],check=True)
++        raw=wasm.read_bytes()
++    kind='native-default-catalogue' if native else 'renderer-preview-fixture'
++    payload=dict(collection_id='release-'+version,version=version,source_commit=commit,source_kind=kind,
++                 pack=dict(format='dancerudiments.demo-snapshot',schema_version=1,pips_per_beat=64,patterns=patterns),
++                 score=dict(patterns=[]),notices=notices,wasm=base64.b64encode(raw).decode())
++    payload['pack_sha256']=sha256(canonical(payload['pack']).encode()).hexdigest()
++    note=('All movements in the default catalogue of this release. Personal review choices do not change the library.' if native else
++          'Renderer preview using the previously delivered 28-pattern collection; not a claim about the current default catalogue.')
++    page=(ASSETS/'template.html').read_text(encoding='utf-8')
++    for key,val in [('__VERSION__',version),('__COUNT__',str(len(patterns))),('__COMMIT__',commit),('__BUILD_NOTE__',note)]:
++        page=page.replace(key,html.escape(val))
++    page=page.replace('/*__STYLE__*/',(ASSETS/'style.css').read_text(encoding='utf-8'))
++    page=page.replace('/*__APP__*/',(ASSETS/'app.js').read_text(encoding='utf-8'))
++    page=page.replace('__PAYLOAD__',canonical(payload).replace('<','\\u003c'))
++    path=output_dir/('DanceRudiments-demo-v'+version+'.html');path.write_text(page,encoding='utf-8')
++    manifest=dict(version=version,source_commit=commit,source_kind=kind,pattern_count=len(patterns),sample_count=total,
++                  names=[p['name'] for p in patterns],pack_sha256=payload['pack_sha256'],wasm_sha256=sha256(raw).hexdigest(),
++                  html_sha256=sha256(path.read_bytes()).hexdigest())
++    path.with_suffix('.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
++    print(str(path));return path
++
++def main():
++    parser=argparse.ArgumentParser(description=__doc__)
++    parser.add_argument('--version',required=True);parser.add_argument('--commit',required=True)
++    parser.add_argument('--output-dir',type=Path,default=ROOT/'dist/demo');parser.add_argument('--compiler',default='clang++')
++    args=parser.parse_args()
++    try:
++        if importlib.metadata.version('dancerudiments')!=args.version:raise ValueError('Installed package version does not match release')
++        files=[ROOT/'LICENSE']+sorted((ROOT/'collections').glob('**/THIRD_PARTY_NOTICES.md'))+sorted((ROOT/'collections').glob('**/sources/*/LICENSE'))
++        notices='\n\n'.join('# '+str(p.relative_to(ROOT))+'\n\n'+p.read_text(encoding='utf-8') for p in files if p.is_file())
++        build_page(native_snapshot(),args.version,args.commit,args.output_dir,args.compiler,notices=notices)
++    except (ValueError,OSError,ImportError,subprocess.CalledProcessError) as exc:parser.exit(1,str(exc)+'\n')
++if __name__=='__main__':main()
+diff --git a/tools/release_demo_assets/app.js b/tools/release_demo_assets/app.js
+new file mode 100644
+index 0000000..d7b5dfd
+--- /dev/null
++++ b/tools/release_demo_assets/app.js
+@@ -0,0 +1,335 @@
++'use strict';
++(() => {
++  const $ = id => document.getElementById(id);
++  const data = JSON.parse($('data').textContent);
++  const patterns = data.pack.patterns;
++  const phrasePips = Math.max(...patterns.map(p => p.period_pips));
++  $('seek').max = phrasePips - 1;
++  const project = v => [v[0]+.25*v[2], v[1]-.2*v[2]];
++  const STORAGE = 'dancerudiments-review:' + data.collection_id + ':' + data.pack_sha256;
++  const names = new Map(patterns.map((p, i) => [p.name, i]));
++  const reviews = new Map(patterns.map(p => [p.name, {status: 'keep', note: ''}]));
++  const compared = new Set();
++  let native, plots = [], baseBeat = 0, origin = performance.now(), running = false;
++  let bpm = 120, amplitude = .7, dirty = true, audioURL = null, storageOK = true;
++  const audio = $('audio');
++  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
++
++  function message(text, error = false) {
++    $('status').textContent = text;
++    $('status').style.color = error ? '#ffb8b8' : '';
++  }
++  function reviewDocument() {
++    return {format: 'dancerudiments.review', schema_version: 1,
++      collection_id: data.collection_id, pack_sha256: data.pack_sha256,
++      choices: patterns.map(p => ({name: p.name, source_sha256: p.source_sha256, ...reviews.get(p.name)}))};
++  }
++  function validateReview(doc) {
++    if (!doc || doc.format !== 'dancerudiments.review' || doc.schema_version !== 1 ||
++        doc.collection_id !== data.collection_id || doc.pack_sha256 !== data.pack_sha256 ||
++        !Array.isArray(doc.choices) || doc.choices.length > patterns.length)
++      throw new Error('This review does not match this exact collection revision.');
++    const found = new Set(), validated = new Map();
++    for (const c of doc.choices) {
++      if (!c || !names.has(c.name) || found.has(c.name) ||
++          c.source_sha256 !== patterns[names.get(c.name)].source_sha256 ||
++          !['unreviewed','keep','maybe','skip'].includes(c.status) ||
++          typeof c.note !== 'string' || c.note.length > 2000)
++        throw new Error('Invalid, duplicate, or changed review entry. Nothing was imported.');
++      found.add(c.name); validated.set(c.name, {status:c.status, note:c.note});
++    }
++    return validated;
++  }
++  function importReview(doc) {
++    const values = validateReview(doc);
++    for (const p of patterns) reviews.set(p.name, values.get(p.name) || {status:'unreviewed',note:''});
++    save(); render(); message('Review imported. No pattern data were changed.');
++  }
++  function save() {
++    try { localStorage.setItem(STORAGE, JSON.stringify(reviewDocument())); }
++    catch (_) { storageOK=false; message('Browser storage is unavailable. Use Export review to save your choices.',true); }
++  }
++  try {
++    const saved = localStorage.getItem(STORAGE);
++    if (saved) {
++      for (const [name,value] of validateReview(JSON.parse(saved))) reviews.set(name,value);
++    }
++  } catch (_) { storageOK=false; }
++
++  function beatNow() {
++    if (audioURL) return (audio.currentTime - Number($('offset').value || 0)) * bpm / 60;
++    return baseBeat + (running ? (performance.now()-origin)*bpm/60000 : 0);
++  }
++  function setBeat(value) {
++    if (!Number.isFinite(value)) throw new Error('Beat must be finite');
++    if (audioURL) {
++      const time = Number($('offset').value || 0) + value*60/bpm;
++      if (Number.isFinite(audio.duration)) audio.currentTime=Math.max(0,Math.min(audio.duration,time));
++    } else { baseBeat=value; origin=performance.now(); }
++    dirty=true;
++  }
++  function updatePlay() { $('play').textContent=running ? 'Pause' : 'Play'; }
++  function pause() {
++    baseBeat=beatNow(); running=false; audio.pause(); updatePlay(); dirty=true;
++  }
++  async function play() {
++    if (!native) return;
++    if (audioURL) {
++      try { await audio.play(); }
++      catch (error) { message('Audio could not play: '+error.message,true); return; }
++    } else { origin=performance.now(); running=true; updatePlay(); }
++    dirty=true;
++  }
++  $('play').onclick=() => running ? pause() : play();
++  $('reset').onclick=() => { setBeat(0); dirty=true; };
++  $('back').onclick=() => { pause(); setBeat((Math.floor(beatNow()*64+1e-8)-1)/64); };
++  $('forward').onclick=() => { pause(); setBeat((Math.floor(beatNow()*64+1e-8)+1)/64); };
++  $('bpm').onchange=() => {
++    const next=Number($('bpm').value);
++    if (!Number.isFinite(next) || next<30 || next>240) { $('bpm').value=bpm; return; }
++    baseBeat=beatNow(); origin=performance.now(); bpm=next; dirty=true;
++  };
++  $('amplitude').oninput=() => { amplitude=Number($('amplitude').value)/100; $('amp-label').textContent=Math.round(amplitude*100)+'%'; dirty=true; };
++  $('trails').onchange=() => { for (const p of plots) p.background=null; dirty=true; };
++  $('seek').oninput=() => setBeat(Number($('seek').value)/64);
++  $('offset').onchange=() => { if (!Number.isFinite(Number($('offset').value))) $('offset').value=0; dirty=true; };
++  audio.addEventListener('play',() => { running=true; updatePlay(); dirty=true; });
++  audio.addEventListener('pause',() => { running=false; updatePlay(); dirty=true; });
++  audio.addEventListener('ended',() => { running=false; updatePlay(); dirty=true; });
++  audio.addEventListener('seeked',() => { dirty=true; });
++  audio.addEventListener('error',() => message('This browser could not decode the selected audio file.',true));
++  $('audio-file').onchange=() => {
++    const file=$('audio-file').files[0]; if (!file) return;
++    pause(); if (audioURL) URL.revokeObjectURL(audioURL);
++    audioURL=URL.createObjectURL(file); audio.src=audioURL;
++    message('Local audio loaded. Set its BPM and beat-zero offset, then press Play.');
++  };
++  $('clear-audio').onclick=() => {
++    const current=beatNow(); pause();
++    if (audioURL) URL.revokeObjectURL(audioURL);
++    audioURL=null; audio.removeAttribute('src'); audio.load(); $('audio-file').value='';
++    baseBeat=current; origin=performance.now(); dirty=true; message('Audio removed. Using the internal musical clock.');
++  };
++  reducedMotion.addEventListener('change', e => { if (e.matches) { pause(); message('Reduced motion enabled. Playback paused; manual stepping remains available.'); } });
++  document.addEventListener('visibilitychange',() => { if (document.hidden && !audioURL) pause(); });
++  window.addEventListener('resize',() => { dirty=true; });
++
++  function node(tag,className,text) {
++    const n=document.createElement(tag); if (className) n.className=className;
++    if (text !== undefined) n.textContent=text; return n;
++  }
++  function setStatus(name,status) {
++    if (!names.has(name) || !['unreviewed','keep','maybe','skip'].includes(status)) throw new Error('Invalid review choice');
++    reviews.get(name).status=status; save(); render();
++  }
++  function showDetail(title,body) {
++    $('detail-title').textContent=title; $('detail-body').textContent=body;
++    $('details').showModal();
++  }
++  $('close-details').onclick=() => $('details').close();
++  $('notices').onclick=() => showDetail('Sources & licences',data.notices);
++  $('details').addEventListener('click', e => { if (e.target===$('details')) $('details').close(); });
++
++  function card(i,comparison=false) {
++    const p=patterns[i], meta=p.provenance;
++    const c=node('article','card'); c.dataset.name=p.name;
++    const head=node('div','card-head');
++    const id=node('div','card-id'); id.append(node('span','',meta.family),node('span','period',(p.period_pips/64)+' beats'));
++    head.append(id,node('h3','',meta.title)); c.append(head);
++    const stage=node('canvas','stage'), wave=node('canvas','wave');
++    stage.setAttribute('aria-label',meta.title+' motion preview');
++    wave.setAttribute('aria-label','X and Y position curves over one cycle');
++    c.append(stage,wave); plots.push({i,stage,wave,background:null,amp:-1});
++    const body=node('div','card-body'); body.append(node('p','desc',p.description));
++    if (!comparison) {
++      const buttons=node('div','review-buttons');
++      for (const [value,label] of [['keep','Keep'],['maybe','Maybe'],['skip','Skip']]) {
++        const b=node('button',value,label); b.setAttribute('aria-pressed',reviews.get(p.name).status===value?'true':'false');
++        b.onclick=() => setStatus(p.name,reviews.get(p.name).status===value?'unreviewed':value); buttons.append(b);
++      }
++      body.append(buttons);
++    }
++    const bottom=node('div','card-bottom');
++    const compareLabel=node('label','', ''); const check=node('input'); check.type='checkbox'; check.checked=compared.has(i);
++    check.setAttribute('aria-label','Compare '+meta.title);
++    check.onchange=() => {
++      if (check.checked && compared.size>=4) { check.checked=false; message('Compare up to four candidates at a time.',true); return; }
++      check.checked ? compared.add(i) : compared.delete(i); render();
++    };
++    compareLabel.append(check,document.createTextNode('Compare'));
++    const source=node('button','source-button',meta.license+' · Details');
++    source.onclick=() => showDetail(meta.title,JSON.stringify({name:p.name,source_sha256:p.source_sha256,
++                       provenance:meta,diagnostics:p.diagnostics},null,2));
++    bottom.append(compareLabel,source); body.append(bottom);
++    if (!comparison) {
++      const note=node('input','note'); note.type='text'; note.placeholder='Your note…';note.maxLength=2000;
++      note.value=reviews.get(p.name).note; note.setAttribute('aria-label','Note for '+meta.title);
++      note.oninput=() => { reviews.get(p.name).note=note.value; save(); };
++      body.append(note);
++    }
++    c.append(body); return c;
++  }
++  function matches(p) {
++    const family=$('family').value, status=$('review').value, search=$('search').value.trim().toLowerCase();
++    return (!family || p.provenance.family===family) && (!status || reviews.get(p.name).status===status) &&
++       (!search || [p.name,p.description,p.provenance.title,p.provenance.author].join(' ').toLowerCase().includes(search));
++  }
++  function render() {
++    plots=[]; $('grid').replaceChildren(); $('compare-grid').replaceChildren();
++    let visible=0;
++    patterns.forEach((p,i) => { if (matches(p)) { $('grid').append(card(i)); visible++; } });
++    for (const i of compared) $('compare-grid').append(card(i,true));
++    $('comparison').hidden=compared.size===0;
++    $('empty').hidden=visible!==0;
++    $('visible').textContent=`${visible} of ${patterns.length} candidates`;
++    const counts={keep:0,maybe:0,skip:0,unreviewed:0};
++    for (const r of reviews.values()) counts[r.status]++;
++    $('counts').textContent=`${counts.keep} kept · ${counts.maybe} maybe · ${counts.skip} skipped`;
++    $('export-pack').disabled=$('export-score').disabled=true;
++    dirty=true;
++  }
++  for (const family of [...new Set(patterns.map(p=>p.provenance.family))]) {
++    const o=node('option','',family);o.value=family; $('family').append(o);
++  }
++  for (const id of ['family','review','search']) $(id).addEventListener('input',render);
++  $('clear-compare').onclick=() => { compared.clear();render(); };
++  $('clear-review').onclick=() => {
++    if (confirm('Clear all Keep / Maybe / Skip choices and notes? Export your review first to save a copy.')) {
++      for (const p of patterns) reviews.set(p.name,{status:'unreviewed',note:''}); save();render();
++    }
++  };
++
++  function selectedPack() {
++    throw new Error('Release demos are read-only native snapshots; use repository authoring data.');
++    const kept=patterns.filter(p=>reviews.get(p.name).status==='keep');
++    if (!kept.length) throw new Error('Mark at least one candidate Keep.');
++    return {...data.pack,patterns:kept};
++  }
++  function selectedScores() {
++    throw new Error('Release demos are read-only native snapshots; use repository authoring data.');
++    const kept=data.score.patterns.filter(p=>reviews.get(p.name).status==='keep');
++    if (!kept.length) throw new Error('Mark at least one candidate Keep.');
++    return {...data.score,patterns:kept};
++  }
++  function download(filename,doc) {
++    const url=URL.createObjectURL(new Blob([JSON.stringify(doc,null,2)+'\n'],{type:'application/json'}));
++    const a=document.createElement('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();
++    setTimeout(()=>URL.revokeObjectURL(url),1000);
++  }
++  $('export-choices').onclick=() => download('DanceRudiments-initial-review.json',reviewDocument());
++  $('export-pack').onclick=() => download('DanceRudiments-chosen.compiled.json',selectedPack());
++  $('export-score').onclick=() => download('DanceRudiments-chosen.score.json',selectedScores());
++  $('import-choices').onchange=async () => {
++    const file=$('import-choices').files[0];if (!file) return;
++    try {
++      if (file.size>1024*1024) throw new Error('Review exceeds 1 MiB.');
++      importReview(JSON.parse(await file.text()));
++    } catch (error) { message(error.message,true); }
++    $('import-choices').value='';
++  };
++
++  function sizeCanvas(canvas) {
++    const box=canvas.getBoundingClientRect();
++    const dpr=Math.min(devicePixelRatio||1,2);
++    const w=Math.max(1,Math.round(box.width*dpr)), h=Math.max(1,Math.round(box.height*dpr));
++    if (canvas.width!==w || canvas.height!==h) { canvas.width=w;canvas.height=h;return true; }
++    return false;
++  }
++  function sample(i,pip) {
++    if (!native) throw new Error('Native sampler not ready');
++    if (!Number.isInteger(i) || i<0 || i>=patterns.length || !Number.isInteger(pip) || pip < -2147483648 || pip > 2147483647)
++      throw new Error('Invalid native sample index or int32 pip');
++    return [0,1,2].map(axis=>native.sample_component(i,pip,axis));
++  }
++  const curves=[];
++  function makeBackground(plot) {
++    const {stage,wave,i}=plot, w=stage.width,h=stage.height;
++    const dpr=Math.min(devicePixelRatio||1,2), scale=Math.min(w*.38,h*.4)*amplitude;
++    const bg=document.createElement('canvas');bg.width=w;bg.height=h;
++    const ctx=bg.getContext('2d');ctx.fillStyle='#111923';ctx.fillRect(0,0,w,h);
++    ctx.strokeStyle='#273449';ctx.lineWidth=dpr*.65;ctx.setLineDash([3*dpr,5*dpr]);
++    ctx.beginPath();ctx.moveTo(w/2,12*dpr);ctx.lineTo(w/2,h-12*dpr);ctx.moveTo(14*dpr,h/2);ctx.lineTo(w-14*dpr,h/2);ctx.stroke();ctx.setLineDash([]);
++    if ($('trails').checked) {
++      ctx.strokeStyle='#556c83';ctx.lineWidth=dpr;ctx.beginPath();
++      curves[i].forEach((v,j)=>{const q=project(v),x=w/2+q[0]*scale,y=h/2+q[1]*scale;j?ctx.lineTo(x,y):ctx.moveTo(x,y);});
++      ctx.closePath();ctx.stroke();
++    }
++    ctx.fillStyle='#6b8098';ctx.font=`${10*dpr}px system-ui`;ctx.fillText('−X',9*dpr,h/2-7*dpr);ctx.fillText('+X',w-24*dpr,h/2-7*dpr);
++    plot.background=bg;plot.scale=scale;plot.amp=amplitude;
++    const wb=document.createElement('canvas');wb.width=wave.width;wb.height=wave.height;
++    const wc=wb.getContext('2d');wc.fillStyle='#111923';wc.fillRect(0,0,wb.width,wb.height);
++    const period=patterns[i].period_pips;
++    wc.strokeStyle='#2b374a';wc.lineWidth=dpr*.6;
++    for (let p=0;p<=period;p+=64) { const x=p/period*wb.width;wc.beginPath();wc.moveTo(x,0);wc.lineTo(x,wb.height);wc.stroke(); }
++    ['#bcacf8','#83e8d0', ...(curves[i].some(v=>v[2]!==0)?['#eab769']:[])].forEach((color,axis) => {
++      wc.strokeStyle=color;wc.lineWidth=dpr;wc.beginPath();
++      for(let j=0;j<=period;j++) {
++        const x=j/period*wb.width,y=wb.height/2-curves[i][j%period][axis]*(wb.height*.38);
++        j?wc.lineTo(x,y):wc.moveTo(x,y);
++      } wc.stroke();
++    });
++    if (patterns[i].provenance.event_markers) {
++      wc.fillStyle='#eab769';
++      for(const m of patterns[i].provenance.event_markers) {
++        const v=m.beat.split('/').map(Number),b=v[0]/(v[1]||1);
++        wc.fillRect(b/(period/64)*wb.width,wb.height-3*dpr,Math.max(1,dpr),3*dpr);
++      }
++    }
++    plot.waveBackground=wb;
++  }
++  function draw(beat=beatNow()) {
++    if (!native) return;
++    const absolutePip=Math.floor(beat*64+1e-8);
++    const pip=absolutePip;
++    $('clock').textContent=`Beat ${Math.floor(beat)+1} · pip ${((absolutePip%64)+64)%64}`;
++    $('seek').value=((pip%phrasePips)+phrasePips)%phrasePips;
++    for (const plot of plots) {
++      const resized=sizeCanvas(plot.stage)|sizeCanvas(plot.wave);
++      if (resized || !plot.background || plot.amp!==amplitude) makeBackground(plot);
++      const {stage,wave,i}=plot;
++      const ctx=stage.getContext('2d');ctx.drawImage(plot.background,0,0);
++      const dpr=Math.min(devicePixelRatio||1,2), scale=plot.scale;
++      if ($('trails').checked) {
++        for(let back=24;back>=4;back-=4) {
++          const v=sample(i,pip-back);ctx.globalAlpha=.08+(1-back/28)*.35;ctx.fillStyle='#83e8d0';
++          ctx.beginPath();ctx.arc(stage.width/2+project(v)[0]*scale,stage.height/2+project(v)[1]*scale,2.5*dpr,0,Math.PI*2);ctx.fill();
++        } ctx.globalAlpha=1;
++      }
++      const v=sample(i,pip),q=project(v),x=stage.width/2+q[0]*scale,y=stage.height/2+q[1]*scale;
++      ctx.fillStyle='#83e8d0';ctx.beginPath();ctx.arc(x,y,6*dpr,0,Math.PI*2);ctx.fill();
++      ctx.strokeStyle='#d3fff1';ctx.lineWidth=dpr;ctx.stroke();
++      ctx.fillStyle='#9db0c8';ctx.font=`${10*dpr}px ui-monospace,monospace`;
++      ctx.fillText(`x ${v[0].toFixed(2)}   y ${v[1].toFixed(2)}   z ${v[2].toFixed(2)}`,10*dpr,stage.height-9*dpr);
++      const wc=wave.getContext('2d');wc.drawImage(plot.waveBackground,0,0);
++      const local=((pip%patterns[i].period_pips)+patterns[i].period_pips)%patterns[i].period_pips;
++      wc.strokeStyle='#edf5ff';wc.lineWidth=dpr;wc.beginPath();
++      wc.moveTo(local/patterns[i].period_pips*wave.width,0);wc.lineTo(local/patterns[i].period_pips*wave.width,wave.height);wc.stroke();
++    }
++    dirty=false;
++  }
++  function frame() { if (running || dirty) draw(); requestAnimationFrame(frame); }
++  // Small documented test/debug surface; never runs user-provided code.
++  window.audition={ready:false, sample, setBeat:(b)=>{pause();setBeat(b);draw();},
++    review:reviewDocument,importReview,setStatus,selectedPack,selectedScores,
++    compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
++       compared.clear();ids.forEach(n=>compared.add(names.get(n)));render();},
++    state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly'}),
++    packSha256:data.pack_sha256};
++  render();
++  (async () => {
++    try {
++      const bytes=Uint8Array.from(atob(data.wasm),c=>c.charCodeAt(0));
++      const result=await WebAssembly.instantiate(bytes,{});native=result.instance.exports;
++      if (native.pattern_count()!==patterns.length || patterns.some((p,i)=>native.pattern_period(i)!==p.period_pips))
++        throw new Error('Native bank does not match the embedded collection');
++      patterns.forEach((p,i)=>curves.push(Array.from({length:p.period_pips},(_,pip)=>sample(i,pip))));
++      window.audition.ready=true; $('engine').textContent='C++ / WASM · offline'; $('play').disabled=false;
++      if (!storageOK) message('Browser storage is unavailable; export your review to save it.',true);
++      else if (reducedMotion.matches) message('Reduced motion: starting paused. Use pip stepping or choose Play explicitly.');
++      dirty=true;requestAnimationFrame(frame);
++    } catch(error) {
++      $('engine').textContent='Native sampler unavailable';
++      message('Preview could not start: '+error.message+'. No JavaScript movement fallback is used.',true);
++    }
++  })();
++})();
+diff --git a/tools/release_demo_assets/style.css b/tools/release_demo_assets/style.css
+new file mode 100644
+index 0000000..71a1ec2
+--- /dev/null
++++ b/tools/release_demo_assets/style.css
+@@ -0,0 +1,6 @@
++:root{color-scheme:dark;--bg:#10141b;--panel:#191f2b;--line:#30394b;--muted:#a4b0c3;--ink:#f2f5fb;--accent:#83e8d0;--keep:#83e8d0;--maybe:#f5c878;--skip:#c3a4ba}
++*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}header,main,footer,.transport{max-width:1500px;margin:auto;padding:28px 36px}header{padding-top:40px;padding-bottom:18px}.eyebrow{font-size:11px;letter-spacing:.18em;color:var(--accent);font-weight:700}.heading{display:flex;align-items:center;justify-content:space-between;gap:20px}h1{font-size:clamp(29px,3.2vw,45px);letter-spacing:-.035em;margin:9px 0 3px;line-height:1.2}h2{font-size:19px;margin:0;letter-spacing:-.015em}h3{font-size:17px;margin:0;line-height:1.3}.subtitle{color:var(--muted);margin:0;font-size:15px}.intro{max-width:950px;color:var(--muted);margin-bottom:0}.badge{padding:6px 11px;border:1px solid var(--line);border-radius:30px;white-space:nowrap;color:var(--accent);font-size:12px}.transport{background:#151b25;border-block:1px solid var(--line);padding-top:18px;padding-bottom:12px}main{padding-top:20px}.row{display:flex;align-items:center;gap:10px 16px;flex-wrap:wrap}.row+.row{margin-top:12px}.row label{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}input,button,select,.file-label{font:inherit;border:1px solid #3a465c;border-radius:7px;color:var(--ink);background:#1c2533}button,.file-label{padding:7px 12px;cursor:pointer;line-height:1.4}button:hover,.file-label:hover{background:#2a3547;border-color:#718098}button:disabled{opacity:.38;cursor:not-allowed}.primary{background:var(--accent);border-color:var(--accent);color:#122e29;font-weight:700;min-width:80px}.primary:hover{color:var(--ink)}input[type=number]{width:80px;padding:6px}input[type=search]{padding:7px;width:100%;min-width:120px}select{padding:7px}input[type=range]{accent-color:var(--accent);padding:0;max-width:170px}input[type=checkbox]{accent-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,.file-label:focus-within{outline:2px solid var(--accent);outline-offset:3px}.file-label{position:relative;overflow:hidden;display:inline-flex!important;color:var(--ink)!important}.file-label input[type=file]{position:absolute;width:100%;height:100%;inset:0;opacity:0;cursor:pointer}.seek{flex:1;min-width:210px}.seek input{max-width:none;width:100%}#clock{margin-left:auto;color:var(--accent);font-variant-numeric:tabular-nums;font-size:13px;min-width:125px}.small{font-size:12px;color:var(--muted)}details{margin-top:10px;color:var(--muted);font-size:13px}summary{cursor:pointer}.audio-row{margin-top:10px}audio{height:35px;max-width:100%}#offset{width:90px}.filters{margin-bottom:20px}.search{flex:1}#status{min-height:18px;margin:10px 0 0}.subtle{color:var(--muted)}.section-label{justify-content:space-between;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.card{background:var(--panel);border:1px solid var(--line);border-radius:13px;overflow:hidden;min-width:0}.card-head{padding:16px 16px 10px}.card-id{display:flex;justify-content:space-between;gap:4px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}.period{color:#dbe5f2}.stage{width:100%;height:165px;display:block;background:#111923}.wave{width:100%;height:49px;display:block;background:#111923;border-top:1px solid #222f40}.card-body{padding:11px 16px 14px}.desc{font-size:12px;color:var(--muted);min-height:54px;margin:0 0 10px}.review-buttons{display:flex;gap:6px}.review-buttons button{font-size:12px;flex:1;padding:6px}.review-buttons button[aria-pressed=true]{font-weight:700;color:#0d2924;background:var(--keep);border-color:var(--keep)}.review-buttons .maybe[aria-pressed=true]{background:var(--maybe);border-color:var(--maybe);color:#352814}.review-buttons .skip[aria-pressed=true]{background:var(--skip);border-color:var(--skip);color:#30202b}.card-bottom{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-top:11px;font-size:12px}.card-bottom label{color:var(--muted);display:flex;align-items:center;gap:5px}.source-button{border:0;padding:3px 0;background:none;color:var(--accent);font-size:11px;text-decoration:underline;text-underline-offset:3px}.note{width:100%;margin-top:10px;padding:5px 7px;font-size:11px;border-color:#303b50}.comparison{border:1px solid #475d6c;border-radius:12px;padding:18px;margin-bottom:22px;background:#131d28}.comparison>.row{margin-bottom:15px}#compare-grid{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}#compare-grid .stage{height:205px}#compare-grid .desc{min-height:0}footer{margin-top:24px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;padding-bottom:35px}footer p{max-width:1080px}footer strong{color:var(--ink)}dialog{background:#151c27;color:var(--ink);border:1px solid #54617a;border-radius:12px;max-width:min(850px,94vw);max-height:85vh;padding:22px}dialog::backdrop{background:#070c13bd}dialog .row{justify-content:space-between}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace;color:#c7d4e5}#empty{color:var(--muted)}[hidden]{display:none!important}
++@media(max-width:1150px){.grid{grid-template-columns:repeat(3,minmax(0,1fr))}header,main,footer,.transport{padding-left:24px;padding-right:24px}.heading{align-items:flex-start}#engine{white-space:normal;max-width:160px}}
++@media(max-width:830px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.desc{min-height:60px}#clock{margin-left:0}.heading{display:block}#engine{display:inline-block;max-width:none;margin-top:12px}}
++@media(max-width:520px){.grid{grid-template-columns:1fr}header,main,footer,.transport{padding-left:16px;padding-right:16px}.row{gap:9px}.search{flex-basis:100%}.desc{min-height:0}.stage{height:200px}.comparison{padding:10px}.transport input[type=range]{max-width:130px}.seek input{max-width:none!important}.card-head{padding-top:14px}input,select,button{max-width:100%}}
++@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+diff --git a/tools/release_demo_assets/template.html b/tools/release_demo_assets/template.html
+new file mode 100644
+index 0000000..ed1341e
+--- /dev/null
++++ b/tools/release_demo_assets/template.html
+@@ -0,0 +1,47 @@
++<!doctype html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
++<title>DanceRudiments — v__VERSION__ release demo</title><style>/*__STYLE__*/
++[hidden]{display:none!important;} header code{overflow-wrap:anywhere;}</style></head>
++<body>
++<header>
++  <div class="eyebrow">DANCEFLOW / MOTION VOCABULARY</div>
++  <div class="heading"><div><h1>DanceRudiments in motion.</h1><p class="subtitle">v__VERSION__ · __COUNT__ movements · one shared musical clock</p></div><span id="engine" class="badge">Loading native sampler…</span></div>
++  <p class="intro">__BUILD_NOTE__ Source commit: <code>__COMMIT__</code>. These are position offsets, not full-body dance animations.</p>
++</header>
++<section class="transport" aria-label="Playback controls">
++  <div class="row"><button id="play" class="primary" disabled>Play</button><button id="reset" title="Reset musical phase">Restart</button>
++    <button id="back" title="Previous pip">−1 pip</button><button id="forward" title="Next pip">+1 pip</button>
++    <label>BPM <input id="bpm" type="number" min="30" max="240" step="1" value="120"></label>
++    <label>Size <input id="amplitude" type="range" min="10" max="100" value="70"><output id="amp-label">70%</output></label>
++    <label><input id="trails" type="checkbox" checked>Show paths</label>
++    <output id="clock">Beat 1 · pip 0</output></div>
++  <div class="row"><label class="seek">Phrase <input id="seek" type="range" min="0" max="511" step="1" value="0"></label>
++    <span class="small">64 pips per quarter note · each pattern keeps its own loop length</span></div>
++  <details><summary>Play against your own track</summary><div class="row audio-row">
++    <label class="file-label">Choose audio <input id="audio-file" type="file" accept="audio/*"></label>
++    <audio id="audio" controls preload="metadata"></audio>
++    <label>Beat-zero offset (seconds) <input id="offset" type="number" step="0.01" value="0"></label>
++    <button id="clear-audio">Remove audio</button></div>
++    <p class="small">Your file stays in this browser. Set BPM and the time of beat zero manually; this gallery does not analyse the track. Playback follows the audio clock, including seeking. No source recordings or click sounds are bundled.</p></details>
++</section>
++<main>
++<section class="filters" aria-label="Candidate filters">
++  <div class="row"><label>Family <select id="family"><option value="">All families</option></select></label>
++    <label>Review <select id="review"><option value="">All statuses</option><option value="keep">Keep</option><option value="maybe">Maybe</option><option value="skip">Skip</option><option value="unreviewed">Not reviewed</option></select></label>
++    <label class="search">Search <input id="search" type="search" placeholder="Name, source, movement…"></label>
++    <span id="counts" class="badge">0 kept</span></div>
++  <div class="row"><button id="export-choices">Export review</button><label class="file-label">Import review <input id="import-choices" type="file" accept=".json,application/json"></label>
++    <button id="export-pack" hidden disabled>Export kept pack</button><button id="export-score" hidden disabled>Export kept scores</button>
++    <button id="notices">Sources & licences</button><button id="clear-review" class="subtle">Clear review</button></div>
++  <p id="status" class="small" role="status">Starting paused. Press Play to audition. Reviews are saved locally where browser storage is available.</p>
++</section>
++<section id="comparison" class="comparison" hidden><div class="row"><h2>Side-by-side comparison</h2><span class="small">Same phase, BPM and scale. Select up to four cards.</span><button id="clear-compare">Clear comparison</button></div><div id="compare-grid" class="grid"></div></section>
++<div class="row section-label"><h2>Movement catalogue</h2><span id="visible" class="small"></span></div>
++<section id="grid" class="grid" aria-label="Motion candidates"></section>
++<p id="empty" hidden>No movements match these filters.</p>
++</main>
++<footer><strong>DanceRudiments · Kieran Simkin</strong><p>The release builder reads the tagged native catalogue. A bundled C++/WebAssembly sampler supplies every live position. No JavaScript movement fallback. All dots use the same coordinate frame and scale; +Y is down. 3D paths use an oblique projection and show a separate Z curve.</p><p>Keep, Maybe and Skip are personal review choices, not licence decisions. Attribution is embedded in this snapshot. Editable scores remain in the repository. Reduced-motion preferences are respected: nothing starts automatically.</p></footer>
++<dialog id="details"><div class="row"><h2 id="detail-title"></h2><button id="close-details" aria-label="Close details">Close</button></div><pre id="detail-body"></pre></dialog>
++<script type="application/json" id="data">__PAYLOAD__</script>
++<script>/*__APP__*/</script>
++</body></html>
+diff --git a/tools/render_release_demo.py b/tools/render_release_demo.py
+new file mode 100644
+index 0000000..77e3ac1
+--- /dev/null
++++ b/tools/render_release_demo.py
+@@ -0,0 +1,69 @@
++#!/usr/bin/env python3
++"""Render actual release HTML; verify every WASM sample and seal versioned assets."""
++import argparse
++from hashlib import sha256
++import json
++from pathlib import Path
++import re
++import zipfile
++from playwright.sync_api import sync_playwright
++
++def render(path,chromium=None,in_memory=False):
++    path=Path(path).resolve();manifest=json.loads(path.with_suffix('.json').read_text());checks=[]
++    def check(value,label):
++        if not value:raise AssertionError(label)
++        checks.append(label)
++    check(sha256(path.read_bytes()).hexdigest()==manifest['html_sha256'],'HTML integrity')
++    with sync_playwright() as p:
++        opts=dict(headless=True,args=['--no-sandbox','--mute-audio'])
++        if chromium:opts['executable_path']=chromium
++        browser=p.chromium.launch(**opts);page=browser.new_page(viewport=dict(width=1440,height=1050),reduced_motion='reduce')
++        errors=[];requests=[];page.on('pageerror',lambda e:errors.append(str(e)))
++        def deny(route):requests.append(route.request.url);route.abort()
++        page.route(re.compile('^https?://'),deny)
++        if in_memory:page.set_content(path.read_text(encoding='utf-8'))
++        else:page.goto(path.as_uri())
++        page.wait_for_function('window.audition && audition.ready',timeout=30000)
++        check(page.locator('#grid .card').count()==manifest['pattern_count'],'All catalogue entries render')
++        check(not page.evaluate('audition.state().running'),'Starts paused')
++        check(page.locator('#export-pack').is_hidden(),'Snapshot export is not misrepresented as an editable pack')
++        comparisons=page.evaluate('''() => {
++          const data=JSON.parse(document.getElementById('data').textContent);let count=0;
++          data.pack.patterns.forEach((p,i)=>{
++            for(let pip=-p.period_pips;pip<p.period_pips;pip++) {
++              const a=audition.sample(i,pip),b=p.samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
++              if(a.some((v,j)=>v!==b[j]))throw Error('Sample mismatch '+p.name+' '+pip);count+=3;
++            }
++            for(const pip of [-2147483648,2147483647]) {
++              const a=audition.sample(i,pip),b=p.samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
++              if(a.some((v,j)=>v!==b[j]))throw Error('Extreme pip mismatch '+p.name);count+=3;
++            }
++          });return count;
++        }''')
++        check(comparisons>0,'Exact native-snapshot/WASM sample equality')
++        page.evaluate('audition.setBeat(11.25)');check(page.evaluate('audition.state().beat')==11.25,'Seeking beyond eight beats')
++        page.locator('#play').click();page.wait_for_timeout(150);check(page.evaluate('audition.state().beat')>11.25,'Playback advances')
++        page.locator('#play').click();frozen=page.evaluate('audition.state().beat');page.wait_for_timeout(80)
++        check(page.evaluate('audition.state().beat')==frozen,'Pause freezes')
++        families=page.locator('#family option').all_text_contents()[1:]
++        for family in families:
++            page.locator('#family').select_option(family);check(page.locator('#grid .card').count()>0,'Filter '+family)
++        page.locator('#family').select_option('')
++        page.evaluate('(ids)=>audition.compare(ids)',manifest['names'][:4]);check(page.locator('#compare-grid .card').count()==min(4,manifest['pattern_count']),'Comparison')
++        page.evaluate('audition.setBeat(1.5)');page.wait_for_timeout(60)
++        check(not requests,'No external asset requests');check(not errors,'No browser exceptions')
++        desktop=path.with_suffix('.png');page.screenshot(path=str(desktop))
++        page.set_viewport_size(dict(width=390,height=844));page.wait_for_timeout(80)
++        check(page.evaluate('document.documentElement.scrollWidth<=innerWidth+1'),'Mobile fits viewport')
++        mobile=path.with_name(path.stem+'-mobile.png');page.screenshot(path=str(mobile));browser.close()
++    manifest.update(browser_checks=checks,component_comparisons=comparisons,load_mode='in-memory' if in_memory else 'file')
++    meta=path.with_suffix('.json');meta.write_text(json.dumps(manifest,indent=2)+'\n')
++    files=[path,desktop,mobile,meta];archive=path.with_suffix('.zip')
++    with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED) as z:
++        for p in files:z.write(p,p.name)
++    files.append(archive)
++    path.with_suffix('.sha256').write_text(''.join(sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files))
++    print(f'{len(checks)} browser checks; {comparisons} exact component comparisons');return manifest
++if __name__=='__main__':
++    p=argparse.ArgumentParser(description=__doc__);p.add_argument('html',type=Path);p.add_argument('--chromium');p.add_argument('--in-memory',action='store_true')
++    a=p.parse_args();render(a.html,a.chromium,a.in_memory)
+-- 
+2.47.3
+
