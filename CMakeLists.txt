@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.1.3 LANGUAGES CXX)
+project(DanceRudiments VERSION 0.1.3
+  DESCRIPTION "Rhythmic motion for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
+  HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
+  LANGUAGES CXX)
 
 option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
@@ -104,3 +107,12 @@ install(FILES collections/initial/THIRD_PARTY_NOTICES.md
   DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments")
 install(FILES collections/initial/sources/d3-ease/LICENSE
   DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments" RENAME D3-ease-LICENSE)
+
+# All native installs (including scikit-build wheels) retain the usage guide,
+# screenshots and author link. This does not install the large visualizer.
+set(DANCERUDIMENTS_DOC_DIR "${CMAKE_INSTALL_DATADIR}/DanceRudiments")
+install(FILES README.md AUTHORS.md DESTINATION "${DANCERUDIMENTS_DOC_DIR}")
+install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
+  FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "capture.json")
+install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
+  PATTERN "dist" EXCLUDE PATTERN "__pycache__" EXCLUDE)

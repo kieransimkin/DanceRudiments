@@ -1,5 +1,7 @@
 # Club Rhythms 05
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 **36 beat studies × four movement interpretations = 144 built-in movements.**
 Appended to 643 existing defaults: total **787**. Existing tables and their order are unchanged.
 

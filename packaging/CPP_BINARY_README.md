@@ -1,5 +1,11 @@
 # DanceRudiments C++ static library
 
+By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)**.
+
+The illustrated multi-language guide and runnable examples are installed under
+`share/DanceRudiments/README.md`, `share/DanceRudiments/docs/` and
+`share/DanceRudiments/examples/bindings/`.
+
 This archive is for C++ applications on the platform named in the ZIP filename.
 It does not contain the Python or TypeScript/WASM packages; install those from
 PyPI or npm instead.

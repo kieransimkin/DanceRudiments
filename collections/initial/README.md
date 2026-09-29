@@ -1,5 +1,7 @@
 # Initial 01 — audition before adopting
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 28 optional candidates for Kieran Simkin's DanceRudiments / DanceFlow workflow.
 The existing 15 built-ins are unchanged. This collection does not auto-register
 anything globally, and **no candidate is pre-approved or preselected**.

@@ -1,5 +1,7 @@
 # Expansion 02 — 24 original default movements
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 This batch adds eight shaped LFOs, eight geometric paths, and eight rhythmic
 interlocks. They join the normal C++/Python/TypeScript default catalogue.
 All are original MIT-licensed definitions; no external downloads are needed.

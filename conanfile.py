@@ -9,9 +9,11 @@ class DanceRudimentsConan(ConanFile):
     package_type = "static-library"
     url = "https://github.com/kieransimkin/DanceRudiments"
     license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0"
-    description = "Integer-pip rhythmic position functions"
+    author = "Kieran Simkin — https://kieransimkin.co.uk/my-songs/"
+    homepage = "https://kieransimkin.co.uk/my-songs/"
+    description = "Rhythmic motion for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
     settings = "os", "compiler", "build_type", "arch"
-    exports_sources = "CMakeLists.txt", "cmake/**", "include/**", "src/**", "LICENSE", "collections/initial/THIRD_PARTY_NOTICES.md", "collections/initial/sources/d3-ease/LICENSE"
+    exports_sources = "CMakeLists.txt", "cmake/**", "include/**", "src/**", "LICENSE", "collections/initial/THIRD_PARTY_NOTICES.md", "collections/initial/sources/d3-ease/LICENSE", "README.md", "AUTHORS.md", "docs/**", "examples/bindings/**"
 
     def layout(self):
         cmake_layout(self)
@@ -29,6 +31,13 @@ class DanceRudimentsConan(ConanFile):
         cmake.build()
 
     def package(self):
+        for filename in ("README.md", "AUTHORS.md"):
+            copy(self, filename, src=self.source_folder, dst=self.package_folder)
+        copy(self, "*", src=os.path.join(self.source_folder, "docs"),
+             dst=os.path.join(self.package_folder, "docs"))
+        copy(self, "*", src=os.path.join(self.source_folder, "examples", "bindings"),
+             dst=os.path.join(self.package_folder, "examples", "bindings"),
+             excludes=("*/dist/*", "*/__pycache__/*"))
         copy(self, "LICENSE", src=self.source_folder,
              dst=os.path.join(self.package_folder, "licenses"), keep_path=True)
         copy(self, "THIRD_PARTY_NOTICES.md", src=os.path.join(self.source_folder, "collections", "initial"),

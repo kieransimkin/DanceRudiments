@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DanceRudiments · TypeScript binding</title>
+<style>body{font:18px system-ui;max-width:750px;margin:50px auto;padding:20px;background:#101725;color:#edf2fa}a{color:#9bdacf}button,input{font:inherit;padding:8px}#stage{height:280px;display:grid;place-items:center;border:1px solid #566071;border-radius:18px;margin:24px 0}#dot{width:44px;height:44px;border-radius:50%;background:#5cdfc3}#status{color:#b5c2d5}</style>
+<script type="importmap">{"imports":{"@kieransimkin/dance-rudiments":"../../../dist/typescript/index.js","@kieransimkin/dance-rudiments/wasm":"../../../build-wasm/dancerudiments.js"}}</script>
+</head><body><h1>TypeScript + C++/WASM</h1>
+<p>One object following the four-bar Amen bounce. Motion starts paused.</p>
+<button id="play" disabled>Play</button> <label>BPM <input id="bpm" type="number" min="20" max="300" value="120"></label>
+<div id="stage"><div id="dot"></div></div><p id="status">Loading WebAssembly…</p>
+<p>By <a href="https://kieransimkin.co.uk/my-songs/">Kieran Simkin · My Songs</a></p>
+<script type="module" src="dist/app.js"></script></body></html>

@@ -1,5 +1,7 @@
 # Dancefloor 06: rhythm and movement reference
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 **32 new studies; 68 rhythms each with 16 motion interpretations. 944 additions, 1,731 defaults.**
 
 The original Club 05 scores and 144 motions are retained exactly. This collection adds twelve

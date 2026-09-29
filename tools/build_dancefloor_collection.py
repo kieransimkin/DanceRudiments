@@ -96,7 +96,7 @@ def build(check=False):
         definitions_sha256=defs_sha,club_rhythms_sha256=base_sha,mapping_version=module.MAPPING_VERSION,
         note='Rebuild with tools/build_dancefloor_collection.py; a recipe index, not a dancerudiments.score-pack.',patterns=recipe_rows)
     pack_text=canonical({k:v for k,v in pack.to_dict().items() if k!='patterns'})[:-1]+',"patterns":[\n'+',\n'.join(canonical(p.to_dict()) for p in patterns)+'\n]}\n'
-    guide=['# Dancefloor 06: rhythm and movement reference','',
+    guide=['# Dancefloor 06: rhythm and movement reference','','By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).','',
         '**32 new studies; 68 rhythms each with 16 motion interpretations. 944 additions, 1,731 defaults.**','',
         'The original Club 05 scores and 144 motions are retained exactly. This collection adds twelve',
         'mappings for each old rhythm and all sixteen mappings for each new rhythm. Use the ordinary',

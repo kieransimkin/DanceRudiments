@@ -1,3 +1,7 @@
 @PACKAGE_INIT@
 
 include("${CMAKE_CURRENT_LIST_DIR}/DanceRudimentsTargets.cmake")
+
+# Public project metadata accompanies the installed target.
+set(DanceRudiments_HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/")
+set(DanceRudiments_AUTHOR "Kieran Simkin")

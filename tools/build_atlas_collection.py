@@ -78,7 +78,7 @@ def build(check=False):
     def rows_document(value):
         head={k:v for k,v in value.items() if k!='patterns'}
         return canonical(head)[:-1]+',"patterns":[\n'+',\n'.join(canonical(p) for p in value['patterns'])+'\n]}\n'
-    guide=['# Expansion 03: Motion Atlas','',
+    guide=['# Expansion 03: Motion Atlas','','By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).','',
         '256 original presets in 16 families. All are registered as native defaults.',
         'The complete default catalogue contains 323 movements. No new third-party data.',
         '', 'Authoring is Python; movement playback is generated C++17. Every period is',

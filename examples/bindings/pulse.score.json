@@ -1,0 +1,32 @@
+{
+  "format": "dancerudiments.score-pack",
+  "schema_version": 1,
+  "patterns": [
+    {
+      "name": "tutorial_pulse",
+      "description": "One-beat peak-aligned downstroke",
+      "period_beats": 1,
+      "gestures": {
+        "hit": {
+          "duration_beats": "1/2",
+          "axes": {
+            "y": -0.7
+          }
+        }
+      },
+      "events": [
+        {
+          "beat": 0,
+          "gesture": "hit",
+          "anchor": "peak"
+        }
+      ],
+      "provenance": {
+        "author": "Kieran Simkin",
+        "author_url": "https://kieransimkin.co.uk/my-songs/",
+        "license": "MIT",
+        "source": "Original binding tutorial"
+      }
+    }
+  ]
+}

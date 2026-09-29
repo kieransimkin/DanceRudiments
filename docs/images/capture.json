@@ -1,0 +1,38 @@
+{
+  "source_sha256": "8b85f3862a4dd3b131eaf5a9225dc421959b1707f7e272c3a22bad10c104173f",
+  "loading": "in-memory",
+  "desktop_viewport": [
+    1440,
+    1400
+  ],
+  "mobile_viewport": [
+    420,
+    1100
+  ],
+  "state": {
+    "running": false,
+    "beat": 2.75,
+    "storageOK": false,
+    "count": 1731,
+    "engine": "C++/WebAssembly",
+    "midi": {
+      "beat": 2.75,
+      "bpm": 120,
+      "running": false,
+      "sound": true,
+      "score": "amen_four_bar",
+      "audioState": "not-created",
+      "activeVoices": 0,
+      "scheduled": 0,
+      "voices": 0,
+      "late": 0,
+      "peakVoices": 0
+    },
+    "selectedBeat": "amen_four_bar",
+    "beatCount": 305,
+    "renderedLastFrame": 0,
+    "plotCount": 20
+  },
+  "page_errors": [],
+  "author_url": "https://kieransimkin.co.uk/my-songs/"
+}

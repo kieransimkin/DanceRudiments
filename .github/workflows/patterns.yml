@@ -86,3 +86,5 @@ jobs:
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/continuum.json
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/club.json
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/dancefloor.json
+          node examples/bindings/javascript/node.mjs ./dist/typescript/index.js ./build-wasm/dancerudiments.js
+          npx tsc -p examples/bindings/typescript/tsconfig.json

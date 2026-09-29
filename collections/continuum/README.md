@@ -1,5 +1,7 @@
 # Continuum 04: 320 new built-in movements
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 320 original presets across 20 families, appended to the previous 323 defaults. Total: **643**.
 No earlier pattern is removed, renamed, reordered or resampled. No new third-party data.
 

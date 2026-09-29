@@ -50,7 +50,7 @@ def build(check=False):
         max_step=max(p.diagnostics['max_step'] for p in pack.patterns),
         warnings={p.name:p.diagnostics['warnings'] for p in pack.patterns if p.diagnostics['warnings']},
         license='MIT',distinctness_check='Exact arrays only. Related genre variants and four mappings per rhythm are intentional.')
-    guide=['# Club Rhythms 05','',
+    guide=['# Club Rhythms 05','','By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).','',
         '**36 beat studies × four movement interpretations = 144 built-in movements.**',
         'Appended to 643 existing defaults: total **787**. Existing tables and their order are unchanged.',
         '', '## Listen and watch','',

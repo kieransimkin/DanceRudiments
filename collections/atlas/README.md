@@ -1,5 +1,7 @@
 # Expansion 03: Motion Atlas
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 256 original presets in 16 families. All are registered as native defaults.
 The complete default catalogue contains 323 movements. No new third-party data.
 
