@@ -43,6 +43,7 @@ jobs:
           python tools/build_initial_collection.py --check
           python tools/build_expansion_collection.py --check
           python tools/build_atlas_collection.py --check
+          python tools/build_continuum_collection.py --check
           python tools/build_default_catalogue.py --check
       - name: Install build-only tools and this checkout's native library
         run: |

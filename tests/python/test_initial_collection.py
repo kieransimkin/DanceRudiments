@@ -124,8 +124,8 @@ class InitialCollectionTests(unittest.TestCase):
     @unittest.skipIf(native is None,'Native Python extension not built')
     def test_native_library_every_sample_and_negative_seek(self):
         bank=self.pack.to_native()
-        self.assertEqual(len(native.catalogue()),323)
-        self.assertEqual(len(bank.catalogue()),323)
+        self.assertEqual(len(native.catalogue()),643)
+        self.assertEqual(len(bank.catalogue()),643)
         for p in self.pack.patterns:
             for pip in list(range(-p.period_pips,p.period_pips))+[-2147483648,2147483647]:
                 self.assertEqual(bank.sample(p.name,pip).as_tuple(),p.samples[pip%p.period_pips])

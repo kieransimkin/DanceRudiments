@@ -1,14 +1,14 @@
 # Default movement library
 
-The native catalogue contains **323 movements**: 15 original primitives, all
+The native catalogue contains **643 movements**: 15 original primitives, all
 28 user-approved Initial 01 patterns, 24 original Expansion 02 patterns, and
-256 original Motion Atlas presets.
+256 original Motion Atlas presets, and 320 original Continuum 04 presets.
 The default API samples each directly. No pack registration, runtime Python,
 network access, or JSON parsing is required by C++/WASM movement playback.
 
 ```python
 import dancerudiments as d
-assert len(d.catalogue()) == 323
+assert len(d.catalogue()) == 643
 print(d.sample('path_torus_knot', 48).as_tuple())
 print(d.sample('rhythm_seven_four', -1).as_tuple())
 ```
@@ -22,7 +22,7 @@ auto p = dancerudiments::sample("lfo_twin_swell", pip_count);
 import { bindNative, catalogue, sample } from '@kieransimkin/dance-rudiments';
 import createNative from '@kieransimkin/dance-rudiments/wasm';
 bindNative(await createNative());
-console.log(catalogue.length); // 323
+console.log(catalogue.length); // 643
 const p = sample('path_woven_3d', -1);
 ```
 
@@ -52,14 +52,14 @@ bindings or render browser screenshots, as before.
 `initial_pack()` and `expansion_pack()` expose source/provenance data for authoring,
 and their `.to_native()` loaders remain idempotent for exact default copies.
 The analogous generated C++ `make_library()` and TypeScript pack loaders also
-retain 323 catalogue entries. A duplicate name in a supplied pack or an attempt
+retain 643 catalogue entries. A duplicate name in a supplied pack or an attempt
 to change a default's samples, period, or description is rejected. Customise a
 motion under a new name rather than silently overriding a default.
 
 ```python
 from dancerudiments_authoring.collections import expansion_pack
 pack = expansion_pack(['path_torus_knot'])
-assert len(pack.to_native().catalogue()) == 323
+assert len(pack.to_native().catalogue()) == 643
 ```
 
 The old 15-primitive harness and the editable Initial 01 audition page are
@@ -114,7 +114,7 @@ The new pattern guide is `collections/expansion/README.md`.
 
 ## Motion Atlas / Expansion 03
 
-The default total is **323 = 15 core + 28 initial + 24 Expansion 02 + 256 Atlas**.
+The default total is **643 = 15 core + 28 initial + 24 Expansion 02 + 256 Atlas + 320 Continuum**.
 See [the complete Atlas reference](../collections/atlas/README.md) for all 16
 families, identifiers and durations. `d.sample("space_torus_3_5", pip)` works
 immediately without an optional-pack load. C++ and TypeScript use the same name.
@@ -129,3 +129,25 @@ The 256 new presets require 167,040 XYZ samples (4,008,960 bytes of double-value
 sample payload, excluding metadata and compiled-code overhead). No runtime
 network dependency is added. Generated files are checked into the source so a
 normal C++ build does not require running Python first.
+
+## Continuum 04
+
+A further **320 defaults in 20 families** extend the library to 643 movements.
+See [the complete Continuum guide](../collections/continuum/README.md) for identifiers,
+source parameters, beat lengths and interpretation limits. These are original
+MIT-licensed definitions; no additional third-party material is bundled.
+
+```sh
+python tools/build_continuum_collection.py --check
+python tools/build_default_catalogue.py --check
+```
+
+All 323 previous movements retain their names, order, descriptions and exact samples.
+Sampling generated defaults now uses a binary search over a generated sorted index.
+The public catalogue retains its original append-only order. This removes the need
+to scan the whole generated catalogue on every position lookup.
+
+The release demo's collection filter isolates **Continuum / 320 new**. It still
+exports the actual native catalogue for the tag and does not use a JavaScript
+movement implementation. The new table payload is 6,061,056 bytes (XYZ doubles),
+plus metadata, code and packaging overhead.

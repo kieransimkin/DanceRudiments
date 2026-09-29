@@ -13,3 +13,6 @@ collections/expansion/** text eol=lf
 collections/atlas/** text eol=lf
 collections/defaults.json text eol=lf
 include/dancerudiments/detail/** text eol=lf
+
+# Continuum recipes contain byte-hashed source manifests.
+collections/continuum/** text eol=lf

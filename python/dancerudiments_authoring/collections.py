@@ -32,6 +32,15 @@ def atlas_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
     return _select_pack('atlas.json', names)
 
 
+def continuum_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
+    """Inspect the 320 Continuum 04 defaults, or select a nonempty named subset.
+
+    The default C++ library already contains these movements; no pack load is
+    necessary for playback. Calling .to_native() remains idempotent.
+    """
+    return _select_pack('continuum.json', names)
+
+
 def _select_pack(filename: str, names: Optional[Iterable[str]]) -> CompiledPack:
     pack = load_pack(Path(__file__).parent / 'packs' / filename)
     if names is None:

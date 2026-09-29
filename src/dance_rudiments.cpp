@@ -205,7 +205,13 @@ Offset3 sample(std::string_view name, int pip_count) {
   if (name == "flam") return flam(pip_count);
   if (name == "drag") return drag(pip_count);
   if (name == "five_stroke_roll") return five_stroke_roll(pip_count);
-  for (const auto& entry : default_sampled_patterns) {
+  // Search a generated name-sorted index without allocating or reordering catalogue().
+  const auto found = std::lower_bound(default_lookup_indices.begin(), default_lookup_indices.end(), name,
+    [](std::size_t index, std::string_view key) {
+      return default_sampled_patterns[index].info.name < key;
+    });
+  if (found != default_lookup_indices.end()) {
+    const auto& entry = default_sampled_patterns[*found];
     if (entry.info.name == name) return entry.sampler(pip_count);
   }
   throw std::invalid_argument("Unknown dance rudiment: " + std::string(name));

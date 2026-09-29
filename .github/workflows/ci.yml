@@ -52,7 +52,7 @@ jobs:
       - run: python -m pip install --upgrade build
       - run: python -m build
       - run: python -m pip install --no-index --find-links dist dancerudiments
-      - run: python -c "import dancerudiments as d; assert len(d.catalogue()) == 323"
+      - run: python -c "import dancerudiments as d; assert len(d.catalogue()) == 643"
 
   javascript:
     name: TypeScript and browser runtime

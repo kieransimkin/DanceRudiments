@@ -30,7 +30,7 @@ class NativeTests(unittest.TestCase):
 
     def test_existing_api_is_unchanged(self):
         bank=self.pack.to_native()
-        self.assertEqual(len(native.catalogue()),323)
+        self.assertEqual(len(native.catalogue()),643)
         self.assertEqual(len(bank.catalogue()),len(native.catalogue())+4)
         self.assertEqual(bank.sample('circle',64).as_tuple(),native.circle(0).as_tuple())
         with self.assertRaises(ValueError): native.sample('wobble_xy',0)

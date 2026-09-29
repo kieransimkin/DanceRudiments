@@ -78,6 +78,11 @@ def build(check=False):
         dim = 3 if any(v[2] for v in p.samples) else 2 if any(v[1] for v in p.samples) else 1
         cpp.append('  {{'+f'{cpp_string(p.name)}, {cpp_string(p.description)}, {p.period_pips}, Dimension::{["one", "two", "three"][dim-1]}'+'}, &'+namespace+'::sample_'+p.name+'},')
         ts.append('  '+json.dumps(dict(name=p.name, description=p.description, periodPips=p.period_pips, dimensions=dim), ensure_ascii=True)+',')
+    cpp += ['}};', '', '// Binary-search indices; catalogue order is intentionally unchanged.',
+            f'constexpr std::array<std::size_t, {len(patterns)}> default_lookup_indices{{{{']
+    indices = sorted(range(len(patterns)), key=lambda i: patterns[i][0].name)
+    for start in range(0, len(indices), 16):
+        cpp.append('  ' + ', '.join(map(str, indices[start:start+16])) + ',')
     cpp += ['}};', '']
     ts += ['] as const;', 'export type ApprovedDefaultName = typeof approvedDefaults[number]["name"];', '']
     includes += ['']

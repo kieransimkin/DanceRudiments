@@ -14,7 +14,8 @@
     "./wasm": "./dist/wasm/dancerudiments.js",
     "./collections/initial": "./python/dancerudiments_authoring/packs/initial.json",
     "./collections/expansion": "./python/dancerudiments_authoring/packs/expansion.json",
-    "./collections/atlas": "./python/dancerudiments_authoring/packs/atlas.json"
+    "./collections/atlas": "./python/dancerudiments_authoring/packs/atlas.json",
+    "./collections/continuum": "./python/dancerudiments_authoring/packs/continuum.json"
   },
   "files": [
     "dist/typescript/",
@@ -30,7 +31,8 @@
     "collections/initial/THIRD_PARTY_NOTICES.md",
     "collections/expansion/",
     "collections/defaults.json",
-    "collections/atlas/"
+    "collections/atlas/",
+    "collections/continuum/"
   ],
   "repository": {
     "type": "git",

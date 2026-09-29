@@ -51,7 +51,13 @@ def render(path,chromium=None,in_memory=False):
             expected=page.evaluate('(id)=>JSON.parse(document.getElementById("data").textContent).pack.patterns.filter(p=>(p.provenance.collection_id||"core")===id).length',collection)
             check(page.locator('#grid .card').count()==expected,'Collection filter '+collection)
         page.locator('#collection').select_option('')
-        page.wait_for_timeout(100)
+        # Large catalogues need a layout/IntersectionObserver frame after replacement.
+        # Wait for actual drawing, not a machine-speed-dependent 100 ms sleep.
+        page.wait_for_function('''() => {
+            const s=audition.state();
+            return s.plotCount>0 && s.renderedLastFrame>0 &&
+              document.querySelector('#grid .card canvas').width>1;
+        }''',timeout=15000)
         counts=page.evaluate('audition.state()')
         if manifest['pattern_count']>32:
             check(0<counts['renderedLastFrame']<counts['plotCount'],'Only near-viewport canvases are animated')

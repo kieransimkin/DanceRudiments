@@ -2,3 +2,4 @@
 #include "dancerudiments/collections/initial.hpp"
 #include "dancerudiments/collections/expansion.hpp"
 #include "dancerudiments/collections/atlas.hpp"
+#include "dancerudiments/collections/continuum.hpp"
