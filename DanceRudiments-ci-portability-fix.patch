@@ -1,0 +1,700 @@
+From deab92af83e07673d2055df3c9305dce7d7ea7f5 Mon Sep 17 00:00:00 2001
+From: OpenAI Assistant <assistant@local.invalid>
+Date: Tue, 29 Sep 2026 22:04:00 +0000
+Subject: [PATCH] Fix cross-platform regeneration checks and fail-fast CI
+
+Targets caae90f1a75d892ee299164681746328c332fb83. Keep exact canonical generation on Ubuntu/Python 3.13; verify portable math with a small absolute tolerance plus exact frozen-artifact locks on the other matrix hosts. Preserve all shipped motion tables and exact native tests. Use Bash fail-fast semantics for multi-command matrix steps.
+---
+ .github/workflows/patterns.yml                |   9 ++
+ docs/ci-reproducibility.md                    | 120 ++++++++++++++
+ .../_reproducibility.py                       | 114 +++++++++++++
+ tests/python/test_atlas.py                    |   5 +-
+ tests/python/test_club.py                     |   3 +-
+ tests/python/test_continuum.py                |   5 +-
+ tests/python/test_expansion.py                |   5 +-
+ tests/python/test_initial_collection.py       |   3 +-
+ tests/python/test_reproducibility.py          | 150 ++++++++++++++++++
+ tools/build_atlas_collection.py               |   5 +-
+ tools/build_club_collection.py                |   5 +-
+ tools/build_continuum_collection.py           |   5 +-
+ tools/build_dancefloor_collection.py          |   4 +-
+ tools/build_expansion_collection.py           |   5 +-
+ tools/build_initial_collection.py             |   5 +-
+ 15 files changed, 425 insertions(+), 18 deletions(-)
+ create mode 100644 docs/ci-reproducibility.md
+ create mode 100644 python/dancerudiments_authoring/_reproducibility.py
+ create mode 100644 tests/python/test_reproducibility.py
+
+diff --git a/.github/workflows/patterns.yml b/.github/workflows/patterns.yml
+index 8de394a..d3906e7 100644
+--- a/.github/workflows/patterns.yml
++++ b/.github/workflows/patterns.yml
+@@ -16,6 +16,15 @@ jobs:
+         os: [ubuntu-latest, windows-latest]
+         python: ["3.9", "3.13"]
+     runs-on: ${{ matrix.os }}
++    # Exact golden artifacts are checked on Linux/Python 3.13. Other hosts
++    # numerically verify recipes while retaining strict checks on frozen data.
++    env:
++      DANCERUDIMENTS_REGENERATION_CHECK: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && 'exact' || 'portable' }}
++    defaults:
++      run:
++        # PowerShell reports only the last native command's exit status unless
++        # explicitly configured otherwise. Bash fails at the first error.
++        shell: bash
+     steps:
+       - uses: actions/checkout@v6
+         with:
+diff --git a/docs/ci-reproducibility.md b/docs/ci-reproducibility.md
+new file mode 100644
+index 0000000..15cf650
+--- /dev/null
++++ b/docs/ci-reproducibility.md
+@@ -0,0 +1,120 @@
++# Cross-platform regeneration checks
++
++## Failure corrected
++
++Run `36634678019` (`Curve and event infrastructure`, a push of
++`caae90f1a75d892ee299164681746328c332fb83`) failed on Ubuntu/Python 3.9 and on
++Windows/Python 3.9 and 3.13. Linux/Python 3.13 and the real Emscripten/WASM job
++passed. Both Windows jobs successfully built and installed their native Python
++wheels; their failures concerned regeneration and exact authoring comparisons,
++not native-table playback.
++
++The old checks required fresh floating-point computations to reproduce every
++stored decimal and diagnostic exactly on all hosts. The logs show last-decimal
++sample differences and smaller diagnostic differences. Python math routines and
++platform C math libraries need not round every intermediate result identically.
++A changed norm diagnostic also changes a pack's JSON hash, even when its stored
++movement samples agree. The logs do not identify every individual math operation
++responsible for each mismatch.
++
++There was a second bug: multi-command PowerShell steps continued after failed
++native commands. A successful final command then made the step appear green.
++The authoring/native matrix now explicitly uses Bash, whose GitHub runner wrapper
++uses `-e -o pipefail`, for all its run steps. The matrix still exercises both
++operating systems and both supported test interpreters.
++
++## Exact artifacts, portable recipes
++
++`DANCERUDIMENTS_REGENERATION_CHECK` selects the verification policy:
++
++| Policy | Where used | What is compared |
++| --- | --- | --- |
++| `exact` (default) | Ubuntu/Python 3.13 CI, release rendering, normal checks | The original exact generation/output checks remain in force. |
++| `portable` | Windows/Python 3.9 and 3.13, Ubuntu/Python 3.9 CI | Fresh recipes and recomputed values are compared numerically, followed by exact checks of the unchanged canonical artifacts. |
++
++The portability comparison permits at most `2e-11` absolute difference between
++two finite floating-point fields. There is no relative tolerance. All integers,
++booleans, text, object keys, list order, lengths, rational beat strings and hash
++strings still match exactly. Non-finite values always fail. The tolerance is
++applied only to authoring/rebuild comparisons, not C++/WASM playback or native
++sample tests. It is 20 units of the 12-decimal authoring grid; it is not a claim
++of bit-identical cross-platform recipe evaluation.
++
++For score-based collections a portable `--check`:
++
++1. Evaluates the definitions and compares the resulting recipe with the saved
++   score, including structure, event times, names and provenance.
++2. Loads the saved compiled pack and validates its **exact SHA-256** against
++   `collections/defaults.json`.
++3. Independently recompiles the saved score on the current host and compares
++   every field with that locked pack. No digest field is ignored.
++4. Only after those checks pass, uses the saved score and pack to verify the
++   generated C++ headers, manifests, embedded preview data and other outputs
++   through their existing exact checks.
++
++Dancefloor's directly baked recipes receive the equivalent numerical check
++against their locked pack, including exact recipe hashes. The default registry
++checker is unchanged. A tiny edit to a committed pack is still rejected by its
++hash lock even when the edit is smaller than the numerical tolerance.
++
++This separates the question "does this host calculate the same motion within a
++small numeric tolerance?" from "are the shipped artifacts still exactly the
++approved ones?" It does not regenerate or replace approved movement samples to
++make a particular host pass. A meaningful recipe change, stale hash, changed
++name, reordered pattern, altered rational event time or non-finite result still
++fails verification. Ubuntu/Python 3.13 also continues to require exact recipe
++regeneration, including differences smaller than the portable tolerance.
++
++## Local use
++
++Normal checks remain strict:
++
++```sh
++python tools/build_initial_collection.py --check
++python tools/build_default_catalogue.py --check
++```
++
++To check existing artifacts on a different host, explicitly select portability
++mode. In PowerShell:
++
++```powershell
++$env:DANCERUDIMENTS_REGENERATION_CHECK = "portable"
++python tools/build_initial_collection.py --check
++if ($LASTEXITCODE -ne 0) { throw "Initial collection verification failed" }
++python tools/build_expansion_collection.py --check
++if ($LASTEXITCODE -ne 0) { throw "Expansion verification failed" }
++python tools/build_atlas_collection.py --check
++if ($LASTEXITCODE -ne 0) { throw "Atlas verification failed" }
++python tools/build_continuum_collection.py --check
++if ($LASTEXITCODE -ne 0) { throw "Continuum verification failed" }
++python tools/build_club_collection.py --check
++if ($LASTEXITCODE -ne 0) { throw "Club verification failed" }
++python tools/build_dancefloor_collection.py --check
++if ($LASTEXITCODE -ne 0) { throw "Dancefloor verification failed" }
++python tools/build_default_catalogue.py --check
++if ($LASTEXITCODE -ne 0) { throw "Default registration verification failed" }
++Remove-Item Env:DANCERUDIMENTS_REGENERATION_CHECK
++```
++
++For an already installed updated package, the same environment variable selects
++portable comparisons in `python -m unittest discover -s tests/python -v`.
++The workflow sets it automatically; users do not need to change GitHub settings.
++
++**Write mode is unchanged:** running a generator without `--check` computes fresh
++outputs, even when the environment variable is `portable`. Canonical artifact
++updates should be produced and reviewed on the exact-check platform. Do not
++regenerate hashes merely to conceal a mismatch.
++
++## Scope
++
++This change modifies only authoring verification, its regression tests and the
++matrix shell policy. No movement definition, event score, generated movement
++table, C++ runtime, public sampling API, version, or publishing workflow changes.
++It does not claim that the hosted Windows/Python 3.9 matrix has been rerun before
++the patch is committed and pushed. The next GitHub run is that validation.
++
++## Primary references
++
++- Affected run: https://github.com/kieransimkin/DanceRudiments/actions/runs/36634678019
++- GitHub shell/error behavior: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstepsshell
++- Python mathematical functions and implementation notes: https://docs.python.org/3.13/library/math.html
+diff --git a/python/dancerudiments_authoring/_reproducibility.py b/python/dancerudiments_authoring/_reproducibility.py
+new file mode 100644
+index 0000000..4aafa59
+--- /dev/null
++++ b/python/dancerudiments_authoring/_reproducibility.py
+@@ -0,0 +1,114 @@
++"""Verification policy for committed, canonical authoring artifacts.
++
++Generated-collection playback uses the committed C++ table values.
++Re-evaluating Python/libm recipes on a different host is a separate numerical comparison. Portable mode
++is check-only: it never rounds, rewrites, re-hashes or unlocks shipped data.
++"""
++from __future__ import annotations
++
++from hashlib import sha256
++import math
++import os
++from pathlib import Path
++from typing import Any
++
++from ._validation import canonical_json
++from .compiler import compile_pack
++from .io import load_pack, read_json
++from .model import CompiledPack
++
++ENVIRONMENT_VARIABLE = 'DANCERUDIMENTS_REGENERATION_CHECK'
++# 20 units of the 12-decimal authoring grid. Absolute tolerance only: values in
++# position tables are dimensionless, not timestamps or sample indices.
++PORTABLE_ABS_TOL = 2e-11
++
++
++def portable_checks() -> bool:
++    mode = os.environ.get(ENVIRONMENT_VARIABLE, 'exact')
++    if mode not in ('exact', 'portable'):
++        raise ValueError(f'{ENVIRONMENT_VARIABLE} must be exact or portable, not {mode!r}')
++    return mode == 'portable'
++
++
++def assert_rebuild_equal(actual: Any, expected: Any, path: str = '$') -> None:
++    """Compare JSON structures, allowing only tiny finite float drift in portable mode.
++
++    Names, structure, list order, integer counts, rational-beat strings, hashes,
++    licences and other text must match exactly. No digest field is ignored.
++    Reports the first changed path rather than a multi-megabyte unittest diff.
++    """
++    tolerance = PORTABLE_ABS_TOL if portable_checks() else 0.0
++
++    def visit(a: Any, b: Any, location: str) -> None:
++        if type(a) is float and type(b) is float:
++            if not math.isfinite(a) or not math.isfinite(b):
++                raise ValueError(f'{location}: non-finite number in regeneration check')
++            if abs(a - b) > tolerance:
++                raise ValueError(f'{location}: {a!r} != {b!r}; '
++                                 f'absolute difference {abs(a-b):.17g} > {tolerance:g}')
++            return
++        # Python tuples and JSON arrays have identical serialization semantics.
++        if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
++            if len(a) != len(b):
++                raise ValueError(f'{location}: array length {len(a)} != {len(b)}')
++            for i, (av, bv) in enumerate(zip(a, b)):
++                visit(av, bv, f'{location}[{i}]')
++            return
++        if type(a) is dict and type(b) is dict:
++            if a.keys() != b.keys():
++                raise ValueError(f'{location}: object keys differ')
++            for key in b:
++                visit(a[key], b[key], f'{location}.{key}')
++            return
++        # bool is not an int here, and integers never receive a float tolerance.
++        if type(a) is not type(b) or a != b:
++            raise ValueError(f'{location}: exact value/type mismatch: {a!r} != {b!r}')
++
++    visit(actual, expected, path)
++
++
++def _locked_pack(root: Path, collection: str) -> CompiledPack:
++    relative = f'python/dancerudiments_authoring/packs/{collection}.json'
++    pack = load_pack(root / relative)
++    lock = read_json(root / 'collections/defaults.json')
++    if lock.get('format') != 'dancerudiments.default-selection' or lock.get('schema_version') != 2:
++        raise ValueError('Unsupported default-selection lock')
++    entries = [entry for entry in lock['collections'] if entry['pack'] == relative]
++    if len(entries) != 1:
++        raise ValueError(f'{collection}: expected one committed default-selection lock')
++    digest = sha256(canonical_json(pack.to_dict()).encode('utf-8')).hexdigest()
++    if entries[0]['pack_sha256'] != digest:
++        raise ValueError(f'{collection}: committed pack fails its exact SHA-256 lock')
++    return pack
++
++
++def checked_score(score: dict, root: Path, collection: str,
++                  check: bool) -> tuple[dict, CompiledPack]:
++    """Compile normally; in portable CHECKS verify recipes then use locked artifacts.
++
++    First compare freshly evaluated recipes with the committed score. Then
++    independently recompile that committed score and compare every field with
++    the locked pack. Only after both checks succeed may downstream exact C++,
++    HTML, manifest and WASM checks use the unchanged canonical score and pack.
++    Write-mode always uses the freshly generated values, regardless of policy.
++    """
++    if not (check and portable_checks()):
++        return score, compile_pack(score)
++    saved = read_json(root / f'collections/{collection}/{collection}.score.json')
++    assert_rebuild_equal(score, saved, f'{collection}.recipe')
++    reference = _locked_pack(root, collection)
++    rebuilt = compile_pack(saved)
++    assert_rebuild_equal(rebuilt.to_dict(), reference.to_dict(), f'{collection}.compiled')
++    print(f'{collection}: portable numerical rebuild verified; exact locked artifacts retained')
++    return saved, reference
++
++
++def checked_compiled_pack(pack: CompiledPack, root: Path, collection: str,
++                          check: bool) -> CompiledPack:
++    """Equivalent check for directly baked recipes such as Dancefloor 06."""
++    if not (check and portable_checks()):
++        return pack
++    reference = _locked_pack(root, collection)
++    assert_rebuild_equal(pack.to_dict(), reference.to_dict(), f'{collection}.compiled')
++    print(f'{collection}: portable numerical rebuild verified; exact locked artifacts retained')
++    return reference
+diff --git a/tests/python/test_atlas.py b/tests/python/test_atlas.py
+index dd9e49c..4714c2b 100644
+--- a/tests/python/test_atlas.py
++++ b/tests/python/test_atlas.py
+@@ -8,6 +8,7 @@ from pathlib import Path
+ import unittest
+ 
+ from dancerudiments_authoring import compile_pack, load_pack
++from dancerudiments_authoring._reproducibility import assert_rebuild_equal
+ from dancerudiments_authoring.collections import atlas_pack, expansion_pack, initial_pack
+ try:
+     import dancerudiments as native
+@@ -41,8 +42,8 @@ class AtlasTests(unittest.TestCase):
+ 
+     def test_score_interchange_recompiles_exactly(self):
+         document=json.loads((ROOT/'collections/atlas/atlas.score.json').read_text())
+-        self.assertEqual(document,self.document)
+-        self.assertEqual(compile_pack(document).to_dict(),self.pack.to_dict())
++        assert_rebuild_equal(self.document,document,"atlas.recipe")
++        assert_rebuild_equal(compile_pack(document).to_dict(),self.pack.to_dict(),"atlas.compiled")
+ 
+     def test_bounded_nonstationary_and_closed_without_clipping(self):
+         for p in self.pack.patterns:
+diff --git a/tests/python/test_club.py b/tests/python/test_club.py
+index c1cccac..86476df 100644
+--- a/tests/python/test_club.py
++++ b/tests/python/test_club.py
+@@ -6,6 +6,7 @@ import math
+ from pathlib import Path
+ import unittest
+ from dancerudiments_authoring import compile_pack
++from dancerudiments_authoring._reproducibility import assert_rebuild_equal
+ from dancerudiments_authoring.collections import club_pack
+ try:
+     import dancerudiments as native
+@@ -63,7 +64,7 @@ class ClubRhythmTests(unittest.TestCase):
+             self.assertEqual(r['beat_unit'],'quarter_note')
+     def test_scores_recompile(self):
+         score=json.loads((ROOT/'collections/club/club.score.json').read_text())
+-        self.assertEqual(compile_pack(score).to_dict(),self.pack.to_dict())
++        assert_rebuild_equal(compile_pack(score).to_dict(),self.pack.to_dict(),"club.compiled")
+     def test_regeneration(self):module('tools/build_club_collection.py','club_test_builder').build(check=True)
+     def test_envelope_peak_and_edges(self):
+         self.assertEqual(self.defs.envelope(0,.1,.4),1)
+diff --git a/tests/python/test_continuum.py b/tests/python/test_continuum.py
+index 014cbc1..dc01e17 100644
+--- a/tests/python/test_continuum.py
++++ b/tests/python/test_continuum.py
+@@ -10,6 +10,7 @@ from types import SimpleNamespace
+ import unittest
+ 
+ from dancerudiments_authoring import compile_pack
++from dancerudiments_authoring._reproducibility import assert_rebuild_equal
+ from dancerudiments_authoring.collections import continuum_pack, initial_pack, expansion_pack, atlas_pack
+ try:
+     import dancerudiments as native
+@@ -41,8 +42,8 @@ class ContinuumTests(unittest.TestCase):
+ 
+     def test_score_interchange_recompiles_exactly(self):
+         score=json.loads((ROOT/'collections/continuum/continuum.score.json').read_text())
+-        self.assertEqual(score,self.scores)
+-        self.assertEqual(compile_pack(score).to_dict(),self.pack.to_dict())
++        assert_rebuild_equal(self.scores,score,"continuum.recipe")
++        assert_rebuild_equal(compile_pack(score).to_dict(),self.pack.to_dict(),"continuum.compiled")
+ 
+     def test_closed_bounded_nonstationary_no_clipping(self):
+         for p in self.pack.patterns:
+diff --git a/tests/python/test_expansion.py b/tests/python/test_expansion.py
+index 94528cd..cda6ba2 100644
+--- a/tests/python/test_expansion.py
++++ b/tests/python/test_expansion.py
+@@ -9,6 +9,7 @@ import random
+ import unittest
+ 
+ from dancerudiments_authoring import compile_pack
++from dancerudiments_authoring._reproducibility import assert_rebuild_equal
+ from dancerudiments_authoring.collections import expansion_pack, initial_pack
+ try:
+     import dancerudiments as native
+@@ -43,7 +44,9 @@ class ExpansionTests(unittest.TestCase):
+         module('expansion_builder', 'tools/build_expansion_collection.py').build(check=True)
+ 
+     def test_independent_recompilation_matches_every_sample(self):
+-        self.assertEqual(compile_pack(self.score).to_dict(), self.pack.to_dict())
++        score=json.loads((ROOT/'collections/expansion/expansion.score.json').read_text(encoding='utf-8'))
++        assert_rebuild_equal(self.score, score, 'expansion.recipe')
++        assert_rebuild_equal(compile_pack(score).to_dict(), self.pack.to_dict(), 'expansion.compiled')
+ 
+     def test_closed_bounded_and_no_warnings(self):
+         for p in self.pack.patterns:
+diff --git a/tests/python/test_initial_collection.py b/tests/python/test_initial_collection.py
+index 8520f76..b599234 100644
+--- a/tests/python/test_initial_collection.py
++++ b/tests/python/test_initial_collection.py
+@@ -10,6 +10,7 @@ import struct
+ import unittest
+ 
+ from dancerudiments_authoring import compile_pack, load_pack, read_json
++from dancerudiments_authoring._reproducibility import assert_rebuild_equal
+ from dancerudiments_authoring.collections import initial_pack
+ from dancerudiments_authoring.initial_sources import (read_midi, read_akwf_header, verify_blob,
+     nearest_sixteenth, excerpt_hits, smooth_periodic)
+@@ -41,7 +42,7 @@ class InitialCollectionTests(unittest.TestCase):
+                          {'LFO':8,'Rhythm':4,'Rudiment':4,'Easing':4,'AKWF':4,'Groove MIDI':4})
+ 
+     def test_compilation_is_reproducible(self):
+-        self.assertEqual(compile_pack(self.score).to_dict(),self.pack.to_dict())
++        assert_rebuild_equal(compile_pack(self.score).to_dict(),self.pack.to_dict(),"initial.compiled")
+ 
+     def test_manifest_digest(self):
+         manifest=read_json(SOURCE/'manifest.json')
+diff --git a/tests/python/test_reproducibility.py b/tests/python/test_reproducibility.py
+new file mode 100644
+index 0000000..1074283
+--- /dev/null
++++ b/tests/python/test_reproducibility.py
+@@ -0,0 +1,150 @@
++"""Strict artifact integrity vs. cross-platform numerical recipe verification."""
++from copy import deepcopy
++from hashlib import sha256
++import json
++import math
++import os
++from pathlib import Path
++import tempfile
++import unittest
++from unittest.mock import patch
++
++from dancerudiments_authoring import compile_pack, emit_json
++from dancerudiments_authoring._validation import canonical_json
++from dancerudiments_authoring._reproducibility import (
++    ENVIRONMENT_VARIABLE, PORTABLE_ABS_TOL, assert_rebuild_equal,
++    checked_compiled_pack, checked_score, portable_checks,
++)
++from dancerudiments_authoring.model import CompiledPack
++
++ROOT = Path(__file__).resolve().parents[2]
++
++
++class ReproducibilityTests(unittest.TestCase):
++    def setUp(self):
++        self.env = patch.dict(os.environ, {ENVIRONMENT_VARIABLE: 'portable'})
++        self.env.start()
++        self.addCleanup(self.env.stop)
++
++    def test_exact_mode_is_default(self):
++        with patch.dict(os.environ, {}, clear=True):
++            self.assertFalse(portable_checks())
++            with self.assertRaisesRegex(ValueError, 'absolute difference'):
++                assert_rebuild_equal(0.5, math.nextafter(0.5, 1.0))
++
++    def test_explicit_exact_rejects_last_decimal_drift(self):
++        with patch.dict(os.environ, {ENVIRONMENT_VARIABLE: 'exact'}):
++            with self.assertRaises(ValueError):
++                assert_rebuild_equal([0.481645548966], [0.481645548965])
++
++    def test_portable_accepts_last_decimal_drift(self):
++        assert_rebuild_equal([0.481645548966], [0.481645548965])
++
++    def test_portable_rejects_material_float_change(self):
++        with self.assertRaisesRegex(ValueError, r'\$\.samples\[0\]'):
++            assert_rebuild_equal({'samples': [0.5+4*PORTABLE_ABS_TOL]}, {'samples': [0.5]})
++
++    def test_no_relative_tolerance_for_large_values(self):
++        with self.assertRaises(ValueError):
++            assert_rebuild_equal(1e6 + 1e-5, 1e6)
++
++    def test_nan_and_infinity_are_never_equal(self):
++        for value in (math.inf, -math.inf, math.nan):
++            with self.subTest(value=value), self.assertRaises(ValueError):
++                assert_rebuild_equal(value, value)
++
++    def test_integer_counts_remain_exact(self):
++        for candidate in (65, 64.0, True):
++            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
++                assert_rebuild_equal({'period_pips': candidate}, {'period_pips': 64})
++
++    def test_rational_event_times_remain_exact(self):
++        with self.assertRaises(ValueError):
++            assert_rebuild_equal({'beat': '1/3'}, {'beat': '0.333333333333'})
++
++    def test_metadata_and_digest_fields_remain_exact(self):
++        for key in ('name', 'source_sha256', 'license', 'bounds'):
++            with self.subTest(key=key), self.assertRaises(ValueError):
++                assert_rebuild_equal({key: 'changed'}, {key: 'original'})
++
++    def test_order_and_keys_and_array_size_remain_exact(self):
++        for actual, expected in ((['x','y'], ['y','x']), ({'x':1}, {'y':1}), ([1,2], [1])):
++            with self.subTest(actual=actual), self.assertRaises(ValueError):
++                assert_rebuild_equal(actual, expected)
++
++    def test_bad_mode_fails_closed(self):
++        with patch.dict(os.environ, {ENVIRONMENT_VARIABLE: 'portble'}):
++            with self.assertRaisesRegex(ValueError, 'must be exact or portable'):
++                portable_checks()
++
++    def fixture(self, root):
++        score = {'format': 'dancerudiments.score-pack', 'schema_version': 1,
++                 'patterns': [{'name': 'ci_fixture', 'period_beats': 1,
++                     'tracks': [{'axis':'x', 'curve':{'type':'lfo', 'shape':'sine', 'gain':0.5}}]}]}
++        pack = compile_pack(score)
++        score_path = root/'collections/tiny/tiny.score.json'
++        pack_path = root/'python/dancerudiments_authoring/packs/tiny.json'
++        for p in (score_path, pack_path):
++            p.parent.mkdir(parents=True, exist_ok=True)
++        score_path.write_text(json.dumps(score), encoding='utf-8')
++        pack_path.write_text(emit_json(pack), encoding='utf-8')
++        lock = {'format':'dancerudiments.default-selection', 'schema_version':2,
++            'collections':[{'id':'tiny', 'pack':pack_path.relative_to(root).as_posix(),
++                            'pack_sha256':sha256(canonical_json(pack.to_dict()).encode()).hexdigest()}]}
++        (root/'collections/defaults.json').write_text(json.dumps(lock), encoding='utf-8')
++        return score, pack, pack_path
++
++    def test_portable_score_verifies_before_returning_frozen_values(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root=Path(folder); score, pack, _ = self.fixture(root)
++            changed=deepcopy(score)
++            changed['patterns'][0]['tracks'][0]['curve']['gain'] += 1e-12
++            original_bytes={p:p.read_bytes() for p in root.rglob('*') if p.is_file()}
++            saved, result=checked_score(changed, root, 'tiny', True)
++            self.assertEqual(saved, score)
++            self.assertEqual(result.to_dict(), pack.to_dict())
++            self.assertEqual(original_bytes, {p:p.read_bytes() for p in original_bytes})
++
++    def test_portable_rejects_changed_recipe(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root=Path(folder); score, _, _ = self.fixture(root)
++            score['patterns'][0]['tracks'][0]['curve']['gain'] += .01
++            with self.assertRaisesRegex(ValueError, 'tiny.recipe'):
++                checked_score(score, root, 'tiny', True)
++
++    def test_direct_pack_verification_uses_same_tolerance(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root=Path(folder); _, pack, _ = self.fixture(root)
++            changed=pack.to_dict()
++            changed['patterns'][0]['samples'][1][0] += 1e-12
++            result=checked_compiled_pack(CompiledPack.from_dict(changed), root, 'tiny', True)
++            self.assertEqual(result.to_dict(), pack.to_dict())
++            changed['patterns'][0]['samples'][1][0] += .001
++            with self.assertRaises(ValueError):
++                checked_compiled_pack(CompiledPack.from_dict(changed), root, 'tiny', True)
++
++    def test_even_sub_tolerance_pack_tampering_fails_hash_lock(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root=Path(folder); score, pack, path = self.fixture(root)
++            changed=pack.to_dict();changed['patterns'][0]['samples'][1][0] += 1e-12
++            path.write_text(json.dumps(changed), encoding='utf-8')
++            with self.assertRaisesRegex(ValueError, 'SHA-256 lock'):
++                checked_score(score, root, 'tiny', True)
++
++    def test_portable_write_mode_does_not_reuse_saved_values(self):
++        with tempfile.TemporaryDirectory() as folder:
++            root=Path(folder); score, old, _ = self.fixture(root)
++            score['patterns'][0]['tracks'][0]['curve']['gain'] = .8
++            saved, new = checked_score(score, root, 'tiny', False)
++            self.assertEqual(saved, score)
++            self.assertNotEqual(new.to_dict(), old.to_dict())
++
++    def test_all_multicommand_matrix_steps_use_fail_fast_bash(self):
++        # Guard the cross-platform job's explicit shell policy, not the installed
++        # shell's behavior; the Windows runner exercises the latter in CI.
++        workflow=(ROOT/'.github/workflows/patterns.yml').read_text(encoding='utf-8')
++        job=workflow.split('  authoring-and-native:',1)[1].split('  real-wasm:',1)[0]
++        self.assertIn('    defaults:\n      run:',job)
++        self.assertIn('        shell: bash',job)
++        self.assertIn("matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && 'exact' || 'portable'",job)
++        self.assertNotIn('continue-on-error',job)
+diff --git a/tools/build_atlas_collection.py b/tools/build_atlas_collection.py
+index c222961..af48dd4 100644
+--- a/tools/build_atlas_collection.py
++++ b/tools/build_atlas_collection.py
+@@ -13,7 +13,8 @@ import sys
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT/'python'))
+-from dancerudiments_authoring import compile_pack, emit_cpp, load_pack
++from dancerudiments_authoring import emit_cpp, load_pack
++from dancerudiments_authoring._reproducibility import checked_score
+ 
+ 
+ def canonical(value):
+@@ -58,7 +59,7 @@ def build(check=False):
+     source=ROOT/'collections/atlas/definitions.py'
+     spec=importlib.util.spec_from_file_location('atlas_definitions',source)
+     definitions=importlib.util.module_from_spec(spec);spec.loader.exec_module(definitions)
+-    score=definitions.document();pack=compile_pack(score)
++    score=definitions.document();score,pack=checked_score(score,ROOT,"atlas",check)
+     if len(pack.patterns)!=definitions.PATTERN_COUNT:
+         raise ValueError('Atlas count mismatch')
+     previous=[]
+diff --git a/tools/build_club_collection.py b/tools/build_club_collection.py
+index 6487a72..fbaa16f 100644
+--- a/tools/build_club_collection.py
++++ b/tools/build_club_collection.py
+@@ -11,7 +11,8 @@ import sys
+ 
+ ROOT=Path(__file__).resolve().parents[1]
+ sys.path.insert(0,str(ROOT/'python'))
+-from dancerudiments_authoring import compile_pack, emit_cpp, load_pack
++from dancerudiments_authoring import emit_cpp, load_pack
++from dancerudiments_authoring._reproducibility import checked_score
+ 
+ def canonical(value):
+     return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False)
+@@ -26,7 +27,7 @@ def rows_document(value):
+     return canonical(head)[:-1]+',"patterns":[\n'+',\n'.join(canonical(p) for p in value['patterns'])+'\n]}\n'
+ 
+ def build(check=False):
+-    module=definitions();rhythms=module.rhythm_scores();score=module.document();pack=compile_pack(score)
++    module=definitions();rhythms=module.rhythm_scores();score=module.document();score,pack=checked_score(score,ROOT,"club",check)
+     if len(rhythms)!=36 or len(pack.patterns)!=144:raise ValueError('Unexpected Club Rhythms count')
+     seen={}
+     for p in pack.patterns:
+diff --git a/tools/build_continuum_collection.py b/tools/build_continuum_collection.py
+index 9d552cc..ced54ed 100644
+--- a/tools/build_continuum_collection.py
++++ b/tools/build_continuum_collection.py
+@@ -13,7 +13,8 @@ import sys
+ ROOT=Path(__file__).resolve().parents[1]
+ sys.path.insert(0,str(ROOT/'python'))
+ sys.path.insert(0,str(ROOT/'tools'))
+-from dancerudiments_authoring import compile_pack, emit_cpp, load_pack
++from dancerudiments_authoring import emit_cpp, load_pack
++from dancerudiments_authoring._reproducibility import checked_score
+ from build_atlas_collection import audit, canonical
+ 
+ 
+@@ -29,7 +30,7 @@ def rows_document(value):
+ 
+ 
+ def build(check=False):
+-    module=definitions();score=module.document();pack=compile_pack(score)
++    module=definitions();score=module.document();score,pack=checked_score(score,ROOT,"continuum",check)
+     if len(pack.patterns)!=module.PATTERN_COUNT:raise ValueError('Continuum count mismatch')
+     previous=[]
+     for file in ('initial.json','expansion.json','atlas.json'):
+diff --git a/tools/build_dancefloor_collection.py b/tools/build_dancefloor_collection.py
+index d57e413..b3d686d 100644
+--- a/tools/build_dancefloor_collection.py
++++ b/tools/build_dancefloor_collection.py
+@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT/'python'))
+ from dancerudiments_authoring import emit_cpp, load_pack
+ from dancerudiments_authoring.model import CompiledPack, CompiledPattern
++from dancerudiments_authoring._reproducibility import checked_compiled_pack
+ 
+ 
+ def canonical(value):
+@@ -64,7 +65,8 @@ def build(check=False):
+             patterns.append(CompiledPattern(name,r['title']+' — '+title+'. '+meaning,n,rows,
+                             sha256(canonical(recipe).encode()).hexdigest(),canonical(provenance),canonical(diagnostic)))
+             recipe_rows.append(dict(name=name,rhythm_id=r['id'],mapping=m,source_sha256=patterns[-1].source_sha256))
+-    pack=CompiledPack(tuple(patterns))
++    pack=checked_compiled_pack(CompiledPack(tuple(patterns)),ROOT,"dancefloor",check)
++    patterns=list(pack.patterns)
+     if len(rhythms)!=68 or len(pack.patterns)!=944:raise ValueError('Unexpected coverage')
+     seen={}; duplicates=[]
+     for p in pack.patterns:
+diff --git a/tools/build_expansion_collection.py b/tools/build_expansion_collection.py
+index 05de0eb..53ff0c1 100644
+--- a/tools/build_expansion_collection.py
++++ b/tools/build_expansion_collection.py
+@@ -11,7 +11,8 @@ import sys
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT / 'python'))
+-from dancerudiments_authoring import compile_pack, emit_cpp, emit_json
++from dancerudiments_authoring import emit_cpp, emit_json
++from dancerudiments_authoring._reproducibility import checked_score
+ 
+ 
+ def compact(value):
+@@ -24,7 +25,7 @@ def build(check=False):
+     definitions = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(definitions)
+     score = definitions.document()
+-    pack = compile_pack(score)
++    score, pack = checked_score(score, ROOT, "expansion", check)
+     if len(pack.patterns) != 24:
+         raise ValueError('Expansion 02 must contain exactly 24 patterns')
+     for p in pack.patterns:
+diff --git a/tools/build_initial_collection.py b/tools/build_initial_collection.py
+index 2d1027b..f501a99 100644
+--- a/tools/build_initial_collection.py
++++ b/tools/build_initial_collection.py
+@@ -15,7 +15,8 @@ import tempfile
+ 
+ ROOT = Path(__file__).resolve().parents[1]
+ sys.path.insert(0, str(ROOT/'python'))
+-from dancerudiments_authoring import compile_pack, emit_cpp, emit_json
++from dancerudiments_authoring import emit_cpp, emit_json
++from dancerudiments_authoring._reproducibility import checked_score
+ 
+ 
+ def compact(data):
+@@ -27,7 +28,7 @@ def build(rebuild_wasm=False, check=False, compiler='clang++'):
+     module=importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(module)
+     score=module.document()
+-    pack=compile_pack(score)
++    score,pack=checked_score(score,ROOT,"initial",check)
+     if any(p.diagnostics['warnings'] for p in pack.patterns):
+         raise ValueError('Initial candidates must compile without warnings')
+     data=pack.to_dict()
+-- 
+2.47.3
+

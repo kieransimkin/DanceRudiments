@@ -6,6 +6,7 @@ import math
 from pathlib import Path
 import unittest
 from dancerudiments_authoring import compile_pack
+from dancerudiments_authoring._reproducibility import assert_rebuild_equal
 from dancerudiments_authoring.collections import club_pack
 try:
     import dancerudiments as native
@@ -63,7 +64,7 @@ class ClubRhythmTests(unittest.TestCase):
             self.assertEqual(r['beat_unit'],'quarter_note')
     def test_scores_recompile(self):
         score=json.loads((ROOT/'collections/club/club.score.json').read_text())
-        self.assertEqual(compile_pack(score).to_dict(),self.pack.to_dict())
+        assert_rebuild_equal(compile_pack(score).to_dict(),self.pack.to_dict(),"club.compiled")
     def test_regeneration(self):module('tools/build_club_collection.py','club_test_builder').build(check=True)
     def test_envelope_peak_and_edges(self):
         self.assertEqual(self.defs.envelope(0,.1,.4),1)

@@ -11,7 +11,8 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'python'))
-from dancerudiments_authoring import compile_pack, emit_cpp, load_pack
+from dancerudiments_authoring import emit_cpp, load_pack
+from dancerudiments_authoring._reproducibility import checked_score
 
 def canonical(value):
     return json.dumps(value,sort_keys=True,separators=(',',':'),ensure_ascii=True,allow_nan=False)
@@ -26,7 +27,7 @@ def rows_document(value):
     return canonical(head)[:-1]+',"patterns":[\n'+',\n'.join(canonical(p) for p in value['patterns'])+'\n]}\n'
 
 def build(check=False):
-    module=definitions();rhythms=module.rhythm_scores();score=module.document();pack=compile_pack(score)
+    module=definitions();rhythms=module.rhythm_scores();score=module.document();score,pack=checked_score(score,ROOT,"club",check)
     if len(rhythms)!=36 or len(pack.patterns)!=144:raise ValueError('Unexpected Club Rhythms count')
     seen={}
     for p in pack.patterns:

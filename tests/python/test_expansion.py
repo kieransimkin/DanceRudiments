@@ -9,6 +9,7 @@ import random
 import unittest
 
 from dancerudiments_authoring import compile_pack
+from dancerudiments_authoring._reproducibility import assert_rebuild_equal
 from dancerudiments_authoring.collections import expansion_pack, initial_pack
 try:
     import dancerudiments as native
@@ -43,7 +44,9 @@ class ExpansionTests(unittest.TestCase):
         module('expansion_builder', 'tools/build_expansion_collection.py').build(check=True)
 
     def test_independent_recompilation_matches_every_sample(self):
-        self.assertEqual(compile_pack(self.score).to_dict(), self.pack.to_dict())
+        score=json.loads((ROOT/'collections/expansion/expansion.score.json').read_text(encoding='utf-8'))
+        assert_rebuild_equal(self.score, score, 'expansion.recipe')
+        assert_rebuild_equal(compile_pack(score).to_dict(), self.pack.to_dict(), 'expansion.compiled')
 
     def test_closed_bounded_and_no_warnings(self):
         for p in self.pack.patterns:

@@ -11,7 +11,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'python'))
-from dancerudiments_authoring import compile_pack, emit_cpp, emit_json
+from dancerudiments_authoring import emit_cpp, emit_json
+from dancerudiments_authoring._reproducibility import checked_score
 
 
 def compact(value):
@@ -24,7 +25,7 @@ def build(check=False):
     definitions = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(definitions)
     score = definitions.document()
-    pack = compile_pack(score)
+    score, pack = checked_score(score, ROOT, "expansion", check)
     if len(pack.patterns) != 24:
         raise ValueError('Expansion 02 must contain exactly 24 patterns')
     for p in pack.patterns:

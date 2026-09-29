@@ -8,6 +8,7 @@ from pathlib import Path
 import unittest
 
 from dancerudiments_authoring import compile_pack, load_pack
+from dancerudiments_authoring._reproducibility import assert_rebuild_equal
 from dancerudiments_authoring.collections import atlas_pack, expansion_pack, initial_pack
 try:
     import dancerudiments as native
@@ -41,8 +42,8 @@ class AtlasTests(unittest.TestCase):
 
     def test_score_interchange_recompiles_exactly(self):
         document=json.loads((ROOT/'collections/atlas/atlas.score.json').read_text())
-        self.assertEqual(document,self.document)
-        self.assertEqual(compile_pack(document).to_dict(),self.pack.to_dict())
+        assert_rebuild_equal(self.document,document,"atlas.recipe")
+        assert_rebuild_equal(compile_pack(document).to_dict(),self.pack.to_dict(),"atlas.compiled")
 
     def test_bounded_nonstationary_and_closed_without_clipping(self):
         for p in self.pack.patterns:

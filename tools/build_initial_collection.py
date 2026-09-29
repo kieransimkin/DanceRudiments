@@ -15,7 +15,8 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'python'))
-from dancerudiments_authoring import compile_pack, emit_cpp, emit_json
+from dancerudiments_authoring import emit_cpp, emit_json
+from dancerudiments_authoring._reproducibility import checked_score
 
 
 def compact(data):
@@ -27,7 +28,7 @@ def build(rebuild_wasm=False, check=False, compiler='clang++'):
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     score=module.document()
-    pack=compile_pack(score)
+    score,pack=checked_score(score,ROOT,"initial",check)
     if any(p.diagnostics['warnings'] for p in pack.patterns):
         raise ValueError('Initial candidates must compile without warnings')
     data=pack.to_dict()

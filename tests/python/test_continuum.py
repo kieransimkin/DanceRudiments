@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import unittest
 
 from dancerudiments_authoring import compile_pack
+from dancerudiments_authoring._reproducibility import assert_rebuild_equal
 from dancerudiments_authoring.collections import continuum_pack, initial_pack, expansion_pack, atlas_pack
 try:
     import dancerudiments as native
@@ -41,8 +42,8 @@ class ContinuumTests(unittest.TestCase):
 
     def test_score_interchange_recompiles_exactly(self):
         score=json.loads((ROOT/'collections/continuum/continuum.score.json').read_text())
-        self.assertEqual(score,self.scores)
-        self.assertEqual(compile_pack(score).to_dict(),self.pack.to_dict())
+        assert_rebuild_equal(self.scores,score,"continuum.recipe")
+        assert_rebuild_equal(compile_pack(score).to_dict(),self.pack.to_dict(),"continuum.compiled")
 
     def test_closed_bounded_nonstationary_no_clipping(self):
         for p in self.pack.patterns:

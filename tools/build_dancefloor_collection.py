@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'python'))
 from dancerudiments_authoring import emit_cpp, load_pack
 from dancerudiments_authoring.model import CompiledPack, CompiledPattern
+from dancerudiments_authoring._reproducibility import checked_compiled_pack
 
 
 def canonical(value):
@@ -64,7 +65,8 @@ def build(check=False):
             patterns.append(CompiledPattern(name,r['title']+' — '+title+'. '+meaning,n,rows,
                             sha256(canonical(recipe).encode()).hexdigest(),canonical(provenance),canonical(diagnostic)))
             recipe_rows.append(dict(name=name,rhythm_id=r['id'],mapping=m,source_sha256=patterns[-1].source_sha256))
-    pack=CompiledPack(tuple(patterns))
+    pack=checked_compiled_pack(CompiledPack(tuple(patterns)),ROOT,"dancefloor",check)
+    patterns=list(pack.patterns)
     if len(rhythms)!=68 or len(pack.patterns)!=944:raise ValueError('Unexpected coverage')
     seen={}; duplicates=[]
     for p in pack.patterns:

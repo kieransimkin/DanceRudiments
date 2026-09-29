@@ -16,6 +16,15 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.9", "3.13"]
     runs-on: ${{ matrix.os }}
+    # Exact golden artifacts are checked on Linux/Python 3.13. Other hosts
+    # numerically verify recipes while retaining strict checks on frozen data.
+    env:
+      DANCERUDIMENTS_REGENERATION_CHECK: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && 'exact' || 'portable' }}
+    defaults:
+      run:
+        # PowerShell reports only the last native command's exit status unless
+        # explicitly configured otherwise. Bash fails at the first error.
+        shell: bash
     steps:
       - uses: actions/checkout@v6
         with:

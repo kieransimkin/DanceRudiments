@@ -10,6 +10,7 @@ import struct
 import unittest
 
 from dancerudiments_authoring import compile_pack, load_pack, read_json
+from dancerudiments_authoring._reproducibility import assert_rebuild_equal
 from dancerudiments_authoring.collections import initial_pack
 from dancerudiments_authoring.initial_sources import (read_midi, read_akwf_header, verify_blob,
     nearest_sixteenth, excerpt_hits, smooth_periodic)
@@ -41,7 +42,7 @@ class InitialCollectionTests(unittest.TestCase):
                          {'LFO':8,'Rhythm':4,'Rudiment':4,'Easing':4,'AKWF':4,'Groove MIDI':4})
 
     def test_compilation_is_reproducible(self):
-        self.assertEqual(compile_pack(self.score).to_dict(),self.pack.to_dict())
+        assert_rebuild_equal(compile_pack(self.score).to_dict(),self.pack.to_dict(),"initial.compiled")
 
     def test_manifest_digest(self):
         manifest=read_json(SOURCE/'manifest.json')

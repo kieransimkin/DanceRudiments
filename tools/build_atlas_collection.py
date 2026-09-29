@@ -13,7 +13,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'python'))
-from dancerudiments_authoring import compile_pack, emit_cpp, load_pack
+from dancerudiments_authoring import emit_cpp, load_pack
+from dancerudiments_authoring._reproducibility import checked_score
 
 
 def canonical(value):
@@ -58,7 +59,7 @@ def build(check=False):
     source=ROOT/'collections/atlas/definitions.py'
     spec=importlib.util.spec_from_file_location('atlas_definitions',source)
     definitions=importlib.util.module_from_spec(spec);spec.loader.exec_module(definitions)
-    score=definitions.document();pack=compile_pack(score)
+    score=definitions.document();score,pack=checked_score(score,ROOT,"atlas",check)
     if len(pack.patterns)!=definitions.PATTERN_COUNT:
         raise ValueError('Atlas count mismatch')
     previous=[]

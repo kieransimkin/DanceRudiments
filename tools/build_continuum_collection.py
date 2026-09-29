@@ -13,7 +13,8 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'python'))
 sys.path.insert(0,str(ROOT/'tools'))
-from dancerudiments_authoring import compile_pack, emit_cpp, load_pack
+from dancerudiments_authoring import emit_cpp, load_pack
+from dancerudiments_authoring._reproducibility import checked_score
 from build_atlas_collection import audit, canonical
 
 
@@ -29,7 +30,7 @@ def rows_document(value):
 
 
 def build(check=False):
-    module=definitions();score=module.document();pack=compile_pack(score)
+    module=definitions();score=module.document();score,pack=checked_score(score,ROOT,"continuum",check)
     if len(pack.patterns)!=module.PATTERN_COUNT:raise ValueError('Continuum count mismatch')
     previous=[]
     for file in ('initial.json','expansion.json','atlas.json'):
