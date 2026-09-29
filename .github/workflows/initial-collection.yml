@@ -30,7 +30,7 @@ jobs:
       - name: Install wheel and test bundled resources, without a source PYTHONPATH
         run: |
           python -m pip install .
-          python -c "from dancerudiments_authoring.collections import initial_pack; p=initial_pack(); assert len(p.patterns)==28; assert len(p.to_native().catalogue())==43"
+          python -c "from dancerudiments_authoring.collections import initial_pack; p=initial_pack(); assert len(p.patterns)==28; assert len(p.to_native().catalogue())==67"
       - name: Authoring and native extension tests
         env:
           DANCERUDIMENTS_REQUIRE_NATIVE: '1'

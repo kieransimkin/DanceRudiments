@@ -38,6 +38,11 @@ jobs:
           sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
           with open(os.environ['GITHUB_ENV'],'a') as f:f.write('DEMO_VERSION='+v+'\nDEMO_COMMIT='+sha+'\n')
           PY
+      - name: Verify generated packs and default registration
+        run: |
+          python tools/build_initial_collection.py --check
+          python tools/build_expansion_collection.py --check
+          python tools/build_default_catalogue.py --check
       - name: Install build-only tools and this checkout's native library
         run: |
           sudo apt-get update

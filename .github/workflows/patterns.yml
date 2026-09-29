@@ -23,6 +23,11 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+      - name: Verify checked-in collection data and registration
+        run: |
+          python tools/build_initial_collection.py --check
+          python tools/build_expansion_collection.py --check
+          python tools/build_default_catalogue.py --check
       - run: python -m pip install --upgrade build
       # build creates a wheel from the sdist too, checking source inclusion.
       - run: python -m build
@@ -62,3 +67,5 @@ jobs:
           emcmake cmake -S . -B build-wasm -DDANCERUDIMENTS_BUILD_WASM=ON -DDANCERUDIMENTS_BUILD_TESTS=OFF
           cmake --build build-wasm
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js generated/starter.json
+          node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/initial.json
+          node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/expansion.json

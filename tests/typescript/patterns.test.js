@@ -44,7 +44,7 @@ test('delegates sampling to C++, owns one handle, disposes idempotently',()=>{
   assert.equal(m.alive(),1);
   assert.deepEqual(library.sample('custom',-1),{x:.25,y:.5,z:0});
   assert.deepEqual(m.calls,[['custom',-1]]);
-  assert.equal(library.catalogue().length,16);
+  assert.equal(library.catalogue().length,68);
   assert.equal(library.catalogue().at(-1).dimensions,2);
   library.dispose();library.dispose();assert.equal(m.alive(),0);
   assert.throws(()=>library.sample('custom',0),/disposed/);

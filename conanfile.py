@@ -8,9 +8,10 @@ class DanceRudimentsConan(ConanFile):
     name = "dancerudiments"
     package_type = "static-library"
     url = "https://github.com/kieransimkin/DanceRudiments"
+    license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0"
     description = "Integer-pip rhythmic position functions"
     settings = "os", "compiler", "build_type", "arch"
-    exports_sources = "CMakeLists.txt", "cmake/**", "include/**", "src/**"
+    exports_sources = "CMakeLists.txt", "cmake/**", "include/**", "src/**", "LICENSE", "collections/initial/THIRD_PARTY_NOTICES.md", "collections/initial/sources/d3-ease/LICENSE"
 
     def layout(self):
         cmake_layout(self)
@@ -28,7 +29,13 @@ class DanceRudimentsConan(ConanFile):
         cmake.build()
 
     def package(self):
+        copy(self, "LICENSE", src=self.source_folder,
+             dst=os.path.join(self.package_folder, "licenses"), keep_path=True)
+        copy(self, "THIRD_PARTY_NOTICES.md", src=os.path.join(self.source_folder, "collections", "initial"),
+             dst=os.path.join(self.package_folder, "licenses"))
         copy(self, "*.hpp", src=os.path.join(self.source_folder, "include"),
+             dst=os.path.join(self.package_folder, "include"))
+        copy(self, "*.inc", src=os.path.join(self.source_folder, "include"),
              dst=os.path.join(self.package_folder, "include"))
         copy(self, "*.lib", src=self.build_folder,
              dst=os.path.join(self.package_folder, "lib"), keep_path=False)

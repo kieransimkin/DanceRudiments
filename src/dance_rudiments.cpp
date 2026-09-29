@@ -1,4 +1,5 @@
 #include "dancerudiments/dance_rudiments.hpp"
+#include "dancerudiments/detail/default_includes.inc"
 
 #include <algorithm>
 #include <cmath>
@@ -8,6 +9,9 @@
 
 namespace dancerudiments {
 namespace {
+// Metadata and direct, allocation-free samplers for the approved collection.
+#include "dancerudiments/detail/default_registry.inc"
+
 constexpr double pi = 3.14159265358979323846;
 
 double phase(int pip, int period) noexcept {
@@ -48,7 +52,7 @@ const auto clay_table = make_clay_table();
 struct Stroke { int pip; int hand; double strength; int width; };
 
 double stroke_envelope(int pip, int period, const Stroke& stroke) noexcept {
-  const int distance = wrap_pip(pip - stroke.pip, period);
+  const int distance = wrap_pip(wrap_pip(pip, period) - stroke.pip, period);
   if (distance >= stroke.width) return 0.0;
   const double u = static_cast<double>(distance) / static_cast<double>(stroke.width);
   const double s = std::sin(pi * u);
@@ -161,7 +165,8 @@ Offset3 five_stroke_roll(int pip) noexcept {
 }
 
 const std::vector<RudimentInfo>& catalogue() {
-  static const std::vector<RudimentInfo> entries{
+  static const std::vector<RudimentInfo> entries = [] {
+    std::vector<RudimentInfo> result{
     {"bounce", "One-beat vertical bounce", 64, Dimension::one},
     {"sway", "Two-beat side-to-side sway", 128, Dimension::one},
     {"circle", "One-beat circular orbit", 64, Dimension::two},
@@ -177,7 +182,10 @@ const std::vector<RudimentInfo>& catalogue() {
     {"flam", "Grace motion flowing into an opposite-hand primary motion", 64, Dimension::two},
     {"drag", "Two grace motions flowing into an opposite-hand primary motion", 64, Dimension::two},
     {"five_stroke_roll", "Two diddles resolving to an accented fifth motion", 128, Dimension::two}
-  };
+    };
+    for (const auto& entry : default_sampled_patterns) result.push_back(entry.info);
+    return result;
+  }();
   return entries;
 }
 
@@ -197,6 +205,9 @@ Offset3 sample(std::string_view name, int pip_count) {
   if (name == "flam") return flam(pip_count);
   if (name == "drag") return drag(pip_count);
   if (name == "five_stroke_roll") return five_stroke_roll(pip_count);
+  for (const auto& entry : default_sampled_patterns) {
+    if (entry.info.name == name) return entry.sampler(pip_count);
+  }
   throw std::invalid_argument("Unknown dance rudiment: " + std::string(name));
 }
 } // namespace dancerudiments

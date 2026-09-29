@@ -1,6 +1,8 @@
+import { approvedDefaults, ApprovedDefaultName } from "./defaults.js";
+
 export type Offset3 = Readonly<{ x: number; y: number; z: number }>;
-export type RudimentName = "bounce" | "sway" | "circle" | "figure_eight" | "step_touch" | "box_step" | "helix" | "clay_background" | "single_stroke_roll" | "double_stroke_roll" | "multiple_bounce_roll" | "single_paradiddle" | "flam" | "drag" | "five_stroke_roll";
-export type RudimentInfo = Readonly<{ name: RudimentName; description: string; periodPips: 64 | 128 | 256; dimensions: 1 | 2 | 3 }>;
+export type RudimentName = "bounce" | "sway" | "circle" | "figure_eight" | "step_touch" | "box_step" | "helix" | "clay_background" | "single_stroke_roll" | "double_stroke_roll" | "multiple_bounce_roll" | "single_paradiddle" | "flam" | "drag" | "five_stroke_roll" | ApprovedDefaultName;
+export type RudimentInfo = Readonly<{ name: RudimentName; description: string; periodPips: number; dimensions: 1 | 2 | 3 }>;
 type NativeDeletable = { delete(): void };
 type NativeOffsets = NativeDeletable & { push_back(value: Offset3): void };
 type NativePattern = NativeDeletable;
@@ -27,7 +29,8 @@ export const catalogue: readonly RudimentInfo[] = [
   { name: "single_paradiddle", description: "RLRR LRLL with accented lead strokes", periodPips: 128, dimensions: 2 },
   { name: "flam", description: "Grace motion flowing into an opposite-hand primary motion", periodPips: 64, dimensions: 2 },
   { name: "drag", description: "Two grace motions flowing into an opposite-hand primary motion", periodPips: 64, dimensions: 2 },
-  { name: "five_stroke_roll", description: "Two diddles resolving to an accented fifth motion", periodPips: 128, dimensions: 2 }
+  { name: "five_stroke_roll", description: "Two diddles resolving to an accented fifth motion", periodPips: 128, dimensions: 2 },
+  ...approvedDefaults
 ];
 
 let native: NativeModule | undefined;
@@ -69,13 +72,15 @@ export function createPatternLibrary(document: unknown): PatternLibraryHandle {
     throw new RangeError("A compiled pack requires 1..1024 patterns");
   const names = new Set<string>(catalogue.map(p => p.name));
   const info: PatternInfo[] = [...catalogue];
+  const packNames = new Set<string>();
   let total = 0;
   // Validate the entire document before allocating native objects.
   const checked = pack.patterns.map((value: unknown) => {
     const p = object(value, "pattern");
-    if (typeof p.name !== "string" || !/^[a-z][a-z0-9_]{0,127}$/.test(p.name) || names.has(p.name))
-      throw new TypeError("Invalid, duplicate or built-in pattern name");
+    if (typeof p.name !== "string" || !/^[a-z][a-z0-9_]{0,127}$/.test(p.name) || packNames.has(p.name))
+      throw new TypeError("Invalid or duplicate pattern name");
     names.add(p.name);
+    packNames.add(p.name);
     if (typeof p.description !== "string" || p.description.includes("\0"))
       throw new TypeError("Pattern description must be a string without NUL characters");
     if (typeof p.period_pips !== "number" || !Number.isInteger(p.period_pips) || p.period_pips < 1 || p.period_pips > 65535)
@@ -96,7 +101,14 @@ export function createPatternLibrary(document: unknown): PatternLibraryHandle {
       else if (row[1] !== 0 && dimensions !== 3) dimensions = 2;
       return { x: row[0], y: row[1], z: row[2] };
     });
-    info.push(Object.freeze({name: p.name, description: p.description, periodPips: p.period_pips, dimensions}));
+    const existing = catalogue.find(item => item.name === p.name);
+    if (existing) {
+      if (existing.description !== p.description || existing.periodPips !== p.period_pips ||
+          samples.some((value, pip) => {
+            const expected = module.sample(p.name as string, pip);
+            return value.x !== expected.x || value.y !== expected.y || value.z !== expected.z;
+          })) throw new TypeError("Cannot override default pattern: " + p.name);
+    } else info.push(Object.freeze({name: p.name, description: p.description, periodPips: p.period_pips, dimensions}));
     return {name: p.name, description: p.description, samples};
   });
   const temporaries: NativePattern[] = [];

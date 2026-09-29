@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 project(DanceRudiments VERSION 0.1.3 LANGUAGES CXX)
 
+option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
 option(DANCERUDIMENTS_BUILD_WASM "Build the Emscripten JavaScript module" OFF)
@@ -60,6 +61,9 @@ if(DANCERUDIMENTS_BUILD_TESTS)
   add_executable(dancerudiments_pattern_tests tests/cpp/test_sampled_pattern.cpp)
   target_link_libraries(dancerudiments_pattern_tests PRIVATE DanceRudiments::DanceRudiments)
   add_test(NAME dancerudiments_patterns COMMAND dancerudiments_pattern_tests)
+  add_executable(dancerudiments_default_tests tests/cpp/test_default_registration.cpp)
+  target_link_libraries(dancerudiments_default_tests PRIVATE DanceRudiments::DanceRudiments)
+  add_test(NAME dancerudiments_defaults COMMAND dancerudiments_default_tests)
 endif()
 
 include(GNUInstallDirs)
@@ -81,3 +85,13 @@ install(FILES
   DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments")
 install(EXPORT DanceRudimentsTargets NAMESPACE DanceRudiments::
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments)
+
+# Export the ACTUAL catalogue used by the tag, never a handwritten JS mirror.
+if(DANCERUDIMENTS_BUILD_DEMO_TOOLS)
+  add_executable(dancerudiments_export_demo tools/export_default_catalogue.cpp)
+  target_link_libraries(dancerudiments_export_demo PRIVATE DanceRudiments::DanceRudiments)
+endif()
+install(FILES collections/initial/THIRD_PARTY_NOTICES.md
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments")
+install(FILES collections/initial/sources/d3-ease/LICENSE
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments" RENAME D3-ease-LICENSE)

@@ -1,15 +1,13 @@
 # Versioned release demos
 
-This standalone change adds release-demo generation only. It does not register
-optional movement packs, promote patterns into the default library, change
-package versions, create releases, or configure GitHub Pages.
+The release renderer exports the real compiled default catalogue. It does not
+change package versions, create releases, or configure GitHub Pages.
 
 The **Release demo** workflow runs whenever a release is published. It checks out
 the release tag, verifies the CMake/Python/npm versions, builds and installs that
 checkout's native Python extension, and calls the native `catalogue()` and
-`sample()` interfaces. There is no handwritten list of default movements: a tag
-with 15 defaults produces 15 cards, a tag with 43 produces 43, and future defaults
-are picked up in the same way.
+`sample()` interfaces. There is no handwritten list of default movements: the current
+catalogue produces 67 cards, and future defaults are picked up in the same way.
 
 The builder embeds every native sample, source attribution, interface code, CSS
 and a newly compiled C++ WebAssembly lookup sampler in one offline HTML file.
@@ -67,13 +65,14 @@ By default the browser checks `file://` loading. An explicit `--in-memory` optio
 supports environments that forbid file navigation; the manifest records the
 choice so it is not misreported as a file-navigation test.
 
-## Scope of the recovered patch
+## Default collections and stale-build protection
 
-The prior combined default-promotion/release-demo files were not retained in the
-current working environment. This patch independently restores release rendering;
-it does **not** claim to recover or apply the separate 43-default promotion change.
-The supplied renderer preview uses the intact earlier 28-pattern collection and
-is labelled as a preview fixture, not as the deployed default catalogue.
+The default library now contains 67 motions: 15 original primitives, 28 approved
+Initial 01 patterns, and 24 original Expansion 02 additions. Each published
+release runs the three generation checks before building its native module.
+The renderer verifies every required name from `collections/defaults.json` is
+present; an older installed binary cannot silently produce a smaller demo.
+Existing review/compare controls and each pattern's source notices are retained.
 
 References:
 - https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows

@@ -53,9 +53,12 @@
   const $ = id => document.getElementById(id);
   const data = JSON.parse($('data').textContent);
   const patterns = data.pack.patterns;
+  const phrasePips = Math.max(...patterns.map(p => p.period_pips));
+  $('seek').max = phrasePips - 1;
+  const project = v => [v[0] + .25*v[2], v[1] - .2*v[2]];
   const STORAGE = 'dancerudiments-review:' + data.collection_id + ':' + data.pack_sha256;
   const names = new Map(patterns.map((p, i) => [p.name, i]));
-  const reviews = new Map(patterns.map(p => [p.name, {status: 'unreviewed', note: ''}]));
+  const reviews = new Map(patterns.map(p => [p.name, {status: data.read_only_defaults ? 'keep' : 'unreviewed', note: ''}]));
   const compared = new Set();
   let native, plots = [], baseBeat = 0, origin = performance.now(), running = false;
   let bpm = 120, amplitude = .7, dirty = true, audioURL = null, storageOK = true;
@@ -232,7 +235,7 @@
     const counts={keep:0,maybe:0,skip:0,unreviewed:0};
     for (const r of reviews.values()) counts[r.status]++;
     $('counts').textContent=`${counts.keep} kept · ${counts.maybe} maybe · ${counts.skip} skipped`;
-    $('export-pack').disabled=$('export-score').disabled=counts.keep===0;
+    $('export-pack').disabled=$('export-score').disabled=counts.keep===0 || !!data.read_only_defaults;
     dirty=true;
   }
   for (const family of [...new Set(patterns.map(p=>p.provenance.family))]) {
@@ -247,11 +250,13 @@
   };
 
   function selectedPack() {
+    if (data.read_only_defaults) throw new Error('Release demos are native snapshots, not editable packs. Use the repository authoring data.');
     const kept=patterns.filter(p=>reviews.get(p.name).status==='keep');
     if (!kept.length) throw new Error('Mark at least one candidate Keep.');
     return {...data.pack,patterns:kept};
   }
   function selectedScores() {
+    if (data.read_only_defaults) throw new Error('Native defaults have no editable score in this demo.');
     const kept=data.score.patterns.filter(p=>reviews.get(p.name).status==='keep');
     if (!kept.length) throw new Error('Mark at least one candidate Keep.');
     return {...data.score,patterns:kept};
@@ -296,7 +301,7 @@
     ctx.beginPath();ctx.moveTo(w/2,12*dpr);ctx.lineTo(w/2,h-12*dpr);ctx.moveTo(14*dpr,h/2);ctx.lineTo(w-14*dpr,h/2);ctx.stroke();ctx.setLineDash([]);
     if ($('trails').checked) {
       ctx.strokeStyle='#556c83';ctx.lineWidth=dpr;ctx.beginPath();
-      curves[i].forEach((v,j)=>{const x=w/2+v[0]*scale,y=h/2+v[1]*scale;j?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+      curves[i].forEach((v,j)=>{const projected=project(v),x=w/2+projected[0]*scale,y=h/2+projected[1]*scale;j?ctx.lineTo(x,y):ctx.moveTo(x,y);});
       ctx.closePath();ctx.stroke();
     }
     ctx.fillStyle='#6b8098';ctx.font=`${10*dpr}px system-ui`;ctx.fillText('−X',9*dpr,h/2-7*dpr);ctx.fillText('+X',w-24*dpr,h/2-7*dpr);
@@ -306,7 +311,7 @@
     const period=patterns[i].period_pips;
     wc.strokeStyle='#2b374a';wc.lineWidth=dpr*.6;
     for (let p=0;p<=period;p+=64) { const x=p/period*wb.width;wc.beginPath();wc.moveTo(x,0);wc.lineTo(x,wb.height);wc.stroke(); }
-    ['#bcacf8','#83e8d0'].forEach((color,axis) => {
+    ['#bcacf8','#83e8d0', ...(curves[i].some(v=>v[2]!==0)?['#eab769']:[])].forEach((color,axis) => {
       wc.strokeStyle=color;wc.lineWidth=dpr;wc.beginPath();
       for(let j=0;j<=period;j++) {
         const x=j/period*wb.width,y=wb.height/2-curves[i][j%period][axis]*(wb.height*.38);
@@ -325,9 +330,9 @@
   function draw(beat=beatNow()) {
     if (!native) return;
     const absolutePip=Math.floor(beat*64+1e-8);
-    const pip=((absolutePip%512)+512)%512;
+    const pip=absolutePip;
     $('clock').textContent=`Beat ${Math.floor(beat)+1} · pip ${((absolutePip%64)+64)%64}`;
-    $('seek').value=pip;
+    $('seek').value=((pip%phrasePips)+phrasePips)%phrasePips;
     for (const plot of plots) {
       const resized=sizeCanvas(plot.stage)|sizeCanvas(plot.wave);
       if (resized || !plot.background || plot.amp!==amplitude) makeBackground(plot);
@@ -337,14 +342,14 @@
       if ($('trails').checked) {
         for(let back=24;back>=4;back-=4) {
           const v=sample(i,pip-back);ctx.globalAlpha=.08+(1-back/28)*.35;ctx.fillStyle='#83e8d0';
-          ctx.beginPath();ctx.arc(stage.width/2+v[0]*scale,stage.height/2+v[1]*scale,2.5*dpr,0,Math.PI*2);ctx.fill();
+          ctx.beginPath();ctx.arc(stage.width/2+project(v)[0]*scale,stage.height/2+project(v)[1]*scale,2.5*dpr,0,Math.PI*2);ctx.fill();
         } ctx.globalAlpha=1;
       }
-      const v=sample(i,pip),x=stage.width/2+v[0]*scale,y=stage.height/2+v[1]*scale;
+      const v=sample(i,pip),projected=project(v),x=stage.width/2+projected[0]*scale,y=stage.height/2+projected[1]*scale;
       ctx.fillStyle='#83e8d0';ctx.beginPath();ctx.arc(x,y,6*dpr,0,Math.PI*2);ctx.fill();
       ctx.strokeStyle='#d3fff1';ctx.lineWidth=dpr;ctx.stroke();
       ctx.fillStyle='#9db0c8';ctx.font=`${10*dpr}px ui-monospace,monospace`;
-      ctx.fillText(`x ${v[0].toFixed(2)}   y ${v[1].toFixed(2)}`,10*dpr,stage.height-9*dpr);
+      ctx.fillText(`x ${v[0].toFixed(2)}   y ${v[1].toFixed(2)}   z ${v[2].toFixed(2)}`,10*dpr,stage.height-9*dpr);
       const wc=wave.getContext('2d');wc.drawImage(plot.waveBackground,0,0);
       const local=((pip%patterns[i].period_pips)+patterns[i].period_pips)%patterns[i].period_pips;
       wc.strokeStyle='#edf5ff';wc.lineWidth=dpr;wc.beginPath();
@@ -359,7 +364,7 @@
     compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
        compared.clear();ids.forEach(n=>compared.add(names.get(n)));render();},
     state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly'}),
-    packSha256:data.pack_sha256};
+    packSha256:data.pack_sha256, snapshot:()=>({version:data.version,commit:data.source_commit,names:[...names.keys()]})};
   render();
   (async () => {
     try {

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {bindNative, createPatternLibrary} from '../../dist/typescript/index.js';
+import {bindNative, createPatternLibrary, catalogue} from '../../dist/typescript/index.js';
 
 const modulePath=path.resolve(process.argv[2] ?? 'build-wasm/dancerudiments.js');
 const packPath=path.resolve(process.argv[3] ?? 'generated/starter.json');
@@ -15,7 +15,7 @@ bindNative(native);
 const pack=JSON.parse(await fs.readFile(packPath,'utf8'));
 const library=createPatternLibrary(pack);
 try {
-  assert.equal(library.catalogue().length,15+pack.patterns.length);
+  assert.equal(library.catalogue().length, new Set([...catalogue.map(p=>p.name), ...pack.patterns.map(p=>p.name)]).size);
   for(const p of pack.patterns) {
     const positions=[-2147483648,2147483647];
     for(let i=-p.period_pips;i<=p.period_pips*2;i++)positions.push(i);

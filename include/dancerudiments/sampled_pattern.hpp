@@ -38,7 +38,8 @@ class SampledPattern {
 };
 
 // Explicit, independent banks: never modifies the global built-in catalogue.
-// Custom names must be unique and must not shadow built-ins. All construction
+// Custom names must be unique and must not shadow built-ins. Exact copies of
+// defaults are accepted idempotently for legacy pack loaders. All construction
 // is complete before publication, so concurrent read-only sampling is safe.
 class PatternLibrary {
  public:

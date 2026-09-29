@@ -43,8 +43,16 @@ def native_snapshot():
         pack=json.loads(path.read_text(encoding='utf-8'))
         for item in pack.get('patterns',[]):
             if isinstance(item,dict) and 'name' in item: provenance[item['name']]=item
+    catalogue = d.catalogue()
+    lock_path = ROOT/'collections/defaults.json'
+    if lock_path.is_file():
+        lock = json.loads(lock_path.read_text(encoding='utf-8'))
+        required = {name for source in lock['collections'] for name in source['patterns']}
+        missing = required - {item['name'] for item in catalogue}
+        if missing:
+            raise ValueError('Native library is stale; missing defaults: '+', '.join(sorted(missing)))
     rows=[]
-    for info in d.catalogue():
+    for info in catalogue:
         name=info['name'];period=info['period_pips']
         values=[list(d.sample(name,pip).as_tuple()) for pip in range(period)]
         source=provenance.get(name,{})

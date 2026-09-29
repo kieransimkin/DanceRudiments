@@ -1,16 +1,28 @@
 # DanceRudiments
 
-DanceRudiments is a small C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. The built-in rudiments use 64-, 128-, or 256-pip loops; custom compiled patterns can use any supported integral pip period. Every sampler wraps positive or negative input into its own loop before sampling.
+DanceRudiments is a small C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Built-in and custom patterns each keep their own loop period. Every sampler wraps positive or negative input into its own loop before sampling.
 
 Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pixels, CSS units, metres, or another scale. There is deliberately no time interpolation in the public API: renderers advance with integer pips and get one exact sample per pip.
+
+## Default collections
+
+The default catalogue contains **67 movements**: the original 15 routines, all
+28 approved Initial 01 patterns, and 24 original Expansion 02 patterns. Use the
+ordinary `sample(name, pip_count)` API without loading a separate pack.
+
+Expansion 02 adds shaped LFOs, closed XY/XYZ paths and rational-beat interlocking
+rhythms, including a seven-beat loop. See the [default library guide](docs/default-library.md)
+and [new pattern catalogue](collections/expansion/README.md). The release demo
+is generated from the compiled native catalogue, so new defaults appear automatically.
 
 ## Curve and event authoring
 
 The optional **Python authoring tools** compile LFOs, segmented curves, sampled
 waveforms, seeded repeating randomness and rational-beat event/gesture scores into
 JSON packs or C++17 headers. **All movement playback remains C++**, including
-Python and TypeScript/WASM consumers. The fifteen built-ins remain unchanged;
-custom packs use independent `PatternLibrary` objects rather than global overrides.
+Python and TypeScript/WASM consumers. The original fifteen motion tables are
+preserved; additional custom packs use independent `PatternLibrary` objects
+rather than global overrides.
 
 ```sh
 python tools/compile_patterns.py compile examples/patterns/starter.json --json generated/starter.json --cpp generated/starter.hpp

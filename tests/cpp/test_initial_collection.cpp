@@ -17,14 +17,16 @@ void require(bool condition, const char* message) {
 }
 int main() {
   auto bank=dancerudiments_initial::make_library();
-  require(dancerudiments::catalogue().size()==15, "Built-ins changed");
-  require(bank.catalogue().size()==43, "Wrong optional bank size");
+  require(dancerudiments::catalogue().size()==67, "Approved defaults missing");
+  require(bank.catalogue().size()==67, "Legacy loader duplicated defaults");
   require(pattern_count()==28, "Wrong preview count");
   long checked=0;
   for (int i=0; i<pattern_count(); ++i) {
     const int n=pattern_period(i);
     auto check=[&](int pip) {
-      auto a=bank.sample(names[i],pip), b=samplers[i](pip);
+      auto a=dancerudiments::sample(names[i],pip), b=samplers[i](pip);
+      const auto legacy=bank.sample(names[i],pip);
+      require(a.x==legacy.x && a.y==legacy.y && a.z==legacy.z, "Legacy load drift");
       double expected[3]={a.x,a.y,a.z}, direct[3]={b.x,b.y,b.z};
       for (int axis=0;axis<3;++axis) {
         double value=sample_component(i,pip,axis);

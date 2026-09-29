@@ -1,5 +1,6 @@
 #include "dancerudiments/sampled_pattern.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 #include <unordered_set>
@@ -41,18 +42,32 @@ Offset3 SampledPattern::sample(int pip_count) const {
   return samples_[static_cast<std::size_t>(wrap_pip(pip_count, period_pips()))];
 }
 
-PatternLibrary::PatternLibrary(std::vector<SampledPattern> patterns)
-    : patterns_(std::move(patterns)) {
-  if (patterns_.size() > max_pack_patterns) throw std::invalid_argument("Too many patterns");
+PatternLibrary::PatternLibrary(std::vector<SampledPattern> patterns) {
+  if (patterns.size() > max_pack_patterns) throw std::invalid_argument("Too many patterns");
   std::unordered_set<std::string> names;
-  for (const auto& item : dancerudiments::catalogue()) names.emplace(item.name);
+  const auto& defaults = dancerudiments::catalogue();
   std::size_t total = 0;
-  for (const auto& item : patterns_) {
+  for (auto& item : patterns) {
     if (item.period_pips() == 0) throw std::invalid_argument("Empty/moved-from pattern");
     if (!names.insert(item.name()).second)
-      throw std::invalid_argument("Duplicate or built-in pattern name: " + item.name());
+      throw std::invalid_argument("Duplicate pattern name: " + item.name());
     total += static_cast<std::size_t>(item.period_pips());
     if (total > max_pack_samples) throw std::invalid_argument("Pattern pack is too large");
+    const auto existing = std::find_if(defaults.begin(), defaults.end(),
+      [&](const RudimentInfo& info) { return info.name == item.name(); });
+    if (existing != defaults.end()) {
+      // Old clients explicitly load Initial 01. An EXACT default copy is
+      // idempotent, never an override; any metadata/sample change is rejected.
+      bool identical = existing->description == item.description() &&
+                       existing->period_pips == item.period_pips();
+      for (int pip = 0; identical && pip < item.period_pips(); ++pip) {
+        const auto a = item.sample(pip), b = dancerudiments::sample(item.name(), pip);
+        identical = a.x == b.x && a.y == b.y && a.z == b.z;
+      }
+      if (!identical) throw std::invalid_argument("Cannot override default pattern: " + item.name());
+      continue;
+    }
+    patterns_.push_back(std::move(item));
   }
 }
 

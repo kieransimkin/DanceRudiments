@@ -7,3 +7,8 @@ python/dancerudiments_authoring/packs/** text eol=lf
 include/dancerudiments/collections/** text eol=lf
 # Preserve byte-for-byte upstream tables (including upstream trailing spaces).
 collections/initial/sources/akwf/*.h -whitespace
+
+# Expansion scores and hash-locked registry must retain LF on every platform.
+collections/expansion/** text eol=lf
+collections/defaults.json text eol=lf
+include/dancerudiments/detail/** text eol=lf
