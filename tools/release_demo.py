@@ -16,6 +16,7 @@ import math
 from pathlib import Path
 import re
 import subprocess
+import struct
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,7 +72,7 @@ def native_snapshot():
     return rows
 
 def validate(patterns):
-    if not isinstance(patterns,list) or not 1<=len(patterns)<=1024: raise ValueError('Invalid pattern count')
+    if not isinstance(patterns,list) or not 1<=len(patterns)<=4096: raise ValueError('Invalid pattern count')
     names=set();total=0
     for p in patterns:
         name=p.get('name')
@@ -80,7 +81,7 @@ def validate(patterns):
         names.add(name);n=p['period_pips']
         if type(n) is not int or not 1<=n<=65535 or len(p['samples'])!=n:raise ValueError('Invalid period')
         total+=n
-        if total>1048576:raise ValueError('Demo exceeds sample limit')
+        if total>4194304:raise ValueError('Demo exceeds sample limit')
         for row in p['samples']:
             if len(row)!=3 or any(type(x) not in (int,float) or not math.isfinite(x) or abs(x)>1 for x in row):
                 raise ValueError('Invalid position')
@@ -107,8 +108,19 @@ def build_page(patterns, version, commit, output_dir, compiler='clang++', *, nat
                         '-Wl,--export=pattern_period','-Wl,--export=sample_component','-o',str(wasm)],check=True)
         raw=wasm.read_bytes()
     kind='native-default-catalogue' if native else 'renderer-preview-fixture'
+    # Runtime tables are already in WASM. Do not embed a second, much larger
+    # decimal JSON copy; retain independent native-export hashes for validation.
+    compact = []
+    for pattern in patterns:
+        row = {key: value for key, value in pattern.items() if key != 'samples'}
+        # Numeric equality treats -0.0 as 0.0, as does the existing sampler audit.
+        digest = sha256()
+        for xyz in pattern['samples']:
+            digest.update(struct.pack('<ddd', *(float(v) + 0.0 for v in xyz)))
+        row['samples_f64le_sha256'] = digest.hexdigest()
+        compact.append(row)
     payload=dict(collection_id='release-'+version,version=version,source_commit=commit,source_kind=kind,
-                 pack=dict(format='dancerudiments.demo-snapshot',schema_version=1,pips_per_beat=64,patterns=patterns),
+                 pack=dict(format='dancerudiments.demo-snapshot',schema_version=2,pips_per_beat=64,patterns=compact),
                  score=dict(patterns=[]),notices=notices,wasm=base64.b64encode(raw).decode())
     payload['pack_sha256']=sha256(canonical(payload['pack']).encode()).hexdigest()
     note=('All movements in the default catalogue of this release. Personal review choices do not change the library.' if native else
@@ -121,7 +133,8 @@ def build_page(patterns, version, commit, output_dir, compiler='clang++', *, nat
     page=page.replace('__PAYLOAD__',canonical(payload).replace('<','\\u003c'))
     path=output_dir/('DanceRudiments-demo-v'+version+'.html');path.write_text(page,encoding='utf-8')
     manifest=dict(version=version,source_commit=commit,source_kind=kind,pattern_count=len(patterns),sample_count=total,
-                  names=[p['name'] for p in patterns],pack_sha256=payload['pack_sha256'],wasm_sha256=sha256(raw).hexdigest(),
+                  names=[p['name'] for p in patterns],sample_encoding='WASM tables; SHA-256 of signed-zero-normalized f64le XYZ',
+                  sample_hashes=[p['samples_f64le_sha256'] for p in compact],pack_sha256=payload['pack_sha256'],wasm_sha256=sha256(raw).hexdigest(),
                   html_sha256=sha256(path.read_bytes()).hexdigest())
     path.with_suffix('.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
     print(str(path));return path

@@ -132,7 +132,7 @@ class ExpansionTests(unittest.TestCase):
 class ExpansionNativeTests(unittest.TestCase):
     def test_every_sample_and_arbitrary_seek_is_cpp(self):
         names = [p['name'] for p in native.catalogue()]
-        self.assertEqual(len(names), 787)
+        self.assertEqual(len(names), 1731)
         for p in expansion_pack().patterns:
             self.assertIn(p.name, names)
             for pip, expected in enumerate(p.samples):
@@ -162,7 +162,7 @@ class ReleaseSnapshotTests(unittest.TestCase):
     def test_native_snapshot_contains_both_collections(self):
         release = module('release_demo', 'tools/release_demo.py')
         rows = release.native_snapshot()
-        self.assertEqual(len(rows), 787)
+        self.assertEqual(len(rows), 1731)
         self.assertEqual([p['name'] for p in rows if p['provenance'].get('collection_id') == 'expansion-02'],
                          [p.name for p in expansion_pack().patterns])
 

@@ -7,7 +7,7 @@ using namespace dancerudiments;
 bool near(double a, double b) { return std::abs(a - b) < 1e-9; }
 
 int main() {
-  assert(catalogue().size() == 787);
+  assert(catalogue().size() == 1731);
   assert(wrap_pip(-1, 64) == 63);
   for (const auto& item : catalogue()) {
     const auto a = sample(item.name, 0);

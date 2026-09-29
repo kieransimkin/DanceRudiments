@@ -1,0 +1,121 @@
+{
+  "accessed": "2026-09-29",
+  "policy": "References support the stated features, not every authored event. No audio, MIDI, chart, proprietary preset or third-party code is imported.",
+  "sources": {
+    "jersey": {
+      "publisher": "Native Instruments / Tim Cant",
+      "title": "How to make a Jersey club track",
+      "url": "https://blog.native-instruments.com/jersey-club/",
+      "supports": "Five-kick foundation at zero-based sixteenth positions 0,4,8,11,14; dotted-eighth spacing, not triplets. Our other lanes are independently arranged."
+    },
+    "footwork": {
+      "publisher": "Attack Magazine",
+      "title": "Creating 808-style basslines for jungle, trap and footwork",
+      "url": "https://www.attackmagazine.com/technique/tutorials/creating-808-style-basslines-for-jungle-trap-and-footwork/",
+      "supports": "Bass/drum interplay and 808-style sound design in these styles. Our exact triplet and sparse scores are authored examples, not a transcription or universally prescribed grid."
+    },
+    "roska": {
+      "publisher": "Red Bull Music Academy / Roska",
+      "title": "Roska lecture",
+      "url": "https://www.redbullmusicacademy.com/lectures/roska-the-kiss-factor/",
+      "supports": "The producer describes skippy, travelling percussion and contrasts rolling/broken approaches; exact event placements here are original."
+    },
+    "afro_house": {
+      "publisher": "Native Instruments / Tim Cant",
+      "title": "Afro house production 101",
+      "url": "https://blog.native-instruments.com/afro-house-production-101/",
+      "supports": "Four-floor foundation with prominent syncopated percussion. Does not prescribe our exact bell/tom score."
+    },
+    "ameme": {
+      "publisher": "Native Instruments / AMEME",
+      "title": "AMEME interview",
+      "url": "https://blog.native-instruments.com/ameme/",
+      "supports": "Producer discussion of polyrhythms and offbeat sequencing; our three-over-four score is an original demonstration."
+    },
+    "gqom": {
+      "publisher": "Four Four / DJ Lag",
+      "title": "DJ Lag talks South African music, his global rise and more",
+      "url": "https://fourfour.co/dj-lag-talks-south-african-music-pride-his-global-rise-more-interview/",
+      "supports": "Artist perspective on Gqom and broken rhythms. Supports stylistic context only; our two-bar grids are not artist transcriptions."
+    },
+    "brazil": {
+      "publisher": "Splice / interviewed Brazilian producers",
+      "title": "Brazilian funk vs. phonk",
+      "url": "https://splice.com/blog/brazilian-funk-vs-phonk/",
+      "supports": "Producer perspectives on different Brazilian funk styles and their distinction from phonk; exact low-drum arrangements are our own."
+    },
+    "reggae": {
+      "publisher": "Hudson Music / Lerryns Hernandez",
+      "title": "Reggae for Drumset",
+      "url": "https://hudsonmusic.com/product/reggae-for-drumset/",
+      "supports": "Teacher-published method distinguishes one-drop, rockers and steppers and multiple variations. It is not the source of copied charts or media."
+    },
+    "one_drop": {
+      "publisher": "DrumFaster",
+      "title": "Reggae one-drop lesson",
+      "url": "https://drumfaster.com/play/classics/reggae-one-drop/",
+      "supports": "Kick and cross-stick on beat three; the supplied bass and tom embellishments are original. Text/search verification only, page fetch unavailable during this pass."
+    },
+    "reggae_grids": {
+      "publisher": "Veena Studio",
+      "title": "Make reggae music",
+      "url": "https://www.veena.studio/make/reggae-music",
+      "supports": "Authored tutorial distinguishes beat-3 one-drop, quarter-kick steppers and a beat-1/3 rockers study. Other rockers forms exist.",
+      "verification": "Indexed search text was available; direct page fetch returned cache miss."
+    },
+    "son_clave": {
+      "publisher": "Total Drummer / Matthew Dean",
+      "title": "Son clave drum pattern",
+      "url": "https://www.totaldrummer.com/son-clave-drum-pattern/",
+      "supports": "Five-stroke two-bar clave with reversible 3-side/2-side ordering. Our drum-kit orchestration is independently authored."
+    },
+    "son_grid": {
+      "publisher": "Soundbrenner",
+      "title": "Son clave",
+      "url": "https://www.soundbrenner.com/blogs/articles/son-clave",
+      "supports": "Explicit 3-2 placements: 1, & of 2, 4 | 2,3 and reversed 2-3. We preserve the full two-bar cycle."
+    },
+    "psy_bass": {
+      "publisher": "Psytrance Blueprint / MoRsei",
+      "title": "Triplets into rolling bass",
+      "url": "https://www.psytrance-blueprint.com/tutorials/morsei-triplets-rolling-bass/",
+      "supports": "Producer tutorial distinguishes triplet and straight rolling grooves. Our KBBB straight-sixteenth score is an illustrative arrangement, not its track transcription."
+    },
+    "kilbourne": {
+      "publisher": "Native Instruments / Kilbourne",
+      "title": "Patch and play: Kilbourne",
+      "url": "https://blog.native-instruments.com/patch-and-play-kilbourne/",
+      "supports": "Producer describes late-beat bass emphasis, reverse-bass swells and modulation within each beat. We import no preset or audio."
+    },
+    "italo": {
+      "publisher": "Attack Magazine",
+      "title": "Italo-disco beat construction",
+      "url": "https://www.attackmagazine.com/technique/beat-dissected/make-a-beat-inspired-by-alexander-robotnicks-problemes-damour/",
+      "supports": "Four-floor/backbeat and machine percussion vocabulary. Our rim/bass placements are not the named track or tutorial MIDI."
+    },
+    "tech_house": {
+      "publisher": "Attack Magazine",
+      "title": "Organic tech-house drum programming",
+      "url": "https://www.attackmagazine.com/technique/beat-dissected/organic-tech-house/",
+      "supports": "Selective shuffle, organic percussion and layered backbeat practice; not a license to reproduce supplied samples."
+    },
+    "trance": {
+      "publisher": "Native Instruments / Tim Cant",
+      "title": "What is trance music?",
+      "url": "https://blog.native-instruments.com/trance-music/",
+      "supports": "Quarter-kick trance foundation and offbeat bass context. Our grid is an authored study."
+    },
+    "reggaeton": {
+      "publisher": "Native Instruments / Tim Cant",
+      "title": "What is reggaeton?",
+      "url": "https://blog.native-instruments.com/reggaeton/",
+      "supports": "Dembow quarter-kick/displaced-snare foundation. Our pickups, bass and dancehall-influenced variant are independent arrangements."
+    },
+    "drumeo": {
+      "publisher": "Drumeo / Peter Szendofi",
+      "title": "Drum and bass / jungle beats",
+      "url": "https://www.drumeo.com/beat/drum-bass-jungle-beats/",
+      "supports": "A drummer demonstrates multiple approaches rather than one universal drum-and-bass pattern."
+    }
+  }
+}

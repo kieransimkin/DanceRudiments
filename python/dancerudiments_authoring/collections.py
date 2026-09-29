@@ -46,6 +46,11 @@ def club_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
     return _select_pack('club.json', names)
 
 
+def dancefloor_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
+    """Inspect the 944 Dancefloor 06 defaults; previous Club 05 data stays in club_pack()."""
+    return _select_pack('dancefloor.json', names)
+
+
 def _select_pack(filename: str, names: Optional[Iterable[str]]) -> CompiledPack:
     pack = load_pack(Path(__file__).parent / 'packs' / filename)
     if names is None:

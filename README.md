@@ -6,8 +6,8 @@ Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pix
 
 ## Default collections
 
-The default catalogue contains **787 movements**: 15 original routines, 28 Initial 01,
-24 Expansion 02, 256 Motion Atlas, 320 Continuum, and **144 Club Rhythms 05** movements.
+The default catalogue contains **1,731 movements**: 15 original routines, 28 Initial 01,
+24 Expansion 02, 256 Motion Atlas, 320 Continuum, **144 Club Rhythms 05** movements, and **944 Dancefloor 06** additions.
 Use the ordinary `sample(name, pip_count)` API without loading a separate pack.
 
 [Club Rhythms 05](collections/club/README.md) interprets 36 beat patterns, including
@@ -23,6 +23,22 @@ python tools/build_club_demo.py --output dist/club-demo.html
 See the [default library guide](docs/default-library.md) for all collections.
 Release demos enumerate the actual tagged native catalogue and also render the
 focused Club Rhythms page. No original recordings are bundled.
+
+## Dancefloor 06
+
+The default catalogue now contains **1,731 movements**, including 944 new Dancefloor 06
+entries. All 68 beat studies have sixteen movement interpretations. The previous Club 05
+scores and their original 144 movements remain unchanged. Research, rhythm-specific notes,
+and exact timing semantics are in the [Dancefloor guide](docs/dancefloor.md) and
+[complete mapping catalogue](collections/dancefloor/README.md).
+
+```sh
+python tools/build_dancefloor_collection.py --check
+python tools/build_default_catalogue.py --check
+```
+
+The release workflow builds the complete native catalogue demo plus an offline,
+audio-enabled 68-rhythm / 16-mapping comparison page. All live motion comes from C++/WASM.
 
 ## Curve and event authoring
 

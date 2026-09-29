@@ -1,7 +1,7 @@
 // Wrapper contract tests. The separate wasm-smoke.mjs tests the actual C++ WASM.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bindNative, createPatternLibrary, sample } from '../../dist/typescript/index.js';
+import { bindNative, createPatternLibrary, sample, catalogue } from '../../dist/typescript/index.js';
 
 function pack() {
   return {format:'dancerudiments.compiled-pack', schema_version:1, pips_per_beat:64, patterns:[{
@@ -44,7 +44,7 @@ test('delegates sampling to C++, owns one handle, disposes idempotently',()=>{
   assert.equal(m.alive(),1);
   assert.deepEqual(library.sample('custom',-1),{x:.25,y:.5,z:0});
   assert.deepEqual(m.calls,[['custom',-1]]);
-  assert.equal(library.catalogue().length,788);
+  assert.equal(library.catalogue().length,catalogue.length+1);
   assert.equal(library.catalogue().at(-1).dimensions,2);
   library.dispose();library.dispose();assert.equal(m.alive(),0);
   assert.throws(()=>library.sample('custom',0),/disposed/);

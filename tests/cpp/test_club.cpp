@@ -7,7 +7,7 @@
 static void require(bool condition) { if (!condition) throw std::runtime_error("Club rhythm test failed"); }
 int main() {
   using namespace dancerudiments;
-  require(catalogue().size() == 787);
+  require(catalogue().size() == 1731);
   int count = 0;
   for (const auto& info : catalogue()) {
     if (info.name.substr(0, 5) != "beat_") continue;
@@ -23,8 +23,8 @@ int main() {
       require(a.x==b.x && a.y==b.y && a.z==b.z);
     }
   }
-  require(count == 144);
+  require(count == 1088);
   // Bare quarter-note kick maximum aligns with every numbered beat.
   for (int beat=0; beat<4; ++beat) require(sample("beat_four_floor_bounce",beat*64).y == .55);
-  std::cout << "144 club movements registered, bounded and safe at extreme pips\n";
+  std::cout << "1088 beat movements registered, bounded and safe at extreme pips\n";
 }

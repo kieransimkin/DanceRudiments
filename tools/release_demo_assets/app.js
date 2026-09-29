@@ -1,5 +1,16 @@
 'use strict';
 (() => {
+  // Decode bounded chunks: Uint8Array.from(atob(...)) can create a huge temporary
+  // character array for a multi-megabyte embedded module.
+  function decodeBase64(text){
+    const padding=text.endsWith('==')?2:text.endsWith('=')?1:0;
+    const bytes=new Uint8Array(text.length/4*3-padding);let offset=0;
+    for(let start=0;start<text.length;start+=32768){
+      const chunk=atob(text.slice(start,start+32768));
+      for(let i=0;i<chunk.length;i++)bytes[offset++]=chunk.charCodeAt(i);
+    }
+    return bytes;
+  }
   const $ = id => document.getElementById(id);
   const data = JSON.parse($('data').textContent);
   const patterns = data.pack.patterns;
@@ -212,7 +223,7 @@
   }
   const collectionLabels = new Map([
     ['core','Original core'],['initial-01','Initial collection'],
-    ['expansion-02','Expansion 02'],['atlas-03','Motion Atlas / 256'],['continuum-04','Continuum / 320'],['club-05','Club Rhythms / 144 new']
+    ['expansion-02','Expansion 02'],['atlas-03','Motion Atlas / 256'],['continuum-04','Continuum / 320'],['club-05','Club Rhythms / 144'],['dancefloor-06','Dancefloor 06 / 944 new']
   ]);
   for (const id of [...new Set(patterns.map(p=>p.provenance.collection_id || 'core'))]) {
     const o=node('option','',collectionLabels.get(id) || id);o.value=id;$('collection').append(o);
@@ -340,7 +351,7 @@
   }
   function frame() { if (running || dirty) draw(); requestAnimationFrame(frame); }
   // Small documented test/debug surface; never runs user-provided code.
-  window.audition={ready:false, sample, setBeat:(b)=>{pause();setBeat(b);draw();},
+  window.audition={ready:false, sample, metadata:()=>patterns, setBeat:(b)=>{pause();setBeat(b);draw();},
     review:reviewDocument,importReview,setStatus,selectedPack,selectedScores,
     compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
        compared.clear();ids.forEach(n=>compared.add(names.get(n)));render();},
@@ -349,7 +360,7 @@
   render();
   (async () => {
     try {
-      const bytes=Uint8Array.from(atob(data.wasm),c=>c.charCodeAt(0));
+      const bytes=decodeBase64(data.wasm);
       const result=await WebAssembly.instantiate(bytes,{});native=result.instance.exports;
       if (native.pattern_count()!==patterns.length || patterns.some((p,i)=>native.pattern_period(i)!==p.period_pips))
         throw new Error('Native bank does not match the embedded collection');

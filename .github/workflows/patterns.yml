@@ -30,6 +30,7 @@ jobs:
           python tools/build_atlas_collection.py --check
           python tools/build_continuum_collection.py --check
           python tools/build_club_collection.py --check
+          python tools/build_dancefloor_collection.py --check
           python tools/build_default_catalogue.py --check
       - run: python -m pip install --upgrade build
       # build creates a wheel from the sdist too, checking source inclusion.
@@ -75,3 +76,4 @@ jobs:
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/atlas.json
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/continuum.json
           node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/club.json
+          node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js python/dancerudiments_authoring/packs/dancefloor.json

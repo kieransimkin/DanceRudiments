@@ -1,15 +1,16 @@
 # Default movement library
 
-The native catalogue contains **787 movements**: 15 original primitives, all
+The native catalogue contains **1,731 movements**: 15 original primitives, all
 28 user-approved Initial 01 patterns, 24 original Expansion 02 patterns, and
 256 original Motion Atlas presets, 320 original Continuum 04 presets, and
-144 Club Rhythms 05 movements derived from 36 beat studies.
+144 Club Rhythms 05 movements derived from 36 beat studies, and 944 Dancefloor 06 additions.
+Together the beat collections provide 68 rhythms with sixteen motion mappings each.
 The default API samples each directly. No pack registration, runtime Python,
 network access, or JSON parsing is required by C++/WASM movement playback.
 
 ```python
 import dancerudiments as d
-assert len(d.catalogue()) == 787
+assert len(d.catalogue()) == 1731
 print(d.sample('path_torus_knot', 48).as_tuple())
 print(d.sample('rhythm_seven_four', -1).as_tuple())
 ```
@@ -23,7 +24,7 @@ auto p = dancerudiments::sample("lfo_twin_swell", pip_count);
 import { bindNative, catalogue, sample } from '@kieransimkin/dance-rudiments';
 import createNative from '@kieransimkin/dance-rudiments/wasm';
 bindNative(await createNative());
-console.log(catalogue.length); // 787
+console.log(catalogue.length); // 1731
 const p = sample('path_woven_3d', -1);
 ```
 
@@ -62,7 +63,7 @@ motion under a new name rather than silently overriding a default.
 ```python
 from dancerudiments_authoring.collections import expansion_pack
 pack = expansion_pack(['path_torus_knot'])
-assert len(pack.to_native().catalogue()) == 787
+assert len(pack.to_native().catalogue()) == 1731
 ```
 
 The old 15-primitive harness and the editable Initial 01 audition page are
@@ -162,3 +163,8 @@ garage, drill, grime, jungle, house, techno and related dance rhythms.
 Build its self-contained synthesised-drum audition page with
 `python tools/build_club_demo.py --output dist/club-demo.html` after installing
 the native library. Release demos also build and render this focused page.
+
+## Dancefloor 06
+
+[Research and usage](dancefloor.md) · [All new rhythms and mappings](../collections/dancefloor/README.md).
+The original Club 05 pack is unchanged. `dancefloor_pack()` contains additions only.

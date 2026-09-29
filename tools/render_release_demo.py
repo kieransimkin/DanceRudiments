@@ -5,6 +5,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
+import struct
 import zipfile
 from playwright.sync_api import sync_playwright
 
@@ -13,6 +14,7 @@ def render(path,chromium=None,in_memory=False):
     def check(value,label):
         if not value:raise AssertionError(label)
         checks.append(label)
+        print(label, flush=True)
     check(sha256(path.read_bytes()).hexdigest()==manifest['html_sha256'],'HTML integrity')
     with sync_playwright() as p:
         opts=dict(headless=True,args=['--no-sandbox','--mute-audio'])
@@ -27,19 +29,50 @@ def render(path,chromium=None,in_memory=False):
         check(page.locator('#grid .card').count()==manifest['pattern_count'],'All catalogue entries render')
         check(not page.evaluate('audition.state().running'),'Starts paused')
         check(page.locator('#export-pack').is_hidden(),'Snapshot export is not misrepresented as an editable pack')
-        comparisons=page.evaluate('''() => {
-          const data=JSON.parse(document.getElementById('data').textContent);let count=0;
-          data.pack.patterns.forEach((p,i)=>{
-            for(let pip=-p.period_pips;pip<p.period_pips;pip++) {
-              const a=audition.sample(i,pip),b=p.samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
-              if(a.some((v,j)=>v!==b[j]))throw Error('Sample mismatch '+p.name+' '+pip);count+=3;
-            }
-            for(const pip of [-2147483648,2147483647]) {
-              const a=audition.sample(i,pip),b=p.samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
-              if(a.some((v,j)=>v!==b[j]))throw Error('Extreme pip mismatch '+p.name);count+=3;
-            }
-          });return count;
-        }''')
+        comparisons = 0
+        if 'sample_hashes' in manifest:
+            # Transfer bounded batches, not the entire default catalogue. The
+            # reference digests came from native Python/C++ before WASM compilation.
+            for offset in range(0, manifest['pattern_count'], 24):
+                batches = page.evaluate('''([start, stop]) => {
+                    const patterns=audition.metadata();
+                    return patterns.slice(start,stop).map((p,j)=>{
+                        const index=start+j, samples=[];
+                        for(let pip=0;pip<p.period_pips;pip++) {
+                            const a=audition.sample(index,pip);
+                            const b=audition.sample(index,pip-p.period_pips);
+                            if(a.some((v,k)=>v!==b[k]))throw Error('Negative wrap '+p.name);
+                            samples.push(a);
+                        }
+                        for(const pip of [-2147483648,2147483647]) {
+                            const a=audition.sample(index,pip);
+                            const b=samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
+                            if(a.some((v,k)=>v!==b[k]))throw Error('Extreme wrap '+p.name);
+                        }
+                        return samples;
+                    });
+                }''', [offset, min(offset+24,manifest['pattern_count'])])
+                for index, samples in enumerate(batches, offset):
+                    digest=sha256()
+                    for xyz in samples:
+                        digest.update(struct.pack('<ddd', *(float(v)+0.0 for v in xyz)))
+                    if digest.hexdigest()!=manifest['sample_hashes'][index]:
+                        raise AssertionError('Native/WASM hash mismatch: '+manifest['names'][index])
+                    comparisons += len(samples)*6+6
+        else:
+            comparisons=page.evaluate('''() => {
+              const data=JSON.parse(document.getElementById('data').textContent);let count=0;
+              data.pack.patterns.forEach((p,i)=>{
+                for(let pip=-p.period_pips;pip<p.period_pips;pip++) {
+                  const a=audition.sample(i,pip),b=p.samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
+                  if(a.some((v,j)=>v!==b[j]))throw Error('Sample mismatch '+p.name+' '+pip);count+=3;
+                }
+                for(const pip of [-2147483648,2147483647]) {
+                  const a=audition.sample(i,pip),b=p.samples[((pip%p.period_pips)+p.period_pips)%p.period_pips];
+                  if(a.some((v,j)=>v!==b[j]))throw Error('Extreme pip mismatch '+p.name);count+=3;
+                }
+              });return count;
+            }''')
         check(comparisons>0,'Exact native-snapshot/WASM sample equality')
         page.evaluate('audition.setBeat(11.25)');check(page.evaluate('audition.state().beat')==11.25,'Seeking beyond eight beats')
         page.locator('#play').click();page.wait_for_timeout(150);check(page.evaluate('audition.state().beat')>11.25,'Playback advances')
@@ -48,7 +81,7 @@ def render(path,chromium=None,in_memory=False):
         collection_values=page.locator('#collection option').evaluate_all('(options)=>options.slice(1).map(o=>o.value)')
         for collection in collection_values:
             page.locator('#collection').select_option(collection)
-            expected=page.evaluate('(id)=>JSON.parse(document.getElementById("data").textContent).pack.patterns.filter(p=>(p.provenance.collection_id||"core")===id).length',collection)
+            expected=page.evaluate('(id)=>(audition.metadata ? audition.metadata() : JSON.parse(document.getElementById("data").textContent).pack.patterns).filter(p=>(p.provenance.collection_id||"core")===id).length',collection)
             check(page.locator('#grid .card').count()==expected,'Collection filter '+collection)
         page.locator('#collection').select_option('')
         # Large catalogues need a layout/IntersectionObserver frame after replacement.

@@ -86,10 +86,10 @@ class ClubRhythmTests(unittest.TestCase):
         with self.assertRaises(ValueError):club_pack(['missing'])
     @unittest.skipIf(native is None,'native extension not available')
     def test_all_new_native_samples_and_extremes(self):
-        self.assertEqual(len(native.catalogue()),787)
-        self.assertEqual([p['name'] for p in native.catalogue()[-144:]],[p.name for p in self.pack.patterns])
+        self.assertEqual(len(native.catalogue()),1731)
+        self.assertEqual([p['name'] for p in native.catalogue()[643:787]],[p.name for p in self.pack.patterns])
         for p in self.pack.patterns:
             for i,row in enumerate(p.samples):self.assertEqual(native.sample(p.name,i).as_tuple(),row)
             for i in [-2147483648,-1,p.period_pips,2147483647]:self.assertEqual(native.sample(p.name,i).as_tuple(),p.samples[i%p.period_pips])
     @unittest.skipIf(native is None,'native extension not available')
-    def test_legacy_loader_idempotent(self):self.assertEqual(len(club_pack(['beat_four_floor_bounce']).to_native().catalogue()),787)
+    def test_legacy_loader_idempotent(self):self.assertEqual(len(club_pack(['beat_four_floor_bounce']).to_native().catalogue()),1731)

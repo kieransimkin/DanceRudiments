@@ -19,3 +19,5 @@ collections/continuum/** text eol=lf
 
 # Club Rhythms source hashes and generated files are platform-independent.
 collections/club/** text eol=lf
+
+collections/dancefloor/** text eol=lf

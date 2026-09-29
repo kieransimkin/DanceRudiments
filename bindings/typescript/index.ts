@@ -14,6 +14,10 @@ type NativeModule = {
   PatternLibrary?: new (patterns: NativePattern[]) => NativeLibrary;
 };
 
+// Widen metadata before spreading thousands of literal records. Keep the name
+// union precise, without asking TypeScript to construct a huge object union.
+const generatedCatalogue: readonly RudimentInfo[] = approvedDefaults;
+
 export const catalogue: readonly RudimentInfo[] = [
   { name: "bounce", description: "One-beat vertical bounce", periodPips: 64, dimensions: 1 },
   { name: "sway", description: "Two-beat side-to-side sway", periodPips: 128, dimensions: 1 },
@@ -30,7 +34,7 @@ export const catalogue: readonly RudimentInfo[] = [
   { name: "flam", description: "Grace motion flowing into an opposite-hand primary motion", periodPips: 64, dimensions: 2 },
   { name: "drag", description: "Two grace motions flowing into an opposite-hand primary motion", periodPips: 64, dimensions: 2 },
   { name: "five_stroke_roll", description: "Two diddles resolving to an accented fifth motion", periodPips: 128, dimensions: 2 },
-  ...approvedDefaults
+  ...generatedCatalogue
 ];
 
 let native: NativeModule | undefined;

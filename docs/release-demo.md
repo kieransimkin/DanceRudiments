@@ -89,3 +89,28 @@ scrolling. Musical phase always comes from the shared clock, so reappearing
 cards show their correct current position. No reduced-fidelity movement sampler
 or JavaScript fallback is substituted. The builder validates Atlas regeneration
 before the release native build. Existing release-asset upload behaviour is unchanged.
+
+## Dancefloor 06 additions
+
+The workflow also renders `DanceRudiments-demo-dancefloor-vX.Y.Z.html`: 68 rhythm studies
+with 16 mappings each, four-slot comparison, synthesised audio and desktop/mobile captures.
+The general native snapshot permits up to 4,096 patterns and 4,194,304 samples for the
+expanded catalogue. Untrusted authoring/JSON pack limits remain 1,024 patterns and
+1,048,576 samples per pack. Each pack remains independent.
+
+### Large-catalogue snapshot storage (schema 2)
+
+The full catalogue demo now stores its movement tables **once**, inside WASM,
+not again as decimal JSON triples. Snapshot metadata retains a SHA-256 digest of
+native-exported little-endian float64 XYZ values for every pattern. Signed zero
+is normalised for these digests, matching the previous numeric-equality test.
+The renderer reads all WASM samples in bounded batches and compares those digests,
+as well as testing negative and extreme pip wrapping. It still validates schema-1
+snapshots that contain decimal tables. This is an internal, read-only demo format;
+the authoring and compiled-pack schemas are unchanged.
+
+Base64 decoding uses bounded chunks rather than creating a character array for
+the entire embedded module. On the 1,731-pattern preview this reduces the full
+HTML from approximately 74 MiB to 35 MiB without changing movement data. The
+focused sixteen-mapping page retains its inspection tables and separate exact
+scalar tests. Neither page uses a JavaScript motion fallback.

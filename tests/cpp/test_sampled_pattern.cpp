@@ -40,7 +40,7 @@ int main() {
   rejects([] { SampledPattern("bad", "", {{0,std::numeric_limits<double>::quiet_NaN(),0}}); });
   rejects([] { SampledPattern("long", "", std::vector<Offset3>(max_pattern_samples + 1)); });
   PatternLibrary library({p, owned, one, two});
-  check(library.catalogue().size() == catalogue().size() + 4 && catalogue().size() == 787);
+  check(library.catalogue().size() == catalogue().size() + 4 && catalogue().size() == 1731);
   check(same(library.sample("custom_step", -1), p.sample(-1)));
   for (const auto& builtin : catalogue()) {
     for (int pip = -2 * builtin.period_pips; pip <= 2 * builtin.period_pips; ++pip) {

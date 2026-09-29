@@ -176,7 +176,7 @@ class ContinuumTests(unittest.TestCase):
         self.assertEqual(sorted(indices),list(range(len(patterns))))
         names=[patterns[i][0].name for i in indices]
         self.assertEqual(names,sorted(names));self.assertEqual(len(names),len(set(names)))
-        self.assertEqual(len(patterns),772)
+        self.assertEqual(len(patterns),1716)
 
 
 @unittest.skipIf(native is None,'Native extension unavailable')
@@ -193,7 +193,7 @@ class ContinuumNativeTests(unittest.TestCase):
                 self.assertEqual(native.sample(p.name,pip).as_tuple(),p.samples[pip%p.period_pips])
 
     def test_default_order_is_append_only(self):
-        entries=native.catalogue();self.assertEqual(len(entries),787)
+        entries=native.catalogue();self.assertEqual(len(entries),1731)
         expected=initial_pack().patterns+expansion_pack().patterns+atlas_pack().patterns+continuum_pack().patterns
         self.assertEqual([p['name'] for p in entries[15:15+len(expected)]],[p.name for p in expected])
 
@@ -212,5 +212,5 @@ class ContinuumNativeTests(unittest.TestCase):
 
     def test_release_snapshot_contains_every_default(self):
         demo=module('continuum_demo','tools/release_demo.py');rows=demo.native_snapshot()
-        self.assertEqual(len(rows),787)
+        self.assertEqual(len(rows),1731)
         self.assertEqual(sum(p['provenance'].get('collection_id')=='continuum-04' for p in rows),320)
