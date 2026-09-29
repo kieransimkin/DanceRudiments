@@ -1,0 +1,234 @@
+{
+  "candidates": [
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_breathe",
+      "period_pips": 256,
+      "source_sha256": "5eaa777cc6a84c0324eff312dc277bc8c81844a56b119d346a3d1099bf3f6732",
+      "title": "Breathe"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_surge",
+      "period_pips": 256,
+      "source_sha256": "ef998ac520f901a6b082f0b7a54e19d7bcd2cdd9e33885a2130721bd425ec83b",
+      "title": "Surge & recover"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_soft_gate",
+      "period_pips": 256,
+      "source_sha256": "2ad57f778cb8569a232b1acca831beed8f8192ac25d2e7f4e26c3d586b2666f1",
+      "title": "Soft gate"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_double_pump",
+      "period_pips": 256,
+      "source_sha256": "b0c3d818ec67fd9890c17d5abb54318a64a52b7ae4ac6abfd0f244c01bf15548",
+      "title": "Double pump"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_ratchet",
+      "period_pips": 256,
+      "source_sha256": "977aea1f4ff997fb1fee93aa9101d28029c3d2c23bf6cae8bb46f1bf88086a16",
+      "title": "Ratchet & release"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_glide_stair",
+      "period_pips": 256,
+      "source_sha256": "cc7e549f94ed05c0a583372fc0ca3dbbbb389f66cdf98ff244cf719bb5919d85",
+      "title": "Glide staircase"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_morph",
+      "period_pips": 512,
+      "source_sha256": "4fcbd89f95bd6a8e9afc31a8c32db6d997d0cb1afbe25e7e926643cda3841037",
+      "title": "Morphing wobble"
+    },
+    {
+      "family": "LFO",
+      "license": "MIT",
+      "name": "lfo_flower",
+      "period_pips": 512,
+      "source_sha256": "5367f19120027d662153f91460c51e022bf581980e1007df85c42d92699c7f8f",
+      "title": "Three-lobe orbit"
+    },
+    {
+      "family": "Rhythm",
+      "license": "MIT",
+      "name": "rhythm_euclid_3_8",
+      "period_pips": 256,
+      "source_sha256": "5d2ea781b44b03975614abdc98552ce8d47e56738c902752b441839e7eb99999",
+      "title": "3 in 8"
+    },
+    {
+      "family": "Rhythm",
+      "license": "MIT",
+      "name": "rhythm_euclid_5_12",
+      "period_pips": 256,
+      "source_sha256": "90f81dcc0211c3a81138b4598d455311636d6ae78ca0b34b503c63ea8599c524",
+      "title": "5 in 12"
+    },
+    {
+      "family": "Rhythm",
+      "license": "MIT",
+      "name": "rhythm_three_two",
+      "period_pips": 256,
+      "source_sha256": "f83c060a1074aba824711b7ca1cb025e50908772c47ad4bdc29bc0523e82d270",
+      "title": "Three against two"
+    },
+    {
+      "family": "Rhythm",
+      "license": "MIT",
+      "name": "rhythm_half_time",
+      "period_pips": 256,
+      "source_sha256": "8e574c4d6ecbbfc528d3868c2a9bf7979b3c796b7c1d425aa4ff65c6fca2243a",
+      "title": "Half-time lurch"
+    },
+    {
+      "family": "Rudiment",
+      "license": "MIT",
+      "name": "rudiment_double_paradiddle",
+      "period_pips": 256,
+      "source_sha256": "62660fb0680114b989e24e664fd49ff389bfd74abf725420cd3e0196a595d1d5",
+      "title": "Double paradiddle study"
+    },
+    {
+      "family": "Rudiment",
+      "license": "MIT",
+      "name": "rudiment_paradiddle_diddle",
+      "period_pips": 256,
+      "source_sha256": "11b8a7564b92baf5cd7312e2bf1421b76a989ab8a8ce104518db577e44fd2e7d",
+      "title": "Paradiddle-diddle study"
+    },
+    {
+      "family": "Rudiment",
+      "license": "MIT",
+      "name": "rudiment_six_stroke",
+      "period_pips": 256,
+      "source_sha256": "95caa00bc71b04813f8927c4560c8af1a82eca9c528e5e87228390de383b0db7",
+      "title": "Six-stroke study"
+    },
+    {
+      "family": "Rudiment",
+      "license": "MIT",
+      "name": "rudiment_flam_accent",
+      "period_pips": 256,
+      "source_sha256": "755195b5563a6c607f42ee9fc88349044b9baeeae4d99d3ba302832623d3fd7c",
+      "title": "Flam accent study"
+    },
+    {
+      "family": "Easing",
+      "license": "BSD-3-Clause",
+      "name": "ease_rebound",
+      "period_pips": 256,
+      "source_sha256": "8de1c56d7aecda9663f90b5f1bbcee03305e5ada591dad91acc6b3086f51e709",
+      "title": "Rebound"
+    },
+    {
+      "family": "Easing",
+      "license": "BSD-3-Clause",
+      "name": "ease_anticipate",
+      "period_pips": 256,
+      "source_sha256": "313a25751da4dee501fff49dae8a416e4eb8480371138fba4f5f72f7270a160b",
+      "title": "Anticipation"
+    },
+    {
+      "family": "Easing",
+      "license": "BSD-3-Clause",
+      "name": "ease_overshoot",
+      "period_pips": 256,
+      "source_sha256": "170bf119a17fa1193ae980e3292835d22435f26e791caa9eb7e32185f3a4d085",
+      "title": "Overshoot & settle"
+    },
+    {
+      "family": "Easing",
+      "license": "MIT",
+      "name": "ease_elastic",
+      "period_pips": 256,
+      "source_sha256": "964e3fbddca438a61eb4abbfb5313cafa87514cde4e722614c1aa49df489c46d",
+      "title": "Elastic ring"
+    },
+    {
+      "family": "AKWF",
+      "license": "CC0-1.0",
+      "name": "akwf_round_saw",
+      "period_pips": 256,
+      "source_sha256": "f8180d7d2e046c063c2820cec995ae5b81c2fae7a25f696b85dd986f2e0699d0",
+      "title": "AKWF / rounded saw"
+    },
+    {
+      "family": "AKWF",
+      "license": "CC0-1.0",
+      "name": "akwf_quick_return",
+      "period_pips": 256,
+      "source_sha256": "cd77fb4b9f8f91c1488836bc84daf12f6dde3c1e5f9ac1786cf254a7fabf4da7",
+      "title": "AKWF / quick return"
+    },
+    {
+      "family": "AKWF",
+      "license": "CC0-1.0",
+      "name": "akwf_multi_lobe",
+      "period_pips": 256,
+      "source_sha256": "8fb702d274cc2adad728bd5ff8a7f56c99d8d5aa5d43d7154aed2c7981d18bfd",
+      "title": "AKWF / multiple lobes"
+    },
+    {
+      "family": "AKWF",
+      "license": "CC0-1.0",
+      "name": "akwf_plateau",
+      "period_pips": 256,
+      "source_sha256": "967b4aeed8cdf3606117c9f44a0b9dc76979a4c25d11406e28450aba69353708",
+      "title": "AKWF / plateau"
+    },
+    {
+      "family": "Groove MIDI",
+      "license": "CC-BY-4.0",
+      "name": "groove_a_played",
+      "period_pips": 512,
+      "source_sha256": "7694ab70d0a57118a0cacb02a9036cb3c93c4d4b5eb4cc274090a8e8752d16b2",
+      "title": "Groove A / played"
+    },
+    {
+      "family": "Groove MIDI",
+      "license": "CC-BY-4.0",
+      "name": "groove_a_grid",
+      "period_pips": 512,
+      "source_sha256": "b36f13bc3b3bf254e728e646cf347924c76dae22a422575aed5875be373f360d",
+      "title": "Groove A / 16th grid"
+    },
+    {
+      "family": "Groove MIDI",
+      "license": "CC-BY-4.0",
+      "name": "groove_b_played",
+      "period_pips": 512,
+      "source_sha256": "c040364d9a9c00542dd1d55f77c8addd4c148dbfde35bac9d8a8f80580866f77",
+      "title": "Groove B / played"
+    },
+    {
+      "family": "Groove MIDI",
+      "license": "CC-BY-4.0",
+      "name": "groove_b_grid",
+      "period_pips": 512,
+      "source_sha256": "9b351b54e279de9d4105b3b097a3dfcfc6688e510fdd213305566e5d22e25761",
+      "title": "Groove B / 16th grid"
+    }
+  ],
+  "collection_id": "initial-01",
+  "pack_sha256": "a75c62c9050e9735b93655416355dd51f5b8a8385c8a79240f00ebeb2b2990c1",
+  "pattern_count": 28,
+  "pips_per_quarter_note": 64,
+  "sample_count": 8704,
+  "wasm_sha256": "4d8ebe55c2f397e0055982d6a89aeb6728e8fad0048c6effc953a63ccb347e9d"
+}

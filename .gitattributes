@@ -1,0 +1,9 @@
+# Exact source-byte identities and deterministic generated tables must survive
+# Windows checkouts; limit this policy to the new optional collection assets.
+collections/initial/** text eol=lf
+harness/initial/** text eol=lf
+harness/initial-collection.html text eol=lf
+python/dancerudiments_authoring/packs/** text eol=lf
+include/dancerudiments/collections/** text eol=lf
+# Preserve byte-for-byte upstream tables (including upstream trailing spaces).
+collections/initial/sources/akwf/*.h -whitespace

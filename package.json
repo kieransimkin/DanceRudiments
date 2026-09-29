@@ -11,9 +11,10 @@
       "types": "./dist/typescript/index.d.ts",
       "import": "./dist/typescript/index.js"
     },
-    "./wasm": "./dist/wasm/dancerudiments.js"
+    "./wasm": "./dist/wasm/dancerudiments.js",
+    "./collections/initial": "./python/dancerudiments_authoring/packs/initial.json"
   },
-  "files": ["dist/typescript/", "dist/wasm/", "harness/", "README.md", "LICENSE", "docs/authoring.md", "examples/patterns/"],
+  "files": ["dist/typescript/", "dist/wasm/", "harness/", "README.md", "LICENSE", "docs/authoring.md", "examples/patterns/", "python/dancerudiments_authoring/packs/", "collections/initial/README.md", "collections/initial/THIRD_PARTY_NOTICES.md"],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kieransimkin/DanceRudiments.git"
@@ -22,6 +23,7 @@
   "bugs": "https://github.com/kieransimkin/DanceRudiments/issues",
   "publishConfig": { "access": "public", "provenance": true },
   "scripts": {
+    "test:initial": "node --test tests/typescript/initial-wasm.test.mjs",
     "build:harness": "tsc -p tsconfig.json",
     "test": "npm run build:harness && node --test --test-isolation=none tests/typescript/*.test.js"
   },

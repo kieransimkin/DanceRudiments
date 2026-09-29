@@ -1,0 +1,42 @@
+name: Initial collection
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Check generated collection and source identities
+        run: python tools/build_initial_collection.py --check
+      - name: Native C++ parity, including standalone generated functions
+        run: |
+          mkdir -p build-collection
+          g++ -std=c++17 -O2 -I include src/dance_rudiments.cpp src/sampled_pattern.cpp collections/initial/preview_sampler.cpp tests/cpp/test_initial_collection.cpp -o build-collection/check
+          build-collection/check
+      - name: Actual WebAssembly parity
+        run: node --test tests/typescript/initial-wasm.test.mjs
+      - name: Install wheel and test bundled resources, without a source PYTHONPATH
+        run: |
+          python -m pip install .
+          python -c "from dancerudiments_authoring.collections import initial_pack; p=initial_pack(); assert len(p.patterns)==28; assert len(p.to_native().catalogue())==43"
+      - name: Authoring and native extension tests
+        env:
+          DANCERUDIMENTS_REQUIRE_NATIVE: '1'
+        run: python -m unittest discover -s tests/python -v
+      - name: Browser checks
+        run: |
+          python -m pip install playwright
+          python -m playwright install --with-deps chromium
+          python tests/browser/test_initial_gallery.py
