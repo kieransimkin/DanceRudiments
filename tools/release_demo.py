@@ -18,6 +18,7 @@ import re
 import subprocess
 import struct
 import tempfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'tools/release_demo_assets'
@@ -87,6 +88,31 @@ def validate(patterns):
                 raise ValueError('Invalid position')
     return total
 
+def beat_library():
+    # Works both as a script and when loaded by importlib-based regression tests.
+    directory = str(ROOT / 'tools')
+    if directory not in sys.path:
+        sys.path.insert(0, directory)
+    from harness_beats import collect
+    return collect(ROOT)
+
+
+def render_template(payload):
+    """Assemble a genuinely self-contained HTML document, without external assets."""
+    note = ('All movements in this native catalogue. MIDI beats and animations share one tempo. '
+            'Personal review choices do not change the library.')
+    if payload.get('source_kind') != 'native-default-catalogue':
+        note = ('Preview assembled from a retained native-export snapshot; not a fresh native build. '
+                'MIDI beats and animations share one tempo.')
+    page = (ASSETS/'template.html').read_text(encoding='utf-8')
+    for key,value in [('__VERSION__',payload['version']),('__COUNT__',str(len(payload['pack']['patterns']))),
+                      ('__COMMIT__',payload['source_commit']),('__BUILD_NOTE__',note)]:
+        page = page.replace(key,html.escape(value))
+    for key,file in [('/*__STYLE__*/','style.css'),('/*__BEAT_PLAYER__*/','beat_player.js'),('/*__APP__*/','app.js')]:
+        page = page.replace(key,(ASSETS/file).read_text(encoding='utf-8'))
+    return page.replace('__PAYLOAD__',canonical(payload).replace('<','\\u003c'))
+
+
 def build_page(patterns, version, commit, output_dir, compiler='clang++', *, native=True, notices=''):
     """The CLI always exports native defaults. Explicit fixture calls are labelled previews."""
     total=validate(patterns)
@@ -120,19 +146,15 @@ def build_page(patterns, version, commit, output_dir, compiler='clang++', *, nat
         row['samples_f64le_sha256'] = digest.hexdigest()
         compact.append(row)
     payload=dict(collection_id='release-'+version,version=version,source_commit=commit,source_kind=kind,
+                 beat_library=beat_library(),
                  pack=dict(format='dancerudiments.demo-snapshot',schema_version=2,pips_per_beat=64,patterns=compact),
                  score=dict(patterns=[]),notices=notices,wasm=base64.b64encode(raw).decode())
     payload['pack_sha256']=sha256(canonical(payload['pack']).encode()).hexdigest()
-    note=('All movements in the default catalogue of this release. Personal review choices do not change the library.' if native else
-          'Renderer preview using the previously delivered 28-pattern collection; not a claim about the current default catalogue.')
-    page=(ASSETS/'template.html').read_text(encoding='utf-8')
-    for key,val in [('__VERSION__',version),('__COUNT__',str(len(patterns))),('__COMMIT__',commit),('__BUILD_NOTE__',note)]:
-        page=page.replace(key,html.escape(val))
-    page=page.replace('/*__STYLE__*/',(ASSETS/'style.css').read_text(encoding='utf-8'))
-    page=page.replace('/*__APP__*/',(ASSETS/'app.js').read_text(encoding='utf-8'))
-    page=page.replace('__PAYLOAD__',canonical(payload).replace('<','\\u003c'))
+    page=render_template(payload)
     path=output_dir/('DanceRudiments-demo-v'+version+'.html');path.write_text(page,encoding='utf-8')
     manifest=dict(version=version,source_commit=commit,source_kind=kind,pattern_count=len(patterns),sample_count=total,
+                  beat_count=len(payload['beat_library']['beats']),beat_library_sha256=payload['beat_library']['sha256'],
+                  beat_coverage=payload['beat_library']['coverage'],
                   names=[p['name'] for p in patterns],sample_encoding='WASM tables; SHA-256 of signed-zero-normalized f64le XYZ',
                   sample_hashes=[p['samples_f64le_sha256'] for p in compact],pack_sha256=payload['pack_sha256'],wasm_sha256=sha256(raw).hexdigest(),
                   html_sha256=sha256(path.read_bytes()).hexdigest())

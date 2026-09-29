@@ -14,7 +14,7 @@
   const $ = id => document.getElementById(id);
   const data = JSON.parse($('data').textContent);
   const patterns = data.pack.patterns;
-  const phrasePips = Math.max(...patterns.map(p => p.period_pips));
+  let phrasePips = Math.max(...patterns.map(p => p.period_pips));
   $('seek').max = phrasePips - 1;
   const project = v => [v[0]+.25*v[2], v[1]-.2*v[2]];
   const STORAGE = 'dancerudiments-review:' + data.collection_id + ':' + data.pack_sha256;
@@ -40,6 +40,13 @@
   let native, plots = [], baseBeat = 0, origin = performance.now(), running = false;
   let bpm = 120, amplitude = .7, dirty = true, audioURL = null, storageOK = true;
   const audio = $('audio');
+  const beatLibrary = data.beat_library || {beats:[],pattern_beats:{},sources:{}};
+  const beats = new Map(beatLibrary.beats.map(b=>[b.id,DanceBeat.normalizeBeat(b)]));
+  let selectedBeat=null, scoreBackground=null, playPending=false;
+  const transport = new DanceBeat.BeatTransport({bpm,onChange:()=>{
+    if(!audioURL)running=transport.running;
+    updatePlay();dirty=true;
+  }});
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
   function message(text, error = false) {
@@ -85,36 +92,37 @@
 
   function beatNow() {
     if (audioURL) return (audio.currentTime - Number($('offset').value || 0)) * bpm / 60;
-    return baseBeat + (running ? (performance.now()-origin)*bpm/60000 : 0);
+    return transport.beat();
   }
   function setBeat(value) {
     if (!Number.isFinite(value)) throw new Error('Beat must be finite');
     if (audioURL) {
       const time = Number($('offset').value || 0) + value*60/bpm;
       if (Number.isFinite(audio.duration)) audio.currentTime=Math.max(0,Math.min(audio.duration,time));
-    } else { baseBeat=value; origin=performance.now(); }
+    } else { transport.seek(value); }
     dirty=true;
   }
-  function updatePlay() { $('play').textContent=running ? 'Pause' : 'Play'; }
+  function updatePlay() { $('play').textContent=playPending ? 'Starting…' : running ? 'Pause' : 'Play'; $('play').setAttribute('aria-pressed',String(running)); }
   function pause() {
-    baseBeat=beatNow(); running=false; audio.pause(); updatePlay(); dirty=true;
+    baseBeat=beatNow(); playPending=false;transport.pause();running=false;audio.pause(); updatePlay();dirty=true;
   }
   async function play() {
-    if (!native) return;
-    if (audioURL) {
-      try { await audio.play(); }
-      catch (error) { message('Audio could not play: '+error.message,true); return; }
-    } else { origin=performance.now(); running=true; updatePlay(); }
-    dirty=true;
+    if (!native || playPending || running) return;
+    playPending=true;updatePlay();
+    try {
+      if (audioURL) await audio.play();
+      else await transport.play();
+    } catch (error) { message(error.message,true); }
+    finally {playPending=false;updatePlay();dirty=true;}
   }
-  $('play').onclick=() => running ? pause() : play();
+  $('play').onclick=() => running || playPending ? pause() : play();
   $('reset').onclick=() => { setBeat(0); dirty=true; };
   $('back').onclick=() => { pause(); setBeat((Math.floor(beatNow()*64+1e-8)-1)/64); };
   $('forward').onclick=() => { pause(); setBeat((Math.floor(beatNow()*64+1e-8)+1)/64); };
   $('bpm').onchange=() => {
     const next=Number($('bpm').value);
-    if (!Number.isFinite(next) || next<30 || next>240) { $('bpm').value=bpm; return; }
-    baseBeat=beatNow(); origin=performance.now(); bpm=next; dirty=true;
+    if (!Number.isFinite(next) || next<20 || next>300) { $('bpm').value=bpm; return; }
+    bpm=next;transport.setBpm(next);dirty=true;
   };
   $('amplitude').oninput=() => { amplitude=Number($('amplitude').value)/100; $('amp-label').textContent=Math.round(amplitude*100)+'%'; dirty=true; };
   $('trails').onchange=() => { for (const p of plots) p.background=null; dirty=true; };
@@ -128,18 +136,123 @@
   $('audio-file').onchange=() => {
     const file=$('audio-file').files[0]; if (!file) return;
     pause(); if (audioURL) URL.revokeObjectURL(audioURL);
-    audioURL=URL.createObjectURL(file); audio.src=audioURL;
+    audioURL=URL.createObjectURL(file); audio.src=audioURL; midiAvailability();
     message('Local audio loaded. Set its BPM and beat-zero offset, then press Play.');
   };
   $('clear-audio').onclick=() => {
     const current=beatNow(); pause();
     if (audioURL) URL.revokeObjectURL(audioURL);
     audioURL=null; audio.removeAttribute('src'); audio.load(); $('audio-file').value='';
-    baseBeat=current; origin=performance.now(); dirty=true; message('Audio removed. Using the internal musical clock.');
+    transport.seek(current);midiAvailability();dirty=true;message('Audio removed. MIDI beat and movements use the shared clock.');
   };
   reducedMotion.addEventListener('change', e => { if (e.matches) { pause(); message('Reduced motion enabled. Playback paused; manual stepping remains available.'); } });
-  document.addEventListener('visibilitychange',() => { if (document.hidden && !audioURL) pause(); });
-  window.addEventListener('resize',() => { dirty=true; });
+  document.addEventListener('visibilitychange',() => { if (document.hidden) pause(); });
+  window.addEventListener('resize',() => { scoreBackground=null;dirty=true; });
+
+
+  function midiAvailability(){
+    for(const id of ['beat-select','beat-search','beat-kind','midi-sound','midi-file','suggested-bpm','amen-toggle'])$(id).disabled=!!audioURL;
+    $('amen-toggle').disabled=!!audioURL || !['amen_four_bar','amen_no_ghosts'].includes(selectedBeat?.id);
+    $('midi-mode').textContent=audioURL?'Local track selected: MIDI playback is paused. Remove the audio file to return to MIDI.':
+      `${beatLibrary.beats.length} built-in MIDI/event scores · exact rational source timing · shared animation BPM`;
+  }
+  function populateBeats(){
+    const kind=$('beat-kind').value,q=$('beat-search').value.trim().toLowerCase();
+    const list=[...beats.values()].filter(b=>(!kind||b.kind===kind)&&(!q||[b.id,b.title,b.family].join(' ').toLowerCase().includes(q)));
+    if(selectedBeat&&!list.some(b=>b.id===selectedBeat.id))list.unshift(selectedBeat);
+    $('beat-select').replaceChildren();const groups=new Map();
+    for(const b of list){
+      const title=(b.kind==='dance'?'Dance / ':b.kind==='groove'?'Recorded groove / ':b.kind==='core'?'Core / ':'Event study / ')+b.family;
+      if(!groups.has(title)){const group=node('optgroup');group.label=title;groups.set(title,group);$('beat-select').append(group);}
+      const option=node('option','',b.title);option.value=b.id;groups.get(title).append(option);
+    }
+    if(selectedBeat)$('beat-select').value=selectedBeat.id;
+    $('beat-found').textContent=`${list.length} available in this view`;
+  }
+  function selectBeat(id){
+    if(audioURL){message('Remove the local audio track before selecting MIDI playback.',true);return;}
+    if(!beats.has(id))throw Error('Unknown beat');
+    selectedBeat=beats.get(id);transport.setScore(selectedBeat);
+    phrasePips=Math.max(1,Math.round(selectedBeat.period*64));$('seek').max=phrasePips-1;
+    $('beat-title').textContent=selectedBeat.title;
+    $('beat-notes').textContent=selectedBeat.notes||'';
+    $('beat-meta').textContent=`${selectedBeat.period_beats} quarter-note beats per loop · ${selectedBeat.meter?selectedBeat.meter.join('/'):'meter not specified'} · suggested ${Math.round(selectedBeat.bpm)} BPM · ${selectedBeat.events.length} notes`;
+    $('amen-toggle').disabled=!['amen_four_bar','amen_no_ghosts'].includes(id);
+    $('beat-lanes').replaceChildren();
+    for(const lane of [...new Set(selectedBeat.events.map(e=>e.lane))]){
+      const label=node('label','lane-switch'),box=node('input');box.type='checkbox';box.checked=true;box.setAttribute('aria-label','Play '+lane);
+      box.onchange=()=>{transport.mute(lane,!box.checked);scoreBackground=null;dirty=true;};label.append(box,document.createTextNode(lane));$('beat-lanes').append(label);
+    }
+    $('beat-sources').onclick=()=>showDetail(selectedBeat.title+' / source',JSON.stringify({
+      source_path:selectedBeat.source_path,license:selectedBeat.license,score_sha256:selectedBeat.score_sha256,
+      notes:selectedBeat.notes,provenance:selectedBeat.provenance,
+      sources:(selectedBeat.reference_ids||[]).map(id=>beatLibrary.sources[id]).filter(Boolean)
+    },null,2));
+    scoreBackground=null;populateBeats();if($('related-only').checked)render();dirty=true;
+  }
+  function followBeat(name){const id=beatLibrary.pattern_beats[name];if(id)selectBeat(id);}
+  function importMidi(bytes,title){
+    const score=DanceBeat.midiRead(bytes,title);beats.set(score.id,score);
+    $('beat-kind').value='';$('beat-search').value='';selectBeat(score.id);
+    message('MIDI loaded locally. It follows the current animation BPM, not its original tempo map.');return score;
+  }
+  $('beat-select').onchange=()=>selectBeat($('beat-select').value);
+  $('beat-kind').onchange=populateBeats;$('beat-search').oninput=populateBeats;
+  $('midi-sound').onchange=()=>transport.setSound($('midi-sound').checked).catch(e=>{pause();message(e.message,true);});
+  $('midi-volume').oninput=()=>transport.setVolume(Number($('midi-volume').value)/100);
+  $('suggested-bpm').onclick=()=>{if(selectedBeat){$('bpm').value=String(Math.min(300,Math.max(20,selectedBeat.bpm)));$('bpm').onchange();}};
+  $('amen-toggle').onclick=()=>selectBeat(selectedBeat.id==='amen_four_bar'?'amen_no_ghosts':'amen_four_bar');
+  $('follow-beat').onchange=()=>{if($('follow-beat').checked&&compared.size)followBeat(patterns[[...compared][0]].name);};
+  $('related-only').onchange=render;
+  $('compare-beat').onclick=()=>{
+    const associated=(selectedBeat?.pattern_names||[]).filter(n=>names.has(n)).slice(0,4);
+    if(!associated.length){message('This imported beat has no associated built-in movements. Compare any cards manually.');return;}
+    compared.clear();associated.forEach(n=>compared.add(names.get(n)));render();$('comparison').scrollIntoView({block:'start'});
+  };
+  $('midi-file').onchange=async()=>{
+    const file=$('midi-file').files[0];if(!file)return;
+    try{if(file.size>2097152)throw Error('MIDI exceeds 2 MiB');importMidi(new Uint8Array(await file.arrayBuffer()),file.name);}
+    catch(error){message(error.message,true);}
+    $('midi-file').value='';
+  };
+  $('download-midi').onclick=()=>{
+    try{
+      const result=DanceBeat.midiWrite(selectedBeat,bpm);
+      const url=URL.createObjectURL(new Blob([result.bytes],{type:'audio/midi'})),a=node('a');
+      a.href=url;a.download='DanceRudiments-'+selectedBeat.id+'-'+Math.round(bpm)+'bpm.mid';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+      message(`MIDI exported at ${bpm} BPM / ${result.ppq} PPQ. `+(result.maxTimingErrorBeats>1e-12?
+        `Maximum timing quantisation: ${result.maxTimingErrorBeats.toExponential(2)} beats; browser playback retains exact source onsets.`:
+        'Onsets fit exactly on the MIDI tick grid. Velocities use MIDI’s 7-bit resolution.'));
+    }catch(error){message(error.message,true);}
+  };
+  $('beat-score-details').ontoggle=()=>{scoreBackground=null;dirty=true;};
+  function drawBeatScore(beat){
+    if(!selectedBeat||!$('beat-score-details').open)return;
+    const canvas=$('beat-score'),parent=canvas.parentElement;
+    const lanes=[...new Set(selectedBeat.events.map(e=>e.lane))].slice(0,32);
+    const w=Math.min(8192,Math.max(600,parent.clientWidth,selectedBeat.period*45)),h=30+lanes.length*21;
+    if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;canvas.style.width=w+'px';canvas.style.height=h+'px';scoreBackground=null;}
+    const left=100,width=w-left-12,ctx=canvas.getContext('2d');
+    if(!scoreBackground){
+      scoreBackground=document.createElement('canvas');scoreBackground.width=w;scoreBackground.height=h;const g=scoreBackground.getContext('2d');
+      g.fillStyle='#111923';g.fillRect(0,0,w,h);g.font='10px system-ui';
+      const stride=Math.max(.25,Math.ceil(selectedBeat.period/160)/4);
+      for(let b=0;b<=selectedBeat.period;b+=stride){const x=left+b/selectedBeat.period*width;
+        g.strokeStyle=Number.isInteger(b)?'#3d4b5d':'#202e3c';g.beginPath();g.moveTo(x,20);g.lineTo(x,h);g.stroke();
+        if(Number.isInteger(b)){g.fillStyle='#a8b9c8';g.fillText(String(b+1),x+2,12);}
+      }
+      lanes.forEach((lane,j)=>{g.fillStyle=transport.muted.has(lane)?'#667080':'#bdcddd';g.fillText(lane.slice(0,17),3,39+j*21);});
+      for(const e of selectedBeat.events){const row=lanes.indexOf(e.lane);if(row<0)continue;
+        g.globalAlpha=transport.muted.has(e.lane)?.15:.28+.72*e.velocity;g.fillStyle=e.channel!==9?'#bda5fb':e.note===36?'#83e8d0':e.note===38?'#efb37c':'#ddd9a4';
+        g.beginPath();g.arc(left+e.time/selectedBeat.period*width,35+row*21,2+2*e.velocity,0,Math.PI*2);g.fill();
+      }g.globalAlpha=1;
+    }
+    ctx.drawImage(scoreBackground,0,0);ctx.strokeStyle='#f8faff';const x=left+DanceBeat.positiveModulo(beat,selectedBeat.period)/selectedBeat.period*width;
+    ctx.beginPath();ctx.moveTo(x,18);ctx.lineTo(x,h);ctx.stroke();
+    if(running&&(x<parent.scrollLeft+left||x>parent.scrollLeft+parent.clientWidth-20))parent.scrollLeft=Math.max(0,x-parent.clientWidth*.7);
+  }
+  populateBeats();midiAvailability();
+  if(beats.size)selectBeat(beats.has('amen_four_bar')?'amen_four_bar':beats.keys().next().value);
 
   function node(tag,className,text) {
     const n=document.createElement(tag); if (className) n.className=className;
@@ -183,13 +296,19 @@
     check.setAttribute('aria-label','Compare '+meta.title);
     check.onchange=() => {
       if (check.checked && compared.size>=4) { check.checked=false; message('Compare up to four candidates at a time.',true); return; }
-      check.checked ? compared.add(i) : compared.delete(i); render();
+      check.checked ? compared.add(i) : compared.delete(i); if(check.checked && $('follow-beat').checked)followBeat(p.name);render();
     };
     compareLabel.append(check,document.createTextNode('Compare'));
     const source=node('button','source-button',meta.license+' · Details');
     source.onclick=() => showDetail(meta.title,JSON.stringify({name:p.name,source_sha256:p.source_sha256,
                        provenance:meta,diagnostics:p.diagnostics},null,2));
     bottom.append(compareLabel,source); body.append(bottom);
+    const beatId=beatLibrary.pattern_beats[p.name];
+    if(beatId && beats.has(beatId)){
+      const use=node('button','use-beat','Use this movement’s beat');use.dataset.beat=beatId;
+      use.onclick=()=>{selectBeat(beatId);message('Beat selected; BPM and animation phase are unchanged.');};body.append(use);
+    }
+
     if (!comparison) {
       const note=node('input','note'); note.type='text'; note.placeholder='Your note…';note.maxLength=2000;
       note.value=reviews.get(p.name).note; note.setAttribute('aria-label','Note for '+meta.title);
@@ -201,7 +320,7 @@
   function matches(p) {
     const family=$('family').value, status=$('review').value, search=$('search').value.trim().toLowerCase();
     const collection=$('collection').value;
-    return (!collection || (p.provenance.collection_id || 'core')===collection) && (!family || p.provenance.family===family) && (!status || reviews.get(p.name).status===status) &&
+    return (!$('related-only').checked || selectedBeat?.pattern_names?.includes(p.name)) && (!collection || (p.provenance.collection_id || 'core')===collection) && (!family || p.provenance.family===family) && (!status || reviews.get(p.name).status===status) &&
        (!search || [p.name,p.description,p.provenance.title,p.provenance.author].join(' ').toLowerCase().includes(search));
   }
   function render() {
@@ -321,7 +440,7 @@
     const absolutePip=Math.floor(beat*64+1e-8);
     const pip=absolutePip;
     $('clock').textContent=`Beat ${Math.floor(beat)+1} · pip ${((absolutePip%64)+64)%64}`;
-    $('seek').value=((pip%phrasePips)+phrasePips)%phrasePips;
+    $('seek').value=((pip%phrasePips)+phrasePips)%phrasePips; drawBeatScore(beat);
     renderedLastFrame=0;
     for (const plot of plots) {
       if (!plot.visible) continue;
@@ -354,9 +473,12 @@
   window.audition={ready:false, sample, metadata:()=>patterns, setBeat:(b)=>{pause();setBeat(b);draw();},
     review:reviewDocument,importReview,setStatus,selectedPack,selectedScores,
     compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
-       compared.clear();ids.forEach(n=>compared.add(names.get(n)));render();},
-    state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly',renderedLastFrame,plotCount:plots.length}),
-    packSha256:data.pack_sha256};
+       compared.clear();ids.forEach(n=>compared.add(names.get(n)));if(ids.length && $('follow-beat').checked)followBeat(ids[0]);render();},
+    state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly',midi:transport.state(),selectedBeat:selectedBeat?.id,beatCount:beats.size,renderedLastFrame,plotCount:plots.length}),
+    packSha256:data.pack_sha256,
+    beatMetadata:()=>[...beats.values()],selectBeat,
+    transport, midiExport:()=>DanceBeat.midiWrite(selectedBeat,bpm),
+    importMidi:bytes=>importMidi(bytes,'Imported MIDI'),followBeat};
   render();
   (async () => {
     try {

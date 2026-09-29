@@ -55,6 +55,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Generate the exact tagged native catalogue
         run: python tools/release_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output-dir dist/demo
+      - name: Verify the full visualizer's MIDI transport
+        run: python tools/test_midi_harness.py "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html"
       - name: Render, test, and package
         run: python tools/render_release_demo.py "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html"
       - name: Build and render the rhythm-and-audio audition page
@@ -65,6 +67,11 @@ jobs:
         run: |
           python tools/build_dancefloor_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output "dist/demo/DanceRudiments-demo-dancefloor-v$DEMO_VERSION.html"
           python tools/render_dancefloor_demo.py "dist/demo/DanceRudiments-demo-dancefloor-v$DEMO_VERSION.html"
+      - name: Stable self-contained visualizer download aliases
+        run: |
+          cp "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html" dist/demo/DanceRudiments-visualizer.html
+          cp "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.json" dist/demo/DanceRudiments-visualizer.json
+          (cd dist/demo && sha256sum DanceRudiments-visualizer.html DanceRudiments-visualizer.json > DanceRudiments-visualizer.sha256)
       - uses: actions/upload-artifact@v6
         with:
           name: release-demo
@@ -92,4 +99,5 @@ jobs:
           gh release upload "$RELEASE_TAG" demo/* --repo "$GITHUB_REPOSITORY" --clobber
           mkdir verified
           gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'DanceRudiments-demo-*' --dir verified
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'DanceRudiments-visualizer*' --dir verified
           (cd verified && sha256sum --check ./*.sha256)

@@ -4,3 +4,11 @@
 @media(max-width:830px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.desc{min-height:60px}#clock{margin-left:0}.heading{display:block}#engine{display:inline-block;max-width:none;margin-top:12px}}
 @media(max-width:520px){.grid{grid-template-columns:1fr}header,main,footer,.transport{padding-left:16px;padding-right:16px}.row{gap:9px}.search{flex-basis:100%}.desc{min-height:0}.stage{height:200px}.comparison{padding:10px}.transport input[type=range]{max-width:130px}.seek input{max-width:none!important}.card-head{padding-top:14px}input,select,button{max-width:100%}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+
+/* Full-catalogue MIDI controls; never let a long beat title widen mobile layout. */
+.midi-panel{border-top:1px solid var(--line);margin-top:14px;padding-top:14px}.midi-panel>.row{margin:8px 0}
+.beat-picker{flex:1;min-width:220px;max-width:100%}.beat-picker select{width:100%;min-width:0;max-width:640px}
+.beat-search input{max-width:210px}.beat-score-scroll{overflow:auto;max-height:270px;max-width:100%;margin:12px 0;background:#111923;border:1px solid var(--line);border-radius:8px}
+#beat-score{display:block;max-width:none}.lane-switch{font-size:12px}#midi-mode{margin:4px 0;color:var(--accent)}
+.use-beat{width:100%;margin:8px 0}#beat-notes{max-width:1100px}#beat-score-details summary{white-space:normal}
+@media(max-width:650px){.beat-picker{min-width:0;flex-basis:100%}.beat-picker select,#beat-kind{max-width:100%}.midi-panel .row{gap:8px}#midi-volume{width:100px}.transport{position:static}}

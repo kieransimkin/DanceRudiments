@@ -1,0 +1,67 @@
+name: Pattern visualizer
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pattern-visualizer-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Build tools and exact checkout's native library
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang lld
+          python -m pip install . playwright
+          python -m playwright install --with-deps chromium
+      - name: Collect and test every scored beat
+        run: |
+          python tools/harness_beats.py --output harness/beats.json
+          node --test tests/typescript/beat-player.test.js
+          python -m unittest discover -s tests/python -p test_harness_beats.py -v
+      - name: Build and test self-contained visualizer
+        run: |
+          python tools/build_harness.py --output dist/visualizer/index.html
+          python tools/test_midi_harness.py dist/visualizer/index.html
+          touch dist/visualizer/.nojekyll
+          (cd dist/visualizer && sha256sum index.html index.json > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: standalone-pattern-visualizer
+          path: dist/visualizer/
+          if-no-files-found: error
+      - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
+        with:
+          path: dist/visualizer
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy visualizer only
+        id: deployment
+        uses: actions/deploy-pages@v4

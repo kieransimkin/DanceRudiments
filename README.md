@@ -1,5 +1,25 @@
 # DanceRudiments
 
+## ▶ Try the pattern visualizer
+
+**[Download the self-contained visualizer — HTML](https://github.com/kieransimkin/DanceRudiments/raw/refs/heads/main/harness/index.html)**
+
+Save the file and open it in a browser. **No install, server, CDN, soundfont or
+separate WASM file is required.** The complete 1,731-movement catalogue includes a
+shared-tempo beat player: **305 scores**, including all 68 dance-music studies,
+the **full four-bar Amen break**, four-to-the-floor, garage, drill, grime,
+jungle, house, techno, Groove MIDI excerpts and the earlier event/sticking studies.
+
+Choose a beat, press **Play**, and change **BPM** to retime the sound and animations
+together. Compare any movements, or use **Only matching movements** and
+**Use this movement’s beat**. Local `.mid` import and MIDI export are included.
+Sound is synthesised from note events, not the original Amen recording.
+
+The downloadable file is the checked-in snapshot; the **Pattern visualizer**
+workflow also rebuilds a fresh version from every pushed native catalogue.
+[Beat player, rebuilding, release downloads and optional live hosting](docs/midi-harness.md).
+
+
 DanceRudiments is a small C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Built-in and custom patterns each keep their own loop period. Every sampler wraps positive or negative input into its own loop before sampling.
 
 Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pixels, CSS units, metres, or another scale. There is deliberately no time interpolation in the public API: renderers advance with integer pips and get one exact sample per pip.

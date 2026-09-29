@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DanceRudiments — v__VERSION__ release demo</title><style>/*__STYLE__*/
+<title>DanceRudiments — pattern visualizer & MIDI beat player · v__VERSION__</title><style>/*__STYLE__*/
 [hidden]{display:none!important;} header code{overflow-wrap:anywhere;}</style></head>
 <body>
 <header>
@@ -11,18 +11,35 @@
 <section class="transport" aria-label="Playback controls">
   <div class="row"><button id="play" class="primary" disabled>Play</button><button id="reset" title="Reset musical phase">Restart</button>
     <button id="back" title="Previous pip">−1 pip</button><button id="forward" title="Next pip">+1 pip</button>
-    <label>BPM <input id="bpm" type="number" min="30" max="240" step="1" value="120"></label>
+    <label>BPM <input id="bpm" type="number" min="20" max="300" step="1" value="120"></label>
     <label>Size <input id="amplitude" type="range" min="10" max="100" value="70"><output id="amp-label">70%</output></label>
     <label><input id="trails" type="checkbox" checked>Show paths</label>
     <output id="clock">Beat 1 · pip 0</output></div>
   <div class="row"><label class="seek">Phrase <input id="seek" type="range" min="0" max="511" step="1" value="0"></label>
     <span class="small">64 pips per quarter note · each pattern keeps its own loop length</span></div>
-  <details><summary>Play against your own track</summary><div class="row audio-row">
+  <section class="midi-panel" aria-label="MIDI beat player">
+    <div class="row"><strong>MIDI beat</strong><label>Library <select id="beat-kind"><option value="dance">Dance music</option><option value="">All beat/event scores</option><option value="events">Event & rhythm studies</option><option value="groove">Groove MIDI excerpts</option><option value="core">Original sticking rudiments</option></select></label>
+      <label class="beat-search">Find <input id="beat-search" type="search" placeholder="Amen, garage, polyrhythm…"></label><span id="beat-found" class="small"></span></div>
+    <div class="row"><label class="beat-picker">Beat <select id="beat-select" aria-label="Beat pattern"></select></label>
+      <button id="amen-toggle">Amen / ghost notes A–B</button><button id="suggested-bpm">Use suggested BPM</button></div>
+    <div class="row"><label><input id="midi-sound" type="checkbox" checked>MIDI sound</label><label>Volume <input id="midi-volume" type="range" min="0" max="100" value="28"></label>
+      <label><input id="follow-beat" type="checkbox">Follow compared movement</label><label><input id="related-only" type="checkbox">Only matching movements</label>
+      <button id="compare-beat">Compare this beat’s movements</button></div>
+    <p id="midi-mode" class="small"></p>
+    <details id="beat-score-details"><summary><span id="beat-title">Beat details</span> — notes, lanes & onset grid</summary>
+      <p id="beat-meta" class="small"></p><p id="beat-notes" class="small"></p><div id="beat-lanes" class="row" aria-label="Instrument mutes"></div>
+      <div class="beat-score-scroll"><canvas id="beat-score" aria-label="Drum and MIDI onset grid"></canvas></div>
+      <p class="small">Grid numbers count quarter notes across the complete loop, not rounded sixteenths. Up to 32 lanes are drawn for imported files. The full four-bar Amen is 16 quarter notes.</p>
+      <div class="row"><button id="download-midi">Download beat as MIDI</button><label class="file-label">Import MIDI <input id="midi-file" type="file" accept=".mid,.midi,audio/midi"></label><button id="beat-sources">Beat sources & notes</button></div>
+      <p class="small">Built-in scores and local MIDI files use the animation BPM. MIDI note events are rendered with a small synthesised kit, not sampled recordings. Local MIDI files stay in the browser; their tempo maps are deliberately replaced by this shared tempo.</p>
+    </details>
+  </section>
+  <details><summary>Play against your own track instead of MIDI</summary><div class="row audio-row">
     <label class="file-label">Choose audio <input id="audio-file" type="file" accept="audio/*"></label>
     <audio id="audio" controls preload="metadata"></audio>
     <label>Beat-zero offset (seconds) <input id="offset" type="number" step="0.01" value="0"></label>
     <button id="clear-audio">Remove audio</button></div>
-    <p class="small">Your file stays in this browser. Set BPM and the time of beat zero manually; this gallery does not analyse the track. Playback follows the audio clock, including seeking. No source recordings or click sounds are bundled.</p></details>
+    <p class="small">Your file stays in this browser. Set BPM and the time of beat zero manually; this gallery does not analyse the track. Playback follows the audio clock, including seeking. MIDI playback is paused while a local audio track is selected. Remove it to return to the beat player.</p></details>
 </section>
 <main>
 <section class="filters" aria-label="Candidate filters">
@@ -44,5 +61,6 @@
 <footer><strong>DanceRudiments · Kieran Simkin</strong><p>The release builder reads the tagged native catalogue. A bundled C++/WebAssembly sampler supplies every live position. No JavaScript movement fallback. All dots use the same coordinate frame and scale; +Y is down. 3D paths use an oblique projection and show a separate Z curve.</p><p>Keep, Maybe and Skip are personal review choices, not licence decisions. Attribution is embedded in this snapshot. Editable scores remain in the repository. Reduced-motion preferences are respected: nothing starts automatically.</p></footer>
 <dialog id="details"><div class="row"><h2 id="detail-title"></h2><button id="close-details" aria-label="Close details">Close</button></div><pre id="detail-body"></pre></dialog>
 <script type="application/json" id="data">__PAYLOAD__</script>
+<script>/*__BEAT_PLAYER__*/</script>
 <script>/*__APP__*/</script>
 </body></html>
