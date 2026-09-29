@@ -41,6 +41,11 @@ def continuum_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
     return _select_pack('continuum.json', names)
 
 
+def club_pack(names: Optional[Iterable[str]] = None) -> CompiledPack:
+    """Inspect the 144 Club Rhythms 05 defaults. Playback needs no pack loading."""
+    return _select_pack('club.json', names)
+
+
 def _select_pack(filename: str, names: Optional[Iterable[str]]) -> CompiledPack:
     pack = load_pack(Path(__file__).parent / 'packs' / filename)
     if names is None:

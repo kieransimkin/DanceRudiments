@@ -147,13 +147,13 @@ class AtlasNativeTests(unittest.TestCase):
                 self.assertEqual(native.sample(p.name,pip).as_tuple(),p.samples[pip%p.period_pips])
 
     def test_native_default_count_and_idempotent_reload(self):
-        self.assertEqual(len(native.catalogue()),643)
+        self.assertEqual(len(native.catalogue()),787)
         self.assertEqual(atlas_pack().to_native().catalogue(),native.catalogue())
 
     def test_native_snapshot_includes_every_new_default(self):
         demo=module('atlas_native_demo','tools/release_demo.py')
         rows=demo.native_snapshot()
-        self.assertEqual(len(rows),643)
+        self.assertEqual(len(rows),787)
         self.assertEqual(sum(r['provenance'].get('collection_id')=='atlas-03' for r in rows),256)
 
     def test_no_new_phase_duplicate_of_original_15_native_motions(self):

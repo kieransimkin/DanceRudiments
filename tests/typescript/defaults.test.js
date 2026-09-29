@@ -14,13 +14,13 @@ const mock={
   SampledPattern:class {constructor(){alive++;} delete(){alive--; }},
   PatternLibrary:class {constructor(){alive++;} sample(name,pip){return mock.sample(name,pip);} delete(){alive--;}}
 };
-test('default catalogue contains the 15 primitives and 628 unique sampled defaults',()=>{
-  assert.equal(catalogue.length,643);assert.equal(new Set(catalogue.map(p=>p.name)).size,643);
+test('default catalogue contains the 15 primitives and 772 unique sampled defaults',()=>{
+  assert.equal(catalogue.length,787);assert.equal(new Set(catalogue.map(p=>p.name)).size,787);
   for(const p of pack.patterns)assert.equal(catalogue.find(x=>x.name===p.name).periodPips,p.period_pips);
 });
 test('loading the exact approved pack remains idempotent in the wrapper',()=>{
   bindNative(mock);const lib=createPatternLibrary(pack);
-  assert.equal(lib.catalogue().length,643);assert.equal(alive,1);
+  assert.equal(lib.catalogue().length,787);assert.equal(alive,1);
   assert.deepEqual(lib.sample('lfo_breathe',-1),mock.sample('lfo_breathe',-1));
   lib.dispose();assert.equal(alive,0);
 });

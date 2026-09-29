@@ -6,14 +6,23 @@ Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pix
 
 ## Default collections
 
-The default catalogue contains **67 movements**: the original 15 routines, all
-28 approved Initial 01 patterns, and 24 original Expansion 02 patterns. Use the
-ordinary `sample(name, pip_count)` API without loading a separate pack.
+The default catalogue contains **787 movements**: 15 original routines, 28 Initial 01,
+24 Expansion 02, 256 Motion Atlas, 320 Continuum, and **144 Club Rhythms 05** movements.
+Use the ordinary `sample(name, pip_count)` API without loading a separate pack.
 
-Expansion 02 adds shaped LFOs, closed XY/XYZ paths and rational-beat interlocking
-rhythms, including a seven-beat loop. See the [default library guide](docs/default-library.md)
-and [new pattern catalogue](collections/expansion/README.md). The release demo
-is generated from the compiled native catalogue, so new defaults appear automatically.
+[Club Rhythms 05](collections/club/README.md) interprets 36 beat patterns, including
+the four-bar Amen, four-to-the-floor, UK garage, drill, grime, jungle, house and
+techno, using four different movement mappings. Its offline demo includes a
+synthesised drum player, exact onset grid, and C++/WASM movement animations.
+
+```sh
+python -m pip install .
+python tools/build_club_demo.py --output dist/club-demo.html
+```
+
+See the [default library guide](docs/default-library.md) for all collections.
+Release demos enumerate the actual tagged native catalogue and also render the
+focused Club Rhythms page. No original recordings are bundled.
 
 ## Curve and event authoring
 

@@ -16,3 +16,6 @@ include/dancerudiments/detail/** text eol=lf
 
 # Continuum recipes contain byte-hashed source manifests.
 collections/continuum/** text eol=lf
+
+# Club Rhythms source hashes and generated files are platform-independent.
+collections/club/** text eol=lf

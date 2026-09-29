@@ -212,7 +212,7 @@
   }
   const collectionLabels = new Map([
     ['core','Original core'],['initial-01','Initial collection'],
-    ['expansion-02','Expansion 02'],['atlas-03','Motion Atlas / 256'],['continuum-04','Continuum / 320 new']
+    ['expansion-02','Expansion 02'],['atlas-03','Motion Atlas / 256'],['continuum-04','Continuum / 320'],['club-05','Club Rhythms / 144 new']
   ]);
   for (const id of [...new Set(patterns.map(p=>p.provenance.collection_id || 'core'))]) {
     const o=node('option','',collectionLabels.get(id) || id);o.value=id;$('collection').append(o);

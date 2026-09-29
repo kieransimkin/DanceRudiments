@@ -23,7 +23,7 @@ class ApprovalTests(unittest.TestCase):
 class DefaultTests(unittest.TestCase):
     def test_all_defaults_available_without_pack_loading(self):
         names=[p['name'] for p in d.catalogue()]
-        self.assertEqual(len(names),643);self.assertEqual(len(names),len(set(names)))
+        self.assertEqual(len(names),787);self.assertEqual(len(names),len(set(names)))
         for p in initial_pack().patterns:
             self.assertIn(p.name,names)
             self.assertEqual(d.sample(p.name,-1).as_tuple(),p.samples[-1])

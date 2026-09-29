@@ -17,8 +17,8 @@ void require(bool condition, const char* message) {
 }
 int main() {
   auto bank=dancerudiments_initial::make_library();
-  require(dancerudiments::catalogue().size()==643, "Approved defaults missing");
-  require(bank.catalogue().size()==643, "Legacy loader duplicated defaults");
+  require(dancerudiments::catalogue().size()==787, "Approved defaults missing");
+  require(bank.catalogue().size()==787, "Legacy loader duplicated defaults");
   require(pattern_count()==28, "Wrong preview count");
   long checked=0;
   for (int i=0; i<pattern_count(); ++i) {

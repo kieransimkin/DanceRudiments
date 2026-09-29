@@ -74,7 +74,7 @@ class ContinuumTests(unittest.TestCase):
 
     def test_manifest_lock_payload_budget_and_names(self):
         m=json.loads((ROOT/'collections/continuum/manifest.json').read_text())
-        lock=json.loads((ROOT/'collections/defaults.json').read_text())['collections'][-1]
+        lock=next(c for c in json.loads((ROOT/'collections/defaults.json').read_text())['collections'] if c['id']=='continuum-04')
         self.assertEqual(m['pattern_count'],320);self.assertEqual(m['sample_count'],252544)
         self.assertEqual(m['table_payload_bytes'],6061056)
         self.assertEqual(m['names'],[p.name for p in self.pack.patterns])
@@ -176,7 +176,7 @@ class ContinuumTests(unittest.TestCase):
         self.assertEqual(sorted(indices),list(range(len(patterns))))
         names=[patterns[i][0].name for i in indices]
         self.assertEqual(names,sorted(names));self.assertEqual(len(names),len(set(names)))
-        self.assertEqual(len(patterns),628)
+        self.assertEqual(len(patterns),772)
 
 
 @unittest.skipIf(native is None,'Native extension unavailable')
@@ -193,9 +193,9 @@ class ContinuumNativeTests(unittest.TestCase):
                 self.assertEqual(native.sample(p.name,pip).as_tuple(),p.samples[pip%p.period_pips])
 
     def test_default_order_is_append_only(self):
-        entries=native.catalogue();self.assertEqual(len(entries),643)
+        entries=native.catalogue();self.assertEqual(len(entries),787)
         expected=initial_pack().patterns+expansion_pack().patterns+atlas_pack().patterns+continuum_pack().patterns
-        self.assertEqual([p['name'] for p in entries[15:]],[p.name for p in expected])
+        self.assertEqual([p['name'] for p in entries[15:15+len(expected)]],[p.name for p in expected])
 
     def test_exact_pack_reload_is_idempotent(self):
         self.assertEqual(continuum_pack().to_native().catalogue(),native.catalogue())
@@ -212,5 +212,5 @@ class ContinuumNativeTests(unittest.TestCase):
 
     def test_release_snapshot_contains_every_default(self):
         demo=module('continuum_demo','tools/release_demo.py');rows=demo.native_snapshot()
-        self.assertEqual(len(rows),643)
+        self.assertEqual(len(rows),787)
         self.assertEqual(sum(p['provenance'].get('collection_id')=='continuum-04' for p in rows),320)

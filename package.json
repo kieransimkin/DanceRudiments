@@ -15,7 +15,8 @@
     "./collections/initial": "./python/dancerudiments_authoring/packs/initial.json",
     "./collections/expansion": "./python/dancerudiments_authoring/packs/expansion.json",
     "./collections/atlas": "./python/dancerudiments_authoring/packs/atlas.json",
-    "./collections/continuum": "./python/dancerudiments_authoring/packs/continuum.json"
+    "./collections/continuum": "./python/dancerudiments_authoring/packs/continuum.json",
+    "./collections/club": "./python/dancerudiments_authoring/packs/club.json"
   },
   "files": [
     "dist/typescript/",
@@ -32,7 +33,8 @@
     "collections/expansion/",
     "collections/defaults.json",
     "collections/atlas/",
-    "collections/continuum/"
+    "collections/continuum/",
+    "collections/club/"
   ],
   "repository": {
     "type": "git",

@@ -9,7 +9,7 @@ using namespace dancerudiments;
 static void require(bool ok) { if (!ok) throw std::runtime_error("Continuum check failed"); }
 static bool same(Offset3 a, Offset3 b) { return a.x==b.x && a.y==b.y && a.z==b.z; }
 int main() {
-  require(catalogue().size()==643);
+  require(catalogue().size()==787);
   std::size_t count=0;
   for (const auto& item: catalogue()) {
     for (int pip=0; pip<item.period_pips; ++pip) {

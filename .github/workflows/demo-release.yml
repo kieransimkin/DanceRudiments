@@ -44,6 +44,7 @@ jobs:
           python tools/build_expansion_collection.py --check
           python tools/build_atlas_collection.py --check
           python tools/build_continuum_collection.py --check
+          python tools/build_club_collection.py --check
           python tools/build_default_catalogue.py --check
       - name: Install build-only tools and this checkout's native library
         run: |
@@ -55,6 +56,10 @@ jobs:
         run: python tools/release_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output-dir dist/demo
       - name: Render, test, and package
         run: python tools/render_release_demo.py "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html"
+      - name: Build and render the rhythm-and-audio audition page
+        run: |
+          python tools/build_club_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output "dist/demo/DanceRudiments-demo-club-v$DEMO_VERSION.html"
+          python tools/render_club_demo.py "dist/demo/DanceRudiments-demo-club-v$DEMO_VERSION.html"
       - uses: actions/upload-artifact@v6
         with:
           name: release-demo

@@ -3,3 +3,4 @@
 #include "dancerudiments/collections/expansion.hpp"
 #include "dancerudiments/collections/atlas.hpp"
 #include "dancerudiments/collections/continuum.hpp"
+#include "dancerudiments/collections/club.hpp"
