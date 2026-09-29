@@ -1,0 +1,64 @@
+name: Curve and event infrastructure
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  authoring-and-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install --upgrade build
+      # build creates a wheel from the sdist too, checking source inclusion.
+      - run: python -m build
+      - run: python -m pip install --no-index --find-links dist dancerudiments
+      - name: Test installed authoring package and actual native extension
+        run: python -m unittest discover -s tests/python -v
+        env:
+          DANCERUDIMENTS_REQUIRE_NATIVE: "1"
+      - name: Exercise installed console entry point and reproducible outputs
+        run: |
+          dancerudiments-compile compile examples/patterns/starter.json --json generated/starter.json --cpp generated/starter.hpp
+          dancerudiments-compile check examples/patterns/starter.json --json generated/starter.json --cpp generated/starter.hpp
+      - name: Build native tests, including installed headers
+        run: |
+          cmake -S . -B build-patterns -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-patterns --config Release
+          ctest --test-dir build-patterns -C Release --output-on-failure
+
+  real-wasm:
+    runs-on: ubuntu-latest
+    # Same toolchain as the existing npm release job.
+    container: emscripten/emsdk:4.0.15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm test
+      - name: Compile examples without a Python extension
+        run: python3 tools/compile_patterns.py compile examples/patterns/starter.json --json generated/starter.json
+      - name: Build and exercise the real C++ WASM module
+        run: |
+          emcmake cmake -S . -B build-wasm -DDANCERUDIMENTS_BUILD_WASM=ON -DDANCERUDIMENTS_BUILD_TESTS=OFF
+          cmake --build build-wasm
+          node tests/typescript/wasm-smoke.mjs build-wasm/dancerudiments.js generated/starter.json

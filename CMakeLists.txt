@@ -5,7 +5,7 @@ option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
 option(DANCERUDIMENTS_BUILD_WASM "Build the Emscripten JavaScript module" OFF)
 
-add_library(DanceRudiments STATIC src/dance_rudiments.cpp)
+add_library(DanceRudiments STATIC src/dance_rudiments.cpp src/sampled_pattern.cpp)
 add_library(DanceRudiments::DanceRudiments ALIAS DanceRudiments)
 set_target_properties(DanceRudiments PROPERTIES POSITION_INDEPENDENT_CODE ON)
 if(WIN32)
@@ -39,10 +39,13 @@ if(DANCERUDIMENTS_BUILD_WASM)
     message(FATAL_ERROR "DANCERUDIMENTS_BUILD_WASM requires Emscripten (use emcmake cmake).")
   endif()
   add_executable(dancerudiments_wasm bindings/typescript/wasm.cpp)
+  target_compile_options(DanceRudiments PRIVATE -fexceptions)
+  target_compile_options(dancerudiments_wasm PRIVATE -fexceptions)
   target_link_libraries(dancerudiments_wasm PRIVATE DanceRudiments::DanceRudiments)
   set_target_properties(dancerudiments_wasm PROPERTIES OUTPUT_NAME dancerudiments)
   target_link_options(dancerudiments_wasm PRIVATE
     "--bind"
+    "-fexceptions"
     "-sMODULARIZE=1"
     "-sEXPORT_ES6=1"
     "-sENVIRONMENT=web,node"
@@ -54,6 +57,9 @@ if(DANCERUDIMENTS_BUILD_TESTS)
   add_executable(dancerudiments_tests tests/cpp/test_main.cpp)
   target_link_libraries(dancerudiments_tests PRIVATE DanceRudiments::DanceRudiments)
   add_test(NAME dancerudiments_cpp COMMAND dancerudiments_tests)
+  add_executable(dancerudiments_pattern_tests tests/cpp/test_sampled_pattern.cpp)
+  target_link_libraries(dancerudiments_pattern_tests PRIVATE DanceRudiments::DanceRudiments)
+  add_test(NAME dancerudiments_patterns COMMAND dancerudiments_pattern_tests)
 endif()
 
 include(GNUInstallDirs)

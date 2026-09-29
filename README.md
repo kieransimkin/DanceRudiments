@@ -1,8 +1,26 @@
 # DanceRudiments
 
-DanceRudiments is a small C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Every rudiment owns a 64-, 128-, or 256-pip loop and wraps any positive or negative input into that loop before sampling.
+DanceRudiments is a small C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. The built-in rudiments use 64-, 128-, or 256-pip loops; custom compiled patterns can use any supported integral pip period. Every sampler wraps positive or negative input into its own loop before sampling.
 
 Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pixels, CSS units, metres, or another scale. There is deliberately no time interpolation in the public API: renderers advance with integer pips and get one exact sample per pip.
+
+## Curve and event authoring
+
+The optional **Python authoring tools** compile LFOs, segmented curves, sampled
+waveforms, seeded repeating randomness and rational-beat event/gesture scores into
+JSON packs or C++17 headers. **All movement playback remains C++**, including
+Python and TypeScript/WASM consumers. The fifteen built-ins remain unchanged;
+custom packs use independent `PatternLibrary` objects rather than global overrides.
+
+```sh
+python tools/compile_patterns.py compile examples/patterns/starter.json --json generated/starter.json --cpp generated/starter.hpp
+```
+
+The compiler runs from a checkout without third-party Python dependencies or a
+native build. See the [authoring and native API guide](docs/authoring.md) for curve
+formats, event anchoring, loop validation, generated functions, Python playback,
+WASM loading, provenance and testing. These are original infrastructure examples,
+not imported third-party preset banks.
 
 ## DanceFlow ecosystem
 

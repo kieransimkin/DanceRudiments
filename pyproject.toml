@@ -17,6 +17,9 @@ classifiers = [
   "Topic :: Software Development :: Libraries"
 ]
 
+[project.scripts]
+dancerudiments-compile = "dancerudiments_authoring.cli:main"
+
 [project.urls]
 Homepage = "https://github.com/kieransimkin/DanceRudiments"
 Repository = "https://github.com/kieransimkin/DanceRudiments"
@@ -24,10 +27,10 @@ Issues = "https://github.com/kieransimkin/DanceRudiments/issues"
 
 [tool.scikit-build]
 cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF"]
-wheel.packages = []
-sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**"]
+wheel.packages = ["python/dancerudiments_authoring"]
+sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/compile_patterns.py", "examples/patterns/**", "docs/authoring.md", "cmake/**", "tests/**"]
 
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = "*-musllinux_* *-win32"
-test-command = "python -c \"import dancerudiments as d; assert len(d.catalogue()) == 15; assert d.sample('circle', 64).as_tuple() == d.sample('circle', 0).as_tuple()\""
+test-command = "python -c \"import dancerudiments as d; import dancerudiments_authoring as a; assert hasattr(d, 'PatternLibrary'); assert len(d.catalogue()) == 15; assert d.sample('circle', 64).as_tuple() == d.sample('circle', 0).as_tuple()\""
