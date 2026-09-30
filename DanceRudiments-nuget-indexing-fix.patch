@@ -1,0 +1,138 @@
+diff --git a/.github/workflows/nuget-verify.yml b/.github/workflows/nuget-verify.yml
+new file mode 100644
+index 0000000..37d1001
+--- /dev/null
++++ b/.github/workflows/nuget-verify.yml
+@@ -0,0 +1,40 @@
++name: Verify NuGet publication
++
++on:
++  workflow_dispatch:
++    inputs:
++      version:
++        description: Existing DanceRudiments version to verify on NuGet.org
++        required: true
++        type: string
++
++permissions:
++  contents: read
++
++jobs:
++  verify:
++    runs-on: ubuntu-22.04
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - name: Download the package already attached to its GitHub Release
++        env:
++          GH_TOKEN: ${{ github.token }}
++          VERSION: ${{ inputs.version }}
++        shell: bash
++        run: |
++          set -euo pipefail
++          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
++          mkdir -p artifacts/nuget
++          gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" \
++            --pattern "DanceRudiments.$VERSION.nupkg" --dir artifacts/nuget
++      - name: Wait for NuGet.org indexing and verify the published payload
++        env:
++          VERSION: ${{ inputs.version }}
++        run: |
++          python tools/csharp_package.py verify-published \
++            "artifacts/nuget/DanceRudiments.$VERSION.nupkg" --version "$VERSION"
+diff --git a/docs/csharp.md b/docs/csharp.md
+index f679ad5..54a0715 100644
+--- a/docs/csharp.md
++++ b/docs/csharp.md
+@@ -3,7 +3,11 @@ After successful native, managed and installed-package tests:
+ - **NuGet.org** receives `DanceRudiments.<version>.nupkg` plus managed symbols. The
+   workflow downloads the indexed package and compares payload members, allowing
+   NuGet.org's added repository signature rather than assuming ZIP bytes remain
+-  identical. Indexing can take time; an upload is not called verified prematurely.
++  identical. Indexing can take several minutes; verification waits for up to about
++  15 minutes of transient CDN/indexing responses before failing. A payload mismatch
++  still fails immediately. If NuGet indexing outlives the release job, run the
++  manual **Verify NuGet publication** workflow for that already-published version;
++  it verifies the release asset without attempting another upload.
+ - **GitHub Packages** receives the same nupkg under
+   `https://nuget.pkg.github.com/kieransimkin/index.json`. `GITHUB_TOKEN` with
+   `packages: write` authenticates; `RepositoryUrl` links the package to this repo.
+diff --git a/tests/csharp/packaging/test_publish_verification.py b/tests/csharp/packaging/test_publish_verification.py
+new file mode 100644
+index 0000000..ec320a0
+--- /dev/null
++++ b/tests/csharp/packaging/test_publish_verification.py
+@@ -0,0 +1,33 @@
++"""Regression checks for delayed NuGet.org indexing."""
++import inspect
++import importlib.util
++from pathlib import Path
++import unittest
++
++ROOT = Path(__file__).resolve().parents[3]
++spec = importlib.util.spec_from_file_location("csharp_package", ROOT / "tools/csharp_package.py")
++package = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(package)
++
++
++class PublishVerificationTests(unittest.TestCase):
++    def test_default_indexing_window_is_about_fifteen_minutes(self):
++        signature = inspect.signature(package.verify_published)
++        self.assertEqual(signature.parameters["attempts"].default, 60)
++        self.assertEqual(signature.parameters["delay_seconds"].default, 15)
++
++    def test_invalid_retry_configuration_is_rejected_before_package_access(self):
++        with self.assertRaises(ValueError):
++            package.verify_published(Path("missing.nupkg"), "nuget.org", attempts=0)
++        with self.assertRaises(ValueError):
++            package.verify_published(Path("missing.nupkg"), "nuget.org", delay_seconds=-1)
++
++    def test_manual_verification_accepts_an_explicit_release_version(self):
++        with self.assertRaises(FileNotFoundError):
++            package.verify_published(Path("missing.nupkg"), "nuget.org", "0.2.0", attempts=1, delay_seconds=0)
++        with self.assertRaises(ValueError):
++            package.verify_published(Path("missing.nupkg"), "nuget.org", "v0.2", attempts=1, delay_seconds=0)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tools/csharp_package.py b/tools/csharp_package.py
+index 1c15022..0d9be7d 100644
+--- a/tools/csharp_package.py
++++ b/tools/csharp_package.py
+@@ -19,12 +19,17 @@ def pack(folder: Path, output: Path, commit: str) -> None:
+     (output/'SHA256SUMS-csharp.txt').write_text(''.join(sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='utf-8')
+ 
+ 
+-def verify_published(path: Path, feed: str, attempts: int = 12) -> None:
++def verify_published(path: Path, feed: str, published_version: str | None = None, attempts: int = 60, delay_seconds: int = 15) -> None:
+     """NuGet.org adds a repository signature: compare ZIP payloads, not raw ZIP bytes.
+     GitHub feed verification uses an isolated dotnet restore in the workflow.
+     """
+     if feed!='nuget.org':raise ValueError('Only the public NuGet.org feed is supported here')
+-    url=f'https://api.nuget.org/v3-flatcontainer/dancerudiments/{version()}/dancerudiments.{version()}.nupkg'
++    if attempts < 1 or delay_seconds < 0:
++        raise ValueError('Verification attempts must be positive and delay must be non-negative')
++    published_version = published_version or version()
++    if not re.fullmatch(r'\d+\.\d+\.\d+', published_version):
++        raise ValueError('Published version must be MAJOR.MINOR.PATCH')
++    url=f'https://api.nuget.org/v3-flatcontainer/dancerudiments/{published_version}/dancerudiments.{published_version}.nupkg'
+     with zipfile.ZipFile(path) as local:
+         expected={n:sha256(local.read(n)).digest() for n in local.namelist() if n!='.signature.p7s'}
+     last=None
+@@ -38,8 +43,9 @@ def verify_published(path: Path, feed: str, attempts: int = 12) -> None:
+             print('NuGet.org download matches every non-signature package member');return
+         except (urllib.error.URLError,zipfile.BadZipFile) as error:
+             last=error
+-            if attempt+1<attempts:time.sleep(15)
+-    raise RuntimeError('Upload/download verification did not complete: '+str(last))
++            if attempt+1<attempts:time.sleep(delay_seconds)
++    waited=max(0, attempts-1)*delay_seconds
++    raise RuntimeError(f'NuGet.org accepted the upload but indexing did not complete after about {waited} seconds: {last}')
+ 
+ 
+ def main() -> None:

@@ -224,7 +224,11 @@ After successful native, managed and installed-package tests:
 - **NuGet.org** receives `DanceRudiments.<version>.nupkg` plus managed symbols. The
   workflow downloads the indexed package and compares payload members, allowing
   NuGet.org's added repository signature rather than assuming ZIP bytes remain
-  identical. Indexing can take time; an upload is not called verified prematurely.
+  identical. Indexing can take several minutes; verification waits for up to about
+  15 minutes of transient CDN/indexing responses before failing. A payload mismatch
+  still fails immediately. If NuGet indexing outlives the release job, run the
+  manual **Verify NuGet publication** workflow for that already-published version;
+  it verifies the release asset without attempting another upload.
 - **GitHub Packages** receives the same nupkg under
   `https://nuget.pkg.github.com/kieransimkin/index.json`. `GITHUB_TOKEN` with
   `packages: write` authenticates; `RepositoryUrl` links the package to this repo.

@@ -211,12 +211,17 @@ def pack(folder: Path, output: Path, commit: str) -> None:
     (output/'SHA256SUMS-csharp.txt').write_text(''.join(sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='utf-8')
 
 
-def verify_published(path: Path, feed: str, attempts: int = 12) -> None:
+def verify_published(path: Path, feed: str, published_version: str | None = None, attempts: int = 60, delay_seconds: int = 15) -> None:
     """NuGet.org adds a repository signature: compare ZIP payloads, not raw ZIP bytes.
     GitHub feed verification uses an isolated dotnet restore in the workflow.
     """
     if feed!='nuget.org':raise ValueError('Only the public NuGet.org feed is supported here')
-    url=f'https://api.nuget.org/v3-flatcontainer/dancerudiments/{version()}/dancerudiments.{version()}.nupkg'
+    if attempts < 1 or delay_seconds < 0:
+        raise ValueError('Verification attempts must be positive and delay must be non-negative')
+    published_version = published_version or version()
+    if not re.fullmatch(r'\d+\.\d+\.\d+', published_version):
+        raise ValueError('Published version must be MAJOR.MINOR.PATCH')
+    url=f'https://api.nuget.org/v3-flatcontainer/dancerudiments/{published_version}/dancerudiments.{published_version}.nupkg'
     with zipfile.ZipFile(path) as local:
         expected={n:sha256(local.read(n)).digest() for n in local.namelist() if n!='.signature.p7s'}
     last=None
@@ -230,8 +235,9 @@ def verify_published(path: Path, feed: str, attempts: int = 12) -> None:
             print('NuGet.org download matches every non-signature package member');return
         except (urllib.error.URLError,zipfile.BadZipFile) as error:
             last=error
-            if attempt+1<attempts:time.sleep(15)
-    raise RuntimeError('Upload/download verification did not complete: '+str(last))
+            if attempt+1<attempts:time.sleep(delay_seconds)
+    waited=max(0, attempts-1)*delay_seconds
+    raise RuntimeError(f'NuGet.org accepted the upload but indexing did not complete after about {waited} seconds: {last}')
 
 
 def main() -> None:
