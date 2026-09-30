@@ -55,7 +55,7 @@ class PackagingTests(unittest.TestCase):
                  for p in folder.rglob('*') if p.is_file()}
         for name in ('README.md','AUTHORS.md','docs/csharp.md'):
             members[name]=package.MUSIC_URL.encode()
-        for name in ('licenses/LICENSE','licenses/THIRD_PARTY_NOTICES.md','licenses/D3-ease-LICENSE',
+        for name in ('licenses/LICENSE','licenses/THIRD_PARTY_NOTICES.md','licenses/d3-ease/LICENSE',
                      'lib/net8.0/DanceRudiments.dll','lib/net8.0/DanceRudiments.xml',
                      'examples/bindings/csharp/Program.cs',
                      'docs/images/visualizer-amen-desktop.png','docs/images/visualizer-midi-score.png',
@@ -188,11 +188,11 @@ class PackagingTests(unittest.TestCase):
         errors=root.findall('./Target[@Name="RequireAllNativeRuntimes"]/Error');self.assertEqual(len(errors),6)
         self.assertEqual(root.findtext('./PropertyGroup/PackageReadmeFile'),'README.md')
         self.assertEqual(root.findtext('./PropertyGroup/RepositoryUrl'),package.REPOSITORY)
-    def test_workflow_publish_is_release_only_and_after_consumers(self):
+    def test_workflow_publish_is_tag_only_and_after_consumers(self):
         text=(ROOT/'.github/workflows/csharp.yml').read_text()
         for name in ('publish-nuget','publish-github-packages','attach-release'):
             body=text.split('  '+name+':',1)[1]
-            self.assertTrue(body.lstrip().startswith('needs: [validate, pack, consume]\n    if: github.event_name == \'release\''))
+            self.assertTrue(body.lstrip().startswith("needs: [validate, pack, consume]\n    if: startsWith(github.ref, 'refs/tags/v')"))
         self.assertIn('unset DANCERUDIMENTS_NATIVE_LIBRARY',text)
         self.assertIn('--configfile artifacts/consume.config',text)
         self.assertIn('-p:UsePackedBinding=true',text)
