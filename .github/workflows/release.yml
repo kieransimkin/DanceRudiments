@@ -1,8 +1,9 @@
 name: Release packages
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: read
@@ -17,7 +18,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - run: python tools/check_release_version.py "${{ github.event.release.tag_name }}"
+      - run: python tools/release_version.py verify-tag "$GITHUB_REF_NAME"
 
   python-wheels:
     needs: validate
@@ -171,10 +172,21 @@ jobs:
       - name: Write SHA-256 checksums
         working-directory: release-assets
         run: sha256sum *.zip > SHA256SUMS.txt
+      - name: Wait for the tag preflight to create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for attempt in {1..60}; do
+            gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 && exit 0
+            sleep 2
+          done
+          echo "::error::GitHub Release $GITHUB_REF_NAME was not created by release-tag.yml"
+          exit 1
       - name: Attach verified packages
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.event.release.tag_name }}" release-assets/*.zip release-assets/SHA256SUMS.txt --repo "${{ github.repository }}" --clobber
+        run: gh release upload "$GITHUB_REF_NAME" release-assets/*.zip release-assets/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
 
   publish-conan:
     needs: validate

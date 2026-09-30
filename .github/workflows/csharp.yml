@@ -3,9 +3,8 @@ name: C# binding and NuGet
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
   pull_request:
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -13,7 +12,7 @@ permissions:
 
 concurrency:
   group: csharp-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'release' }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/v') }}
 
 env:
   DOTNET_NOLOGO: '1'
@@ -36,12 +35,12 @@ jobs:
       - name: Validate source, version and packaging tests
         shell: bash
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           python tools/csharp_package.py check-source
           python -m unittest discover -s tests/csharp/packaging -v
-          if [ "$GITHUB_EVENT_NAME" = release ]; then
-            python tools/check_release_version.py "$RELEASE_TAG"
+          if [ -n "$RELEASE_TAG" ]; then
+            python tools/release_version.py verify-tag "$RELEASE_TAG"
           fi
       - id: version
         shell: bash
@@ -177,7 +176,7 @@ jobs:
 
   publish-nuget:
     needs: [validate, pack, consume]
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     environment: nuget
     permissions:
@@ -223,7 +222,7 @@ jobs:
 
   publish-github-packages:
     needs: [validate, pack, consume]
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -263,7 +262,7 @@ jobs:
 
   attach-release:
     needs: [validate, pack, consume]
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -277,6 +276,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
+          for attempt in {1..60}; do
+            gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1 && break
+            if [ "$attempt" = 60 ]; then
+              echo "::error::GitHub Release $RELEASE_TAG was not created by release-tag.yml"
+              exit 1
+            fi
+            sleep 2
+          done
           gh release upload "$RELEASE_TAG" artifacts/nuget/*.nupkg artifacts/nuget/*.snupkg artifacts/nuget/SHA256SUMS-csharp.txt --repo "$GH_REPO" --clobber

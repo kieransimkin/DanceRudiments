@@ -156,7 +156,7 @@ def check_archive(path: Path, commit: str | None = None) -> None:
         if len(names)!=len(set(names)):raise ValueError('Duplicate ZIP members')
         if any(n.startswith('/') or '\\' in n or ':' in n.split('/')[0] or '..' in n.split('/') for n in names):raise ValueError('Unsafe ZIP member')
         required=['README.md','AUTHORS.md','docs/csharp.md','licenses/LICENSE',
-                  'licenses/THIRD_PARTY_NOTICES.md','licenses/D3-ease-LICENSE',
+                  'licenses/THIRD_PARTY_NOTICES.md','licenses/d3-ease/LICENSE',
                   'lib/net8.0/DanceRudiments.dll','lib/net8.0/DanceRudiments.xml',
                   'examples/bindings/csharp/Program.cs', 'build-info/platforms.json']
         required += ['docs/images/'+x for x in ('visualizer-amen-desktop.png','visualizer-midi-score.png','visualizer-mobile.png')]

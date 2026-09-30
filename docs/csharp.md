@@ -205,11 +205,19 @@ the maintainer. See the official trusted-publisher reference below.
 
 ## Releases and package destinations
 
-Before a new release, update the **same version** in `CMakeLists.txt`,
-`pyproject.toml`, `package.json`, its lockfile, and
-`bindings/csharp/DanceRudiments/DanceRudiments.csproj`. The release validator now
-checks the .NET version too. Publish a GitHub release with its matching
-`vMAJOR.MINOR.PATCH` tag; pushing a tag alone does not trigger registry uploads.
+Use `python tools/release_version.py prepare MAJOR.MINOR.PATCH` to update the
+**same version** in `CMakeLists.txt`, `pyproject.toml`, `package.json`, its lockfile,
+and `bindings/csharp/DanceRudiments/DanceRudiments.csproj`. Commit and push that
+version bump to `main`, wait for ordinary CI to pass, then run:
+
+```sh
+python tools/release_version.py tag MAJOR.MINOR.PATCH --push
+```
+
+The pushed `vMAJOR.MINOR.PATCH` tag is the release trigger. Tag preflight verifies
+all manifests and generated data, creates the GitHub Release, and the C# workflow
+builds/tests the six-runtime NuGet package before publishing it. Registry uploads
+do not run for ordinary branch pushes, pull requests or manual validation runs.
 
 After successful native, managed and installed-package tests:
 

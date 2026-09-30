@@ -1,0 +1,60 @@
+name: Release tag preflight
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-tag-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Verify tag matches every package version
+        run: python tools/release_version.py verify-tag "$GITHUB_REF_NAME"
+      - name: Verify package documentation and generated registrations
+        run: |
+          python tools/check_package_docs.py
+          python tools/build_initial_collection.py --check
+          python tools/build_expansion_collection.py --check
+          python tools/build_atlas_collection.py --check
+          python tools/build_continuum_collection.py --check
+          python tools/build_club_collection.py --check
+          python tools/build_dancefloor_collection.py --check
+          python tools/build_default_catalogue.py --check
+      - name: Verify npm/TypeScript source before publication workflows start
+        run: |
+          npm ci
+          npm test
+      - name: Create the GitHub Release for this tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $GITHUB_REF_NAME already exists."
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "DanceRudiments $GITHUB_REF_NAME" \
+              --generate-notes
+          fi

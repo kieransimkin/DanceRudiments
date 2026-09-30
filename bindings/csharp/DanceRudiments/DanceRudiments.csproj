@@ -29,9 +29,9 @@
   <ItemGroup>
     <None Include="../README.md" Pack="true" PackagePath="README.md" />
     <None Include="../../../AUTHORS.md" Pack="true" PackagePath="AUTHORS.md" />
-    <None Include="../../../LICENSE" Pack="true" PackagePath="licenses/LICENSE" />
-    <None Include="../../../collections/initial/THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="licenses/THIRD_PARTY_NOTICES.md" />
-    <None Include="../../../collections/initial/sources/d3-ease/LICENSE" Pack="true" PackagePath="licenses/D3-ease-LICENSE" />
+    <None Include="../../../LICENSE" Pack="true" PackagePath="licenses/" />
+    <None Include="../../../collections/initial/THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="licenses/" />
+    <None Include="../../../collections/initial/sources/d3-ease/LICENSE" Pack="true" PackagePath="licenses/d3-ease/" />
     <None Include="../../../docs/csharp.md" Pack="true" PackagePath="docs/csharp.md" />
     <None Include="../../../docs/images/*.png" Pack="true" PackagePath="docs/images/" />
     <None Include="../../../examples/bindings/csharp/*.cs;../../../examples/bindings/csharp/*.csproj" Pack="true" PackagePath="examples/bindings/csharp/" />
