@@ -1,6 +1,6 @@
 {
   "name": "@kieransimkin/dance-rudiments",
-  "version": "0.1.3",
+  "version": "0.2.0",
   "description": "C++/WASM rhythmic motion for DanceFlow, with TypeScript bindings. Music: https://kieransimkin.co.uk/my-songs/",
   "license": "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0",
   "type": "module",
