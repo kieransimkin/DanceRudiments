@@ -2,7 +2,7 @@
 
 By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)** · Part of the **DanceFlow** motion workflow.
 
-[Visualizer](#visualizer) · [Language bindings](#language-bindings) · [C++](#c-binding) · [Python](#python-binding) · [TypeScript / JavaScript](#typescriptwasm-binding)
+[Visualizer](#visualizer) · [Language bindings](#language-bindings) · [C++](#c-binding) · [Python](#python-binding) · [C# / .NET](#csharp-binding) · [TypeScript / JavaScript](#typescriptwasm-binding)
 
 <a id="visualizer"></a>
 
@@ -104,12 +104,13 @@ The three components can also be used independently. They exchange explicit timi
 
 | You are building | Install or download | What you get |
 | --- | --- | --- |
+| C# / .NET application | `dotnet add package DanceRudiments` from [NuGet.org](https://www.nuget.org/packages/DanceRudiments) after its first release | Managed .NET 8+ wrapper and x64/ARM64 native assets for Windows, Linux and macOS |
 | Python application | `pip install dancerudiments` from [PyPI](https://pypi.org/project/dancerudiments/) | Native Python extension and the catalogue/sample API |
 | TypeScript or JavaScript application | `npm install @kieransimkin/dance-rudiments` from [npm](https://www.npmjs.com/package/@kieransimkin/dance-rudiments) | TypeScript declarations, JavaScript wrapper, and WebAssembly module |
 | C++ application using a listed release platform | Download the matching `DanceRudiments-cpp-<version>-<platform>-static.zip` from [GitHub Releases](https://github.com/kieransimkin/DanceRudiments/releases) | Headers, static library, CMake package files, licence, platform manifest, and instructions |
 | C++ application using another toolchain or architecture | Build from source or use `conan create` with `conanfile.py` | A library compiled for your own settings |
 
-GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI and the TypeScript/WASM package belongs on npm, while GitHub release attachments include C++ archives and the separately generated HTML demos, screenshots and checksums.
+GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI, the C# package on NuGet.org (mirrored to GitHub Packages), and the TypeScript/WASM package on npm, while GitHub release attachments include C++ archives and the separately generated HTML demos, screenshots and checksums.
 
 ## Included rudiments
 
@@ -123,7 +124,7 @@ Source references: [Percussive Arts Society International Drum Rudiments](https:
 
 ## Language bindings
 
-All three interfaces sample the **same C++ runtime**. Choose the interface, not
+All four language interfaces sample the **same C++ runtime**. Choose the interface, not
 another movement implementation. The examples below are checked into
 [`examples/bindings/`](examples/bindings/) so they can be built and tested.
 
@@ -131,6 +132,7 @@ another movement implementation. The examples below are checked into
 | --- | --- | --- | --- | --- |
 | C++17 | `dancerudiments::catalogue()` | `dancerudiments::sample(name, pip)` | `period_pips` | Owned by its C++ object; normal RAII |
 | Python | `d.catalogue()` | `d.sample(name, pip)` | `info["period_pips"]` | Owned by the Python object wrapping C++ |
+| C# / .NET | `Rudiments.Catalogue` | `Rudiments.Sample(name, pip)` | `info.PeriodPips` | `using` / `Dispose()` for custom banks |
 | TypeScript / JavaScript | `catalogue` (an array, not a function) | `sample(name, pip)` after `bindNative()` | `info.periodPips` | Call the custom bank's `dispose()` |
 
 **One beat is 64 pips.** Supply a signed 32-bit integer, not milliseconds or a
@@ -291,6 +293,60 @@ Existing collections are already defaults: loading `initial_pack()` or
 sampling. An exact default reload is idempotent; changing a default under the
 same name is rejected. Give an edited movement a new identifier.
 
+<a id="csharp-binding"></a>
+
+### C# / .NET binding
+
+The **DanceRudiments** NuGet package wraps the original C++ library through a
+versioned, exception-safe C ABI. It targets .NET 8+ desktop/server applications;
+CI tests .NET 8 and .NET 10. Native Windows, Linux and macOS libraries are included
+for x64 and ARM64, with automatic NuGet/.NET runtime selection. This does not
+claim support for .NET Framework, Unity, mobile or browser-WASM hosts.
+
+After the first release containing this binding has been published:
+
+```sh
+dotnet add package DanceRudiments
+```
+
+```csharp
+using DanceRudiments;
+
+Console.WriteLine(Rudiments.NativeVersion);
+var amen = Rudiments.Catalogue.Single(p => p.Name == "beat_amen_four_bar_bounce");
+int pip = Rudiments.PipAtTime(1.25, bpm: 140, periodPips: amen.PeriodPips);
+Offset3 position = Rudiments.Sample(amen.Name, pip);
+Console.WriteLine($"{position.X}, {position.Y}, {position.Z}");
+
+// Full-loop export: one interop call; every sample is still calculated in C++.
+Offset3[] loop = Rudiments.SampleMany(amen.Name, 0, amen.PeriodPips);
+```
+
+`Offset3` has read-only double-precision `X`, `Y`, `Z` fields. Negative pips wrap
+normally. `SampleInto` fills an existing span; batches handle int32-boundary
+crossings safely. `PatternLibrary.Load` / `FromJson` read the same compiled JSON
+packs as the other bindings; a custom bank owns copies of its tables and should
+be enclosed in `using`. SafeHandle protects native lifetime, including concurrent
+sampling. No movements are reimplemented in C# and there is no Python dependency
+at playback time.
+
+For a checkout build, enable `-DDANCERUDIMENTS_BUILD_C_ABI=ON` in CMake, then build
+`bindings/csharp/DanceRudiments/DanceRudiments.csproj` with `dotnet`. The
+[runnable C# example](examples/bindings/csharp/Program.cs) and
+[complete C# guide](docs/csharp.md) cover native loading, custom packs, supported
+platform baselines, source development and one-time registry configuration.
+[The NuGet README](bindings/csharp/README.md) is included in the output package
+along with your usage guide, screenshots and
+[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
+`.github/workflows/csharp.yml` builds/tests all six native targets, creates one
+complete nupkg, and tests installing it on each target. A published GitHub release
+then uploads to **NuGet.org and GitHub Packages**, plus release attachments.
+Ordinary pushes and pull requests only build/test and retain CI artifacts.
+NuGet.org requires a configured trusted publisher and `NUGET_USER`; see
+[release setup](docs/csharp.md#one-time-nugetorg-setup). Until publication, use the
+checkout or the `csharp-nuget` CI artifact; merging this code alone does not publish.
+
 ### TypeScript/WASM binding
 
 The npm package contains a typed ES-module wrapper and a **separate Emscripten
@@ -416,9 +472,11 @@ are build-time requirements, not dependencies of the downloaded HTML.
 
 ## Continuous integration and releases
 
+The additional `.github/workflows/csharp.yml` builds the shared C ABI and C# wrapper, tests actual installed NuGet packages, and publishes .NET packages only for published releases. Its NuGet.org setup is documented in [the C# guide](docs/csharp.md).
+
 `.github/workflows/ci.yml` builds and tests the C++ core on Linux, Windows, and macOS; builds and imports the Python package; compiles/tests the TypeScript and browser runtime; and creates a Conan package on every push to `main` and every pull request.
 
-Publishing is deliberately tied to a GitHub release with a `vMAJOR.MINOR.PATCH` tag. Before creating the release, update the matching version in `CMakeLists.txt`, `pyproject.toml`, and `package.json`. `.github/workflows/release.yml` rejects mismatches before it publishes anything, then:
+Publishing is deliberately tied to a GitHub release with a `vMAJOR.MINOR.PATCH` tag. Before creating the release, update the matching version in `CMakeLists.txt`, `pyproject.toml`, `package.json` (and its lockfile), and the C# `DanceRudiments.csproj`. `.github/workflows/release.yml` rejects mismatches before it publishes anything, then:
 
 - builds platform Python wheels and a source distribution and publishes them to PyPI using OIDC Trusted Publishing;
 - builds the TypeScript wrapper and C++ WebAssembly module and publishes `@kieransimkin/dance-rudiments` to npm using the configured publishing credentials and provenance;

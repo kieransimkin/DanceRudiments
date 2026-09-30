@@ -3,6 +3,7 @@ import pathlib
 import re
 import sys
 import tomllib
+import xml.etree.ElementTree as ET
 
 root = pathlib.Path(__file__).resolve().parents[1]
 tag = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -16,8 +17,11 @@ cmake_text = (root / "CMakeLists.txt").read_text(encoding="utf-8")
 match = re.search(r"project\(DanceRudiments VERSION ([0-9]+\.[0-9]+\.[0-9]+)", cmake_text)
 cmake_version = match.group(1) if match else None
 
+csharp_project = root / "bindings/csharp/DanceRudiments/DanceRudiments.csproj"
+csharp_version = ET.parse(csharp_project).findtext("./PropertyGroup/Version")
+
 versions = {"release tag": version, "package.json": package_version,
-            "pyproject.toml": python_version, "CMakeLists.txt": cmake_version}
+            "pyproject.toml": python_version, "CMakeLists.txt": cmake_version, "C# NuGet": csharp_version}
 if len(set(versions.values())) != 1:
     raise SystemExit("Version mismatch: " + ", ".join(f"{key}={value}" for key, value in versions.items()))
 print(f"Release version {version} is consistent across all package manifests.")

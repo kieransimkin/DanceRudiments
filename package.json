@@ -42,7 +42,9 @@
     "docs/bindings.md",
     "docs/images/",
     "examples/bindings/",
-    "docs/troubleshooting.md"
+    "docs/troubleshooting.md",
+    "docs/csharp.md",
+    "bindings/csharp/README.md"
   ],
   "repository": {
     "type": "git",

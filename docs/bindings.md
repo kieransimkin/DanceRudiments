@@ -3,12 +3,16 @@
 By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
 
 The [main README](../README.md#language-bindings) contains the complete C++, Python,
-TypeScript and JavaScript instructions. Runnable source is in
+C#/.NET, TypeScript and JavaScript instructions. Runnable source is in
 [examples/bindings](../examples/bindings/). CMake installs this guide, the README,
 examples and screenshots under `share/DanceRudiments`; scikit-build's wheel
 includes that CMake installation alongside its Python packages. The Conan package
 includes README.md, AUTHORS.md, docs/ and examples/bindings/ at its root. The npm
 archive includes the same first-party documentation and examples.
+
+The new [C# guide](csharp.md) covers native loading, custom packs, six-RID NuGet
+packaging and trusted publishing. The NuGet package contains its own linked README,
+this binding's guide, screenshots, example and author/source notices.
 
 ## Visualizer overview
 
@@ -59,7 +63,7 @@ checkout may need a newer catalogue than the most recently published version.
 The exact music-page URL is retained in Python summary/project URLs and wheel
 README/METADATA; npm description/homepage/author and README; the Conan recipe and
 packaged README; CMake project metadata, installed README and author credits;
-and C++ release PACKAGE-INFO.txt. All first-party collection READMEs also carry
+C# NuGet description/project URL and packaged README; and C++ release PACKAGE-INFO.txt. All first-party collection READMEs also carry
 it, including those emitted by generators. Original source licences, cryptographic
 source identities and numerical movement tables are deliberately untouched.
 

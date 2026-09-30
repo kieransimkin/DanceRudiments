@@ -1,0 +1,2644 @@
+From 905de7cf8094ae435c2a605426b7442461fecfac Mon Sep 17 00:00:00 2001
+From: OpenAI <noreply@openai.com>
+Date: Wed, 30 Sep 2026 00:36:24 +0000
+Subject: [PATCH] Add native-backed C# binding and tested NuGet release
+ workflow
+
+Target upstream: 918c43d725b3ed91b663930430079c37cd6d3a25. Add a C ABI over the unchanged core, net8.0 C# API and six-RID CI/package/release pipelines. Document NuGet.org trusted publishing and GitHub Packages. Preserve movement tables and existing package versions. Native and packaging tests were run locally; managed compilation and hosted publishing await CI because this environment has no .NET SDK.
+---
+ .github/workflows/csharp.yml                  | 282 ++++++++++++++++++
+ CMakeLists.txt                                |  12 +-
+ README.md                                     |  66 +++-
+ bindings/csharp/.gitignore                    |   3 +
+ .../DanceRudiments/DanceRudiments.csproj      |  51 ++++
+ .../csharp/DanceRudiments/NativeMethods.cs    | 155 ++++++++++
+ bindings/csharp/DanceRudiments/Offset3.cs     |  26 ++
+ .../DanceRudiments/PatternDefinition.cs       |  31 ++
+ .../csharp/DanceRudiments/PatternLibrary.cs   | 126 ++++++++
+ bindings/csharp/DanceRudiments/Rudiments.cs   |  59 ++++
+ bindings/csharp/README.md                     |  83 ++++++
+ bindings/csharp/native/CMakeLists.txt         |  51 ++++
+ bindings/csharp/native/c_api.cpp              | 142 +++++++++
+ bindings/csharp/platforms.json                |  53 ++++
+ conanfile.py                                  |   2 +-
+ docs/bindings.md                              |   8 +-
+ docs/csharp.md                                | 241 +++++++++++++++
+ examples/bindings/README.md                   |   5 +
+ examples/bindings/csharp/.gitignore           |   2 +
+ examples/bindings/csharp/Program.cs           |  24 ++
+ examples/bindings/csharp/Quickstart.csproj    |  16 +
+ include/dancerudiments/c_api.h                |  77 +++++
+ package.json                                  |   4 +-
+ packaging/CPP_BINARY_README.md                |   5 +-
+ pyproject.toml                                |   4 +-
+ tests/cpp/test_c_api.cpp                      | 111 +++++++
+ tests/csharp/.gitignore                       |   3 +
+ tests/csharp/DanceRudiments.Tests.csproj      |  17 ++
+ tests/csharp/Program.cs                       | 132 ++++++++
+ tests/csharp/packaging/test_packaging.py      | 210 +++++++++++++
+ tools/check_release_version.py                |   6 +-
+ tools/csharp_package.py                       | 262 ++++++++++++++++
+ 32 files changed, 2255 insertions(+), 14 deletions(-)
+ create mode 100644 .github/workflows/csharp.yml
+ create mode 100644 bindings/csharp/.gitignore
+ create mode 100644 bindings/csharp/DanceRudiments/DanceRudiments.csproj
+ create mode 100644 bindings/csharp/DanceRudiments/NativeMethods.cs
+ create mode 100644 bindings/csharp/DanceRudiments/Offset3.cs
+ create mode 100644 bindings/csharp/DanceRudiments/PatternDefinition.cs
+ create mode 100644 bindings/csharp/DanceRudiments/PatternLibrary.cs
+ create mode 100644 bindings/csharp/DanceRudiments/Rudiments.cs
+ create mode 100644 bindings/csharp/README.md
+ create mode 100644 bindings/csharp/native/CMakeLists.txt
+ create mode 100644 bindings/csharp/native/c_api.cpp
+ create mode 100644 bindings/csharp/platforms.json
+ create mode 100644 docs/csharp.md
+ create mode 100644 examples/bindings/csharp/.gitignore
+ create mode 100644 examples/bindings/csharp/Program.cs
+ create mode 100644 examples/bindings/csharp/Quickstart.csproj
+ create mode 100644 include/dancerudiments/c_api.h
+ create mode 100644 tests/cpp/test_c_api.cpp
+ create mode 100644 tests/csharp/.gitignore
+ create mode 100644 tests/csharp/DanceRudiments.Tests.csproj
+ create mode 100644 tests/csharp/Program.cs
+ create mode 100644 tests/csharp/packaging/test_packaging.py
+ create mode 100644 tools/csharp_package.py
+
+diff --git a/.github/workflows/csharp.yml b/.github/workflows/csharp.yml
+new file mode 100644
+index 0000000..eb9020a
+--- /dev/null
++++ b/.github/workflows/csharp.yml
+@@ -0,0 +1,282 @@
++name: C# binding and NuGet
++
++on:
++  push:
++    branches: [main]
++  pull_request:
++  release:
++    types: [published]
++  workflow_dispatch:
++
++permissions:
++  contents: read
++
++concurrency:
++  group: csharp-${{ github.event_name }}-${{ github.ref }}
++  cancel-in-progress: ${{ github.event_name != 'release' }}
++
++env:
++  DOTNET_NOLOGO: '1'
++  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
++  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
++
++jobs:
++  validate:
++    runs-on: ubuntu-22.04
++    outputs:
++      version: ${{ steps.version.outputs.value }}
++      matrix: ${{ steps.version.outputs.matrix }}
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - name: Validate source, version and packaging tests
++        shell: bash
++        env:
++          RELEASE_TAG: ${{ github.event.release.tag_name }}
++        run: |
++          python tools/csharp_package.py check-source
++          python -m unittest discover -s tests/csharp/packaging -v
++          if [ "$GITHUB_EVENT_NAME" = release ]; then
++            python tools/check_release_version.py "$RELEASE_TAG"
++          fi
++      - id: version
++        shell: bash
++        run: |
++          echo "value=$(python tools/csharp_package.py version)" >> "$GITHUB_OUTPUT"
++          echo "matrix=$(python tools/csharp_package.py matrix)" >> "$GITHUB_OUTPUT"
++
++  native:
++    needs: validate
++    name: C# / native (${{ matrix.rid }})
++    strategy:
++      fail-fast: false
++      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
++    runs-on: ${{ matrix.os }}
++    defaults:
++      run:
++        shell: bash
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - uses: actions/setup-dotnet@v5
++        with:
++          dotnet-version: |
++            8.0.x
++            10.0.x
++      - name: Build the original core and its C ABI bridge
++        run: |
++          cmake -S . -B build-csharp -DCMAKE_BUILD_TYPE=Release -DDANCERUDIMENTS_BUILD_C_ABI=ON -DDANCERUDIMENTS_BUILD_DEMO_TOOLS=ON ${{ matrix.cmake_args }}
++          cmake --build build-csharp --config Release --parallel 2
++          ctest --test-dir build-csharp -C Release --output-on-failure
++      - name: Stage and identify the native runtime
++        run: |
++          python tools/csharp_package.py stage --build build-csharp --rid "${{ matrix.rid }}" --output artifacts/csharp --commit "$GITHUB_SHA"
++          EXPORTER=build-csharp/dancerudiments_export_demo
++          if [ "$RUNNER_OS" = Windows ]; then EXPORTER=build-csharp/Release/dancerudiments_export_demo.exe; fi
++          python tools/csharp_package.py reference --exporter "$EXPORTER" --output "artifacts/csharp/references/${{ matrix.rid }}.json"
++      - name: Run C# contracts on .NET 8 and .NET 10 against real C++
++        run: |
++          # cygpath prevents an MSYS-style path being passed unchanged to .NET.
++          LIBRARY="$PWD/build-csharp/csharp-native/${{ matrix.file }}"
++          if [ "$RUNNER_OS" = Windows ]; then LIBRARY=$(cygpath -w "$LIBRARY"); fi
++          export DANCERUDIMENTS_NATIVE_LIBRARY="$LIBRARY"
++          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net8.0 -- "artifacts/csharp/references/${{ matrix.rid }}.json"
++          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net10.0 -- "artifacts/csharp/references/${{ matrix.rid }}.json"
++          dotnet run --project examples/bindings/csharp/Quickstart.csproj -c Release
++      - uses: actions/upload-artifact@v6
++        with:
++          name: csharp-native-${{ matrix.rid }}
++          path: artifacts/csharp/
++          if-no-files-found: error
++
++  pack:
++    needs: [validate, native]
++    runs-on: ubuntu-22.04
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - uses: actions/setup-dotnet@v5
++        with:
++          dotnet-version: |
++            8.0.x
++            10.0.x
++      - uses: actions/download-artifact@v7
++        with:
++          pattern: csharp-native-*
++          path: artifacts/csharp
++          merge-multiple: true
++      - name: Pack only the complete, version-matched six-platform set
++        shell: bash
++        run: python tools/csharp_package.py pack --native artifacts/csharp --output artifacts/nuget --commit "$GITHUB_SHA"
++      - uses: actions/upload-artifact@v6
++        with:
++          name: csharp-nuget
++          path: artifacts/nuget/
++          if-no-files-found: error
++
++  consume:
++    needs: [validate, pack]
++    name: NuGet install (${{ matrix.rid }})
++    strategy:
++      fail-fast: false
++      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
++    runs-on: ${{ matrix.os }}
++    defaults:
++      run:
++        shell: bash
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - uses: actions/setup-dotnet@v5
++        with:
++          dotnet-version: |
++            8.0.x
++            10.0.x
++      - uses: actions/download-artifact@v7
++        with:
++          name: csharp-nuget
++          path: artifacts/nuget
++      - uses: actions/download-artifact@v7
++        with:
++          name: csharp-native-${{ matrix.rid }}
++          path: artifacts/reference
++      - name: Restore only the packaged binding; exercise automatic native probing
++        env:
++          BINDING_VERSION: ${{ needs.validate.outputs.version }}
++        run: |
++          unset DANCERUDIMENTS_NATIVE_LIBRARY
++          CACHE="$RUNNER_TEMP/csharp-nuget-cache"
++          python tools/csharp_package.py consumer-config --source artifacts/nuget --output artifacts/consume.config
++          dotnet restore tests/csharp/DanceRudiments.Tests.csproj --configfile artifacts/consume.config --packages "$CACHE" -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION"
++          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net8.0 --no-restore -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION" -- "artifacts/reference/references/${{ matrix.rid }}.json"
++          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net10.0 --no-restore -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION" -- "artifacts/reference/references/${{ matrix.rid }}.json"
++      - name: Verify explicit-RID publish output outside the checkout
++        env:
++          BINDING_VERSION: ${{ needs.validate.outputs.version }}
++        run: |
++          OUT="$RUNNER_TEMP/csharp-published"
++          dotnet publish examples/bindings/csharp/Quickstart.csproj -c Release -r "${{ matrix.rid }}" --self-contained false -p:UseAppHost=false -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION" -p:RestoreConfigFile="$PWD/artifacts/consume.config" -p:RestorePackagesPath="$RUNNER_TEMP/csharp-nuget-cache" -o "$OUT"
++          cd "$OUT"
++          dotnet Quickstart.dll
++
++  publish-nuget:
++    needs: [validate, pack, consume]
++    if: github.event_name == 'release'
++    runs-on: ubuntu-22.04
++    environment: nuget
++    permissions:
++      contents: read
++      id-token: write
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-dotnet@v5
++        with:
++          dotnet-version: '10.0.x'
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - uses: actions/download-artifact@v7
++        with:
++          name: csharp-nuget
++          path: artifacts/nuget
++      - name: Check NuGet publishing is configured
++        shell: bash
++        env:
++          NUGET_USER: ${{ secrets.NUGET_USER || vars.NUGET_USER }}
++        run: |
++          if [ -z "$NUGET_USER" ]; then
++            echo '::error::Set NUGET_USER and configure the NuGet.org trusted publisher for csharp.yml / environment nuget. See docs/csharp.md.'
++            exit 1
++          fi
++      - name: Obtain a short-lived NuGet.org publishing key
++        uses: NuGet/login@v1
++        id: nuget-login
++        with:
++          user: ${{ secrets.NUGET_USER || vars.NUGET_USER }}
++      - name: Publish to NuGet.org, including managed symbols
++        shell: bash
++        env:
++          NUGET_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
++          BINDING_VERSION: ${{ needs.validate.outputs.version }}
++        run: |
++          python tools/csharp_package.py check "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" --commit "$GITHUB_SHA"
++          dotnet nuget push "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" --api-key "$NUGET_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
++          python tools/csharp_package.py verify-published "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg"
++
++  publish-github-packages:
++    needs: [validate, pack, consume]
++    if: github.event_name == 'release'
++    runs-on: ubuntu-22.04
++    permissions:
++      contents: read
++      packages: write
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          persist-credentials: false
++      - uses: actions/setup-python@v6
++        with:
++          python-version: '3.13'
++      - uses: actions/setup-dotnet@v5
++        with:
++          dotnet-version: '10.0.x'
++      - uses: actions/download-artifact@v7
++        with:
++          name: csharp-nuget
++          path: artifacts/nuget
++      - name: Publish the same package to the repository's GitHub NuGet feed
++        shell: bash
++        env:
++          GH_PACKAGE_TOKEN: ${{ github.token }}
++          GH_OWNER: ${{ github.repository_owner }}
++          BINDING_VERSION: ${{ needs.validate.outputs.version }}
++        run: |
++          CONFIG="$RUNNER_TEMP/nuget-publish.config"
++          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$CONFIG"
++          trap 'rm -f "$CONFIG"' EXIT
++          dotnet nuget add source "https://nuget.pkg.github.com/$GH_OWNER/index.json" --name github --username "$GH_OWNER" --password "$GH_PACKAGE_TOKEN" --store-password-in-clear-text --configfile "$CONFIG"
++          dotnet nuget push "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" --source github --api-key "$GH_PACKAGE_TOKEN" --no-symbols --skip-duplicate --configfile "$CONFIG"
++          # Verify the feed can actually resolve this version. No registry credentials are committed.
++          dotnet new classlib -n FeedCheck -o "$RUNNER_TEMP/csharp-feed-check" --framework net10.0 --no-restore
++          dotnet add "$RUNNER_TEMP/csharp-feed-check/FeedCheck.csproj" package DanceRudiments --version "$BINDING_VERSION" --no-restore
++          dotnet restore "$RUNNER_TEMP/csharp-feed-check/FeedCheck.csproj" --configfile "$CONFIG" --packages "$RUNNER_TEMP/csharp-feed-cache" --disable-parallel
++
++          python tools/csharp_package.py compare "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" "$RUNNER_TEMP/csharp-feed-cache/dancerudiments/$BINDING_VERSION/dancerudiments.$BINDING_VERSION.nupkg"
++
++  attach-release:
++    needs: [validate, pack, consume]
++    if: github.event_name == 'release'
++    runs-on: ubuntu-22.04
++    permissions:
++      contents: write
++    steps:
++      - uses: actions/download-artifact@v7
++        with:
++          name: csharp-nuget
++          path: artifacts/nuget
++      - name: Attach .NET packages and checksums
++        shell: bash
++        env:
++          GH_TOKEN: ${{ github.token }}
++          GH_REPO: ${{ github.repository }}
++          RELEASE_TAG: ${{ github.event.release.tag_name }}
++        run: |
++          gh release upload "$RELEASE_TAG" artifacts/nuget/*.nupkg artifacts/nuget/*.snupkg artifacts/nuget/SHA256SUMS-csharp.txt --repo "$GH_REPO" --clobber
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 43ca349..02b7bfb 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,6 +7,7 @@ project(DanceRudiments VERSION 0.1.3
+ option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
+ option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
+ option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
++option(DANCERUDIMENTS_BUILD_C_ABI "Build the shared C ABI for C#/.NET" OFF)
+ option(DANCERUDIMENTS_BUILD_WASM "Build the Emscripten JavaScript module" OFF)
+ 
+ add_library(DanceRudiments STATIC src/dance_rudiments.cpp src/sampled_pattern.cpp)
+@@ -115,4 +116,13 @@ install(FILES README.md AUTHORS.md DESTINATION "${DANCERUDIMENTS_DOC_DIR}")
+ install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
+   FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "capture.json")
+ install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
+-  PATTERN "dist" EXCLUDE PATTERN "__pycache__" EXCLUDE)
++  PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
++
++
++# .NET is built by dotnet, not by CMake. Only the optional native bridge is built here.
++if(DANCERUDIMENTS_BUILD_C_ABI)
++  if(EMSCRIPTEN)
++    message(FATAL_ERROR "The C# native bridge targets desktop/server .NET, not Emscripten.")
++  endif()
++  add_subdirectory(bindings/csharp/native)
++endif()
+diff --git a/README.md b/README.md
+index 7690d2a..5c4f92a 100644
+--- a/README.md
++++ b/README.md
+@@ -2,7 +2,7 @@
+ 
+ By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)** · Part of the **DanceFlow** motion workflow.
+ 
+-[Visualizer](#visualizer) · [Language bindings](#language-bindings) · [C++](#c-binding) · [Python](#python-binding) · [TypeScript / JavaScript](#typescriptwasm-binding)
++[Visualizer](#visualizer) · [Language bindings](#language-bindings) · [C++](#c-binding) · [Python](#python-binding) · [C# / .NET](#csharp-binding) · [TypeScript / JavaScript](#typescriptwasm-binding)
+ 
+ <a id="visualizer"></a>
+ 
+@@ -104,12 +104,13 @@ The three components can also be used independently. They exchange explicit timi
+ 
+ | You are building | Install or download | What you get |
+ | --- | --- | --- |
++| C# / .NET application | `dotnet add package DanceRudiments` from [NuGet.org](https://www.nuget.org/packages/DanceRudiments) after its first release | Managed .NET 8+ wrapper and x64/ARM64 native assets for Windows, Linux and macOS |
+ | Python application | `pip install dancerudiments` from [PyPI](https://pypi.org/project/dancerudiments/) | Native Python extension and the catalogue/sample API |
+ | TypeScript or JavaScript application | `npm install @kieransimkin/dance-rudiments` from [npm](https://www.npmjs.com/package/@kieransimkin/dance-rudiments) | TypeScript declarations, JavaScript wrapper, and WebAssembly module |
+ | C++ application using a listed release platform | Download the matching `DanceRudiments-cpp-<version>-<platform>-static.zip` from [GitHub Releases](https://github.com/kieransimkin/DanceRudiments/releases) | Headers, static library, CMake package files, licence, platform manifest, and instructions |
+ | C++ application using another toolchain or architecture | Build from source or use `conan create` with `conanfile.py` | A library compiled for your own settings |
+ 
+-GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI and the TypeScript/WASM package belongs on npm, while GitHub release attachments include C++ archives and the separately generated HTML demos, screenshots and checksums.
++GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI, the C# package on NuGet.org (mirrored to GitHub Packages), and the TypeScript/WASM package on npm, while GitHub release attachments include C++ archives and the separately generated HTML demos, screenshots and checksums.
+ 
+ ## Included rudiments
+ 
+@@ -123,7 +124,7 @@ Source references: [Percussive Arts Society International Drum Rudiments](https:
+ 
+ ## Language bindings
+ 
+-All three interfaces sample the **same C++ runtime**. Choose the interface, not
++All four language interfaces sample the **same C++ runtime**. Choose the interface, not
+ another movement implementation. The examples below are checked into
+ [`examples/bindings/`](examples/bindings/) so they can be built and tested.
+ 
+@@ -131,6 +132,7 @@ another movement implementation. The examples below are checked into
+ | --- | --- | --- | --- | --- |
+ | C++17 | `dancerudiments::catalogue()` | `dancerudiments::sample(name, pip)` | `period_pips` | Owned by its C++ object; normal RAII |
+ | Python | `d.catalogue()` | `d.sample(name, pip)` | `info["period_pips"]` | Owned by the Python object wrapping C++ |
++| C# / .NET | `Rudiments.Catalogue` | `Rudiments.Sample(name, pip)` | `info.PeriodPips` | `using` / `Dispose()` for custom banks |
+ | TypeScript / JavaScript | `catalogue` (an array, not a function) | `sample(name, pip)` after `bindNative()` | `info.periodPips` | Call the custom bank's `dispose()` |
+ 
+ **One beat is 64 pips.** Supply a signed 32-bit integer, not milliseconds or a
+@@ -291,6 +293,60 @@ Existing collections are already defaults: loading `initial_pack()` or
+ sampling. An exact default reload is idempotent; changing a default under the
+ same name is rejected. Give an edited movement a new identifier.
+ 
++<a id="csharp-binding"></a>
++
++### C# / .NET binding
++
++The **DanceRudiments** NuGet package wraps the original C++ library through a
++versioned, exception-safe C ABI. It targets .NET 8+ desktop/server applications;
++CI tests .NET 8 and .NET 10. Native Windows, Linux and macOS libraries are included
++for x64 and ARM64, with automatic NuGet/.NET runtime selection. This does not
++claim support for .NET Framework, Unity, mobile or browser-WASM hosts.
++
++After the first release containing this binding has been published:
++
++```sh
++dotnet add package DanceRudiments
++```
++
++```csharp
++using DanceRudiments;
++
++Console.WriteLine(Rudiments.NativeVersion);
++var amen = Rudiments.Catalogue.Single(p => p.Name == "beat_amen_four_bar_bounce");
++int pip = Rudiments.PipAtTime(1.25, bpm: 140, periodPips: amen.PeriodPips);
++Offset3 position = Rudiments.Sample(amen.Name, pip);
++Console.WriteLine($"{position.X}, {position.Y}, {position.Z}");
++
++// Full-loop export: one interop call; every sample is still calculated in C++.
++Offset3[] loop = Rudiments.SampleMany(amen.Name, 0, amen.PeriodPips);
++```
++
++`Offset3` has read-only double-precision `X`, `Y`, `Z` fields. Negative pips wrap
++normally. `SampleInto` fills an existing span; batches handle int32-boundary
++crossings safely. `PatternLibrary.Load` / `FromJson` read the same compiled JSON
++packs as the other bindings; a custom bank owns copies of its tables and should
++be enclosed in `using`. SafeHandle protects native lifetime, including concurrent
++sampling. No movements are reimplemented in C# and there is no Python dependency
++at playback time.
++
++For a checkout build, enable `-DDANCERUDIMENTS_BUILD_C_ABI=ON` in CMake, then build
++`bindings/csharp/DanceRudiments/DanceRudiments.csproj` with `dotnet`. The
++[runnable C# example](examples/bindings/csharp/Program.cs) and
++[complete C# guide](docs/csharp.md) cover native loading, custom packs, supported
++platform baselines, source development and one-time registry configuration.
++[The NuGet README](bindings/csharp/README.md) is included in the output package
++along with your usage guide, screenshots and
++[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
++
++`.github/workflows/csharp.yml` builds/tests all six native targets, creates one
++complete nupkg, and tests installing it on each target. A published GitHub release
++then uploads to **NuGet.org and GitHub Packages**, plus release attachments.
++Ordinary pushes and pull requests only build/test and retain CI artifacts.
++NuGet.org requires a configured trusted publisher and `NUGET_USER`; see
++[release setup](docs/csharp.md#one-time-nugetorg-setup). Until publication, use the
++checkout or the `csharp-nuget` CI artifact; merging this code alone does not publish.
++
+ ### TypeScript/WASM binding
+ 
+ The npm package contains a typed ES-module wrapper and a **separate Emscripten
+@@ -416,9 +472,11 @@ are build-time requirements, not dependencies of the downloaded HTML.
+ 
+ ## Continuous integration and releases
+ 
++The additional `.github/workflows/csharp.yml` builds the shared C ABI and C# wrapper, tests actual installed NuGet packages, and publishes .NET packages only for published releases. Its NuGet.org setup is documented in [the C# guide](docs/csharp.md).
++
+ `.github/workflows/ci.yml` builds and tests the C++ core on Linux, Windows, and macOS; builds and imports the Python package; compiles/tests the TypeScript and browser runtime; and creates a Conan package on every push to `main` and every pull request.
+ 
+-Publishing is deliberately tied to a GitHub release with a `vMAJOR.MINOR.PATCH` tag. Before creating the release, update the matching version in `CMakeLists.txt`, `pyproject.toml`, and `package.json`. `.github/workflows/release.yml` rejects mismatches before it publishes anything, then:
++Publishing is deliberately tied to a GitHub release with a `vMAJOR.MINOR.PATCH` tag. Before creating the release, update the matching version in `CMakeLists.txt`, `pyproject.toml`, `package.json` (and its lockfile), and the C# `DanceRudiments.csproj`. `.github/workflows/release.yml` rejects mismatches before it publishes anything, then:
+ 
+ - builds platform Python wheels and a source distribution and publishes them to PyPI using OIDC Trusted Publishing;
+ - builds the TypeScript wrapper and C++ WebAssembly module and publishes `@kieransimkin/dance-rudiments` to npm using the configured publishing credentials and provenance;
+diff --git a/bindings/csharp/.gitignore b/bindings/csharp/.gitignore
+new file mode 100644
+index 0000000..b88af1a
+--- /dev/null
++++ b/bindings/csharp/.gitignore
+@@ -0,0 +1,3 @@
++**/bin/
++**/obj/
++artifacts/
+diff --git a/bindings/csharp/DanceRudiments/DanceRudiments.csproj b/bindings/csharp/DanceRudiments/DanceRudiments.csproj
+new file mode 100644
+index 0000000..d60b099
+--- /dev/null
++++ b/bindings/csharp/DanceRudiments/DanceRudiments.csproj
+@@ -0,0 +1,51 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <!-- Kieran Simkin / DanceFlow: https://kieransimkin.co.uk/my-songs/ -->
++  <PropertyGroup>
++    <TargetFramework>net8.0</TargetFramework>
++    <Version>0.1.3</Version>
++    <PackageId>DanceRudiments</PackageId>
++    <Authors>Kieran Simkin</Authors>
++    <Description>C# bindings to the DanceFlow C++ rhythmic motion library. Music: https://kieransimkin.co.uk/my-songs/</Description>
++    <PackageProjectUrl>https://kieransimkin.co.uk/my-songs/</PackageProjectUrl>
++    <RepositoryUrl>https://github.com/kieransimkin/DanceRudiments</RepositoryUrl>
++    <RepositoryType>git</RepositoryType>
++    <PackageLicenseExpression>MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0</PackageLicenseExpression>
++    <PackageReadmeFile>README.md</PackageReadmeFile>
++    <PackageTags>DanceFlow;animation;music;rhythm;native;CSharp;Amen</PackageTags>
++    <Nullable>enable</Nullable>
++    <ImplicitUsings>enable</ImplicitUsings>
++    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
++    <GenerateDocumentationFile>true</GenerateDocumentationFile>
++    <NoWarn>$(NoWarn);CS1591</NoWarn>
++    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <Deterministic>true</Deterministic>
++    <IncludeSymbols>true</IncludeSymbols>
++    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
++    <DebugType>portable</DebugType>
++    <EmbedUntrackedSources>true</EmbedUntrackedSources>
++    <PublishRepositoryUrl>true</PublishRepositoryUrl>
++    <NativeArtifactsDir Condition="'$(NativeArtifactsDir)' == ''">$(MSBuildThisFileDirectory)../../../artifacts/csharp</NativeArtifactsDir>
++  </PropertyGroup>
++  <ItemGroup>
++    <None Include="../README.md" Pack="true" PackagePath="README.md" />
++    <None Include="../../../AUTHORS.md" Pack="true" PackagePath="AUTHORS.md" />
++    <None Include="../../../LICENSE" Pack="true" PackagePath="licenses/LICENSE" />
++    <None Include="../../../collections/initial/THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="licenses/THIRD_PARTY_NOTICES.md" />
++    <None Include="../../../collections/initial/sources/d3-ease/LICENSE" Pack="true" PackagePath="licenses/D3-ease-LICENSE" />
++    <None Include="../../../docs/csharp.md" Pack="true" PackagePath="docs/csharp.md" />
++    <None Include="../../../docs/images/*.png" Pack="true" PackagePath="docs/images/" />
++    <None Include="../../../examples/bindings/csharp/*.cs;../../../examples/bindings/csharp/*.csproj" Pack="true" PackagePath="examples/bindings/csharp/" />
++    <None Include="../platforms.json" Pack="true" PackagePath="build-info/platforms.json" />
++    <None Include="$(NativeArtifactsDir)/manifests/*.json" Pack="true" PackagePath="build-info/" />
++    <None Include="$(NativeArtifactsDir)/runtimes/**/*" Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
++  </ItemGroup>
++  <!-- A normal source build may have no native artifacts. A package may not. -->
++  <Target Name="RequireAllNativeRuntimes" BeforeTargets="GenerateNuspec">
++    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/linux-x64/native/libdancerudiments_native.so')" Text="Missing linux-x64 bridge; use tools/csharp_package.py pack after native CI builds." />
++    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/linux-arm64/native/libdancerudiments_native.so')" Text="Missing linux-arm64 bridge." />
++    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/win-x64/native/dancerudiments_native.dll')" Text="Missing win-x64 bridge." />
++    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/win-arm64/native/dancerudiments_native.dll')" Text="Missing win-arm64 bridge." />
++    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/osx-x64/native/libdancerudiments_native.dylib')" Text="Missing osx-x64 bridge." />
++    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/osx-arm64/native/libdancerudiments_native.dylib')" Text="Missing osx-arm64 bridge." />
++  </Target>
++</Project>
+diff --git a/bindings/csharp/DanceRudiments/NativeMethods.cs b/bindings/csharp/DanceRudiments/NativeMethods.cs
+new file mode 100644
+index 0000000..a021c00
+--- /dev/null
++++ b/bindings/csharp/DanceRudiments/NativeMethods.cs
+@@ -0,0 +1,155 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++using System.Reflection;
++using System.Runtime.InteropServices;
++using System.Text;
++using Microsoft.Win32.SafeHandles;
++namespace DanceRudiments;
++
++internal sealed class SafeLibraryHandle : SafeHandleZeroOrMinusOneIsInvalid
++{
++    public SafeLibraryHandle() : base(true) { }
++    protected override bool ReleaseHandle() { NativeMethods.Destroy(handle); return true; }
++}
++
++internal static unsafe class NativeMethods
++{
++    private const string Dll = "dancerudiments_native";
++    private static readonly UTF8Encoding StrictUtf8 = new(false, true);
++    private static readonly Lazy<bool> Compatible = new(() =>
++    {
++        if (AbiVersion() != 1 || PipsPerBeat() != 64)
++            throw new NotSupportedException("Incompatible DanceRudiments C ABI. Install matching managed/native package files.");
++        return true;
++    });
++
++    static NativeMethods()
++    {
++        // NuGet's runtime probing is the default. This explicit absolute-path
++        // override is only for source development; it is not needed by consumers.
++        NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly, Resolve);
++    }
++    private static nint Resolve(string name, Assembly assembly, DllImportSearchPath? paths)
++    {
++        if (name != Dll) return 0;
++        string? path = Environment.GetEnvironmentVariable("DANCERUDIMENTS_NATIVE_LIBRARY");
++        if (string.IsNullOrEmpty(path)) return 0;
++        if (!Path.IsPathFullyQualified(path))
++            throw new ArgumentException("DANCERUDIMENTS_NATIVE_LIBRARY must be an absolute filename.");
++        return NativeLibrary.Load(path, assembly, paths);
++    }
++    internal static void EnsureCompatible() => _ = Compatible.Value;
++    internal static void Check(int code)
++    {
++        if (code == 0) return;
++        string text = Marshal.PtrToStringUTF8(LastError()) ?? "Native DanceRudiments error";
++        Exception error = code switch
++        {
++            1 => new ArgumentException(text),
++            2 => new ArgumentOutOfRangeException(null, text),
++            3 => new OutOfMemoryException(text),
++            _ => new InvalidOperationException(text)
++        };
++        throw error;
++    }
++    internal static void CheckName(string name)
++    {
++        ArgumentNullException.ThrowIfNull(name);
++        if (name.Length == 0 || name.Contains('\0'))
++            throw new ArgumentException("Pattern names must be nonempty and contain no NUL.", nameof(name));
++        _ = StrictUtf8.GetByteCount(name);
++    }
++    internal static void CheckText(string text, string label)
++    {
++        ArgumentNullException.ThrowIfNull(text, label);
++        if (text.Contains('\0')) throw new ArgumentException("Text must not contain NUL.", label);
++        _ = StrictUtf8.GetByteCount(text);
++    }
++    // These fields are assigned by the native out-parameter marshaller.
++#pragma warning disable CS0649
++    [StructLayout(LayoutKind.Sequential)]
++    internal struct Info
++    {
++        internal nint Name, Description;
++        internal uint Period, Dimensions;
++        internal readonly RudimentInfo Copy() => new(
++            Marshal.PtrToStringUTF8(Name) ?? throw new InvalidOperationException("Missing native name"),
++            Marshal.PtrToStringUTF8(Description) ?? throw new InvalidOperationException("Missing native description"),
++            checked((int)Period), checked((int)Dimensions));
++    }
++#pragma warning restore CS0649
++    [StructLayout(LayoutKind.Sequential)]
++    internal struct Definition { internal nint Name, Description, Samples; internal uint Count; }
++
++    internal static SafeLibraryHandle Create(IReadOnlyList<PatternDefinition> patterns)
++    {
++        EnsureCompatible();
++        if (patterns.Count > PatternLibrary.MaxPatterns) throw new ArgumentException("Too many patterns.", nameof(patterns));
++        long total = 0;
++        for (int i = 0; i < patterns.Count; ++i)
++        {
++            ArgumentNullException.ThrowIfNull(patterns[i]);
++            total += patterns[i].Values.Length;
++        }
++        if (total > PatternLibrary.MaxSamples) throw new ArgumentException("Too many samples.", nameof(patterns));
++        var definitions = new Definition[patterns.Count];
++        var pins = new GCHandle[patterns.Count];
++        try
++        {
++            for (int i = 0; i < patterns.Count; ++i)
++            {
++                definitions[i].Name = Marshal.StringToCoTaskMemUTF8(patterns[i].Name);
++                definitions[i].Description = Marshal.StringToCoTaskMemUTF8(patterns[i].Description);
++                pins[i] = GCHandle.Alloc(patterns[i].Values, GCHandleType.Pinned);
++                definitions[i].Samples = pins[i].AddrOfPinnedObject();
++                definitions[i].Count = (uint)patterns[i].Values.Length;
++            }
++            fixed (Definition* values = definitions)
++            {
++                int status = CreateNative(values, (uint)definitions.Length, out SafeLibraryHandle handle);
++                try { Check(status); return handle; }
++                catch { handle.Dispose(); throw; }
++            }
++        }
++        finally
++        {
++            for (int i = 0; i < patterns.Count; ++i)
++            {
++                if (pins[i].IsAllocated) pins[i].Free();
++                Marshal.FreeCoTaskMem(definitions[i].Name);
++                Marshal.FreeCoTaskMem(definitions[i].Description);
++            }
++        }
++    }
++
++    [DllImport(Dll, EntryPoint="dr_abi_version", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern uint AbiVersion();
++    [DllImport(Dll, EntryPoint="dr_pips_per_beat", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern uint PipsPerBeat();
++    [DllImport(Dll, EntryPoint="dr_version", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern nint Version();
++    [DllImport(Dll, EntryPoint="dr_last_error", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    private static extern nint LastError();
++    [DllImport(Dll, EntryPoint="dr_catalogue_count", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int Count(out uint count);
++    [DllImport(Dll, EntryPoint="dr_catalogue_get", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int Get(uint index, out Info info);
++    [DllImport(Dll, EntryPoint="dr_sample", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int Sample([MarshalAs(UnmanagedType.LPUTF8Str)] string name, int pip, out Offset3 value);
++    [DllImport(Dll, EntryPoint="dr_sample_many", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int SampleMany([MarshalAs(UnmanagedType.LPUTF8Str)] string name,
++        int start, int step, uint count, Offset3* values);
++    [DllImport(Dll, EntryPoint="dr_library_create", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    private static extern int CreateNative(Definition* definitions, uint count, out SafeLibraryHandle library);
++    [DllImport(Dll, EntryPoint="dr_library_destroy", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern void Destroy(nint library);
++    [DllImport(Dll, EntryPoint="dr_library_count", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int Count(SafeLibraryHandle library, out uint count);
++    [DllImport(Dll, EntryPoint="dr_library_get", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int Get(SafeLibraryHandle library, uint index, out Info info);
++    [DllImport(Dll, EntryPoint="dr_library_sample", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int Sample(SafeLibraryHandle library,
++        [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int pip, out Offset3 value);
++    [DllImport(Dll, EntryPoint="dr_library_sample_many", CallingConvention=CallingConvention.Cdecl, ExactSpelling=true)]
++    internal static extern int SampleMany(SafeLibraryHandle library,
++        [MarshalAs(UnmanagedType.LPUTF8Str)] string name, int start, int step, uint count, Offset3* values);
++}
+diff --git a/bindings/csharp/DanceRudiments/Offset3.cs b/bindings/csharp/DanceRudiments/Offset3.cs
+new file mode 100644
+index 0000000..696af22
+--- /dev/null
++++ b/bindings/csharp/DanceRudiments/Offset3.cs
+@@ -0,0 +1,26 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++using System.Runtime.InteropServices;
++namespace DanceRudiments;
++
++/// <summary>A dimensionless, double-precision XYZ offset. Scale it in your renderer.</summary>
++[StructLayout(LayoutKind.Sequential)]
++public readonly struct Offset3 : IEquatable<Offset3>
++{
++    public readonly double X;
++    public readonly double Y;
++    public readonly double Z;
++    public Offset3(double x, double y, double z = 0) { X = x; Y = y; Z = z; }
++    public bool Equals(Offset3 other) => X.Equals(other.X) && Y.Equals(other.Y) && Z.Equals(other.Z);
++    public override bool Equals(object? value) => value is Offset3 other && Equals(other);
++    public override int GetHashCode() => HashCode.Combine(X, Y, Z);
++    public static bool operator ==(Offset3 a, Offset3 b) => a.Equals(b);
++    public static bool operator !=(Offset3 a, Offset3 b) => !a.Equals(b);
++    public void Deconstruct(out double x, out double y, out double z) { x = X; y = Y; z = Z; }
++    public override string ToString() => FormattableString.Invariant($"({X:R}, {Y:R}, {Z:R})");
++}
++
++/// <summary>Copied native metadata. Catalogue order matches C++, with no generated C# mirror.</summary>
++public sealed record RudimentInfo(string Name, string Description, int PeriodPips, int Dimensions)
++{
++    public double PeriodBeats => PeriodPips / (double)Rudiments.PipsPerBeat;
++}
+diff --git a/bindings/csharp/DanceRudiments/PatternDefinition.cs b/bindings/csharp/DanceRudiments/PatternDefinition.cs
+new file mode 100644
+index 0000000..c8d8287
+--- /dev/null
++++ b/bindings/csharp/DanceRudiments/PatternDefinition.cs
+@@ -0,0 +1,31 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++namespace DanceRudiments;
++
++/// <summary>An immutable copy of an authored one-sample-per-pip table. It contains no C# motion evaluator.</summary>
++public sealed class PatternDefinition
++{
++    public string Name { get; }
++    public string Description { get; }
++    public IReadOnlyList<Offset3> Samples { get; }
++    internal Offset3[] Values { get; }
++    public PatternDefinition(string name, string description, IReadOnlyList<Offset3> samples)
++    {
++        NativeMethods.CheckName(name); NativeMethods.CheckText(description, nameof(description));
++        ArgumentNullException.ThrowIfNull(samples);
++        if (samples.Count < 1 || samples.Count > 65535) throw new ArgumentOutOfRangeException(nameof(samples));
++        if (name.Length > 128 || name[0] < 'a' || name[0] > 'z' ||
++            name.Any(c => !(c is >= 'a' and <= 'z' or >= '0' and <= '9' or '_')))
++            throw new ArgumentException("Names must match [a-z][a-z0-9_]{0,127}.", nameof(name));
++        Name = name; Description = description;
++        Values = new Offset3[samples.Count];
++        for (int i = 0; i < Values.Length; ++i)
++        {
++            var v = samples[i];
++            if (!double.IsFinite(v.X) || !double.IsFinite(v.Y) || !double.IsFinite(v.Z) ||
++                Math.Abs(v.X) > 1 || Math.Abs(v.Y) > 1 || Math.Abs(v.Z) > 1)
++                throw new ArgumentException("Samples must be finite XYZ triples within [-1,1].", nameof(samples));
++            Values[i] = v;
++        }
++        Samples = Array.AsReadOnly(Values);
++    }
++}
+diff --git a/bindings/csharp/DanceRudiments/PatternLibrary.cs b/bindings/csharp/DanceRudiments/PatternLibrary.cs
+new file mode 100644
+index 0000000..f15ee71
+--- /dev/null
++++ b/bindings/csharp/DanceRudiments/PatternLibrary.cs
+@@ -0,0 +1,126 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++using System.Text.Json;
++namespace DanceRudiments;
++
++/// <summary>An owned native bank. Use <c>using</c> or Dispose; SafeHandle also provides finalization.</summary>
++public sealed class PatternLibrary : IDisposable
++{
++    public const int MaxPatterns = 1024;
++    public const int MaxSamples = 1048576;
++    public const int MaxJsonBytes = 128 * 1024 * 1024;
++    private readonly SafeLibraryHandle handle;
++    public IReadOnlyList<RudimentInfo> Catalogue { get; }
++
++    public PatternLibrary(params PatternDefinition[] patterns)
++    {
++        ArgumentNullException.ThrowIfNull(patterns);
++        // Snapshot the list before native creation. Individual definitions are immutable.
++        handle = NativeMethods.Create((PatternDefinition[])patterns.Clone());
++        try
++        {
++            NativeMethods.Check(NativeMethods.Count(handle, out uint count));
++            var info = new RudimentInfo[checked((int)count)];
++            for (uint i = 0; i < count; ++i)
++            { NativeMethods.Check(NativeMethods.Get(handle, i, out var v)); info[i] = v.Copy(); }
++            Catalogue = Array.AsReadOnly(info);
++        }
++        catch { handle.Dispose(); throw; }
++    }
++    /// <summary>Samples in C++; concurrent readers are allowed. Disposed calls fail rather than reading freed memory.</summary>
++    public Offset3 Sample(string name, int pipCount)
++    {
++        ObjectDisposedException.ThrowIf(handle.IsClosed, this); NativeMethods.CheckName(name);
++        NativeMethods.Check(NativeMethods.Sample(handle, name, pipCount, out var value));
++        return value;
++    }
++    public unsafe void SampleInto(string name, int startPip, Span<Offset3> destination, int stepPips = 1)
++    {
++        ObjectDisposedException.ThrowIf(handle.IsClosed, this); NativeMethods.CheckName(name);
++        if (destination.Length > MaxSamples) throw new ArgumentOutOfRangeException(nameof(destination));
++        fixed (Offset3* p = destination)
++            NativeMethods.Check(NativeMethods.SampleMany(handle, name, startPip, stepPips, (uint)destination.Length, p));
++    }
++    public Offset3[] SampleMany(string name, int startPip, int count, int stepPips = 1)
++    {
++        if (count < 0 || count > MaxSamples) throw new ArgumentOutOfRangeException(nameof(count));
++        var values = new Offset3[count]; SampleInto(name, startPip, values, stepPips); return values;
++    }
++    public void Dispose() => handle.Dispose();
++
++    /// <summary>Load a compiled JSON pack produced by dancerudiments-compile. No Python runtime is used.</summary>
++    public static PatternLibrary Load(string path)
++    {
++        ArgumentException.ThrowIfNullOrEmpty(path);
++        using var stream = File.OpenRead(path);
++        if (stream.Length > MaxJsonBytes) throw new ArgumentException("JSON pack is too large.", nameof(path));
++        byte[] bytes = new byte[checked((int)stream.Length)];
++        stream.ReadExactly(bytes);
++        if (stream.ReadByte() != -1) throw new ArgumentException("JSON file changed during reading.", nameof(path));
++        using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 64 });
++        return Parse(document.RootElement);
++    }
++    public static PatternLibrary FromJson(string json)
++    {
++        ArgumentNullException.ThrowIfNull(json);
++        if (json.Length > MaxJsonBytes / 2) throw new ArgumentException("JSON pack is too large.", nameof(json));
++        using var document = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 64 });
++        return Parse(document.RootElement);
++    }
++    private static void UniqueKeys(JsonElement value)
++    {
++        if (value.ValueKind == JsonValueKind.Object)
++        {
++            var keys = new HashSet<string>(StringComparer.Ordinal);
++            foreach (var property in value.EnumerateObject())
++            {
++                if (!keys.Add(property.Name)) throw new ArgumentException("Duplicate JSON key: " + property.Name);
++                UniqueKeys(property.Value);
++            }
++        }
++        else if (value.ValueKind == JsonValueKind.Array)
++            foreach (var item in value.EnumerateArray()) UniqueKeys(item);
++    }
++    private static PatternLibrary Parse(JsonElement root)
++    {
++        UniqueKeys(root);
++        try
++        {
++            if (root.GetProperty("format").GetString() != "dancerudiments.compiled-pack" ||
++                root.GetProperty("schema_version").GetInt32() != 1 || root.GetProperty("pips_per_beat").GetInt32() != 64)
++                throw new ArgumentException("Unsupported pack format, version or pip resolution.");
++            var patterns = root.GetProperty("patterns");
++            if (patterns.ValueKind != JsonValueKind.Array || patterns.GetArrayLength() < 1 || patterns.GetArrayLength() > MaxPatterns)
++                throw new ArgumentException("A compiled pack requires 1..1024 patterns.");
++            var definitions = new List<PatternDefinition>();
++            int total = 0;
++            foreach (var pattern in patterns.EnumerateArray())
++            {
++                string digest = pattern.GetProperty("source_sha256").GetString() ?? "";
++                if (digest.Length != 64 || digest.Any(c => !(c is >= '0' and <= '9' or >= 'a' and <= 'f')))
++                    throw new ArgumentException("Missing or invalid source_sha256.");
++                if (pattern.GetProperty("provenance").ValueKind != JsonValueKind.Object ||
++                    pattern.GetProperty("diagnostics").ValueKind != JsonValueKind.Object)
++                    throw new ArgumentException("Missing provenance or diagnostics object.");
++                int count = pattern.GetProperty("period_pips").GetInt32();
++                if (count < 1 || count > 65535) throw new ArgumentException("Invalid pattern period.");
++                total = checked(total + count);
++                if (total > MaxSamples) throw new ArgumentException("Pattern pack exceeds the total sample limit.");
++                var samples = pattern.GetProperty("samples");
++                if (samples.ValueKind != JsonValueKind.Array || samples.GetArrayLength() != count)
++                    throw new ArgumentException("Sample count does not match period_pips.");
++                var values = new Offset3[count]; int i = 0;
++                foreach (var xyz in samples.EnumerateArray())
++                {
++                    if (xyz.ValueKind != JsonValueKind.Array || xyz.GetArrayLength() != 3)
++                        throw new ArgumentException("A sample must have three components.");
++                    values[i++] = new Offset3(xyz[0].GetDouble(), xyz[1].GetDouble(), xyz[2].GetDouble());
++                }
++                definitions.Add(new PatternDefinition(pattern.GetProperty("name").GetString()!,
++                    pattern.GetProperty("description").GetString()!, values));
++            }
++            return new PatternLibrary(definitions.ToArray());
++        }
++        catch (Exception error) when (error is KeyNotFoundException or InvalidOperationException or FormatException or OverflowException)
++        { throw new ArgumentException("Malformed compiled movement pack.", nameof(root), error); }
++    }
++}
+diff --git a/bindings/csharp/DanceRudiments/Rudiments.cs b/bindings/csharp/DanceRudiments/Rudiments.cs
+new file mode 100644
+index 0000000..603f5d2
+--- /dev/null
++++ b/bindings/csharp/DanceRudiments/Rudiments.cs
+@@ -0,0 +1,59 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++using System.Runtime.InteropServices;
++namespace DanceRudiments;
++
++/// <summary>All default movements, sampled by the original C++ library.</summary>
++public static class Rudiments
++{
++    public const int PipsPerBeat = 64;
++    public const string MusicUrl = "https://kieransimkin.co.uk/my-songs/";
++    private static readonly Lazy<IReadOnlyList<RudimentInfo>> Items = new(ReadCatalogue);
++    public static string NativeVersion
++    {
++        get { NativeMethods.EnsureCompatible(); return Marshal.PtrToStringUTF8(NativeMethods.Version())!; }
++    }
++    public static IReadOnlyList<RudimentInfo> Catalogue => Items.Value;
++    private static IReadOnlyList<RudimentInfo> ReadCatalogue()
++    {
++        NativeMethods.EnsureCompatible();
++        NativeMethods.Check(NativeMethods.Count(out uint count));
++        var items = new RudimentInfo[checked((int)count)];
++        for (uint i = 0; i < count; ++i)
++        { NativeMethods.Check(NativeMethods.Get(i, out var info)); items[i] = info.Copy(); }
++        return Array.AsReadOnly(items);
++    }
++    /// <summary>Sample at an integer pip. Negative positions wrap to this movement's loop.</summary>
++    public static Offset3 Sample(string name, int pipCount)
++    {
++        NativeMethods.EnsureCompatible(); NativeMethods.CheckName(name);
++        NativeMethods.Check(NativeMethods.Sample(name, pipCount, out var result));
++        return result;
++    }
++    /// <summary>Fill a span in one P/Invoke call, with overflow-safe native wrapping.</summary>
++    public static unsafe void SampleInto(string name, int startPip, Span<Offset3> destination, int stepPips = 1)
++    {
++        NativeMethods.EnsureCompatible(); NativeMethods.CheckName(name);
++        if (destination.Length > PatternLibrary.MaxSamples) throw new ArgumentOutOfRangeException(nameof(destination));
++        fixed (Offset3* values = destination)
++            NativeMethods.Check(NativeMethods.SampleMany(name, startPip, stepPips, (uint)destination.Length, values));
++    }
++    public static Offset3[] SampleMany(string name, int startPip, int count, int stepPips = 1)
++    {
++        if (count < 0 || count > PatternLibrary.MaxSamples) throw new ArgumentOutOfRangeException(nameof(count));
++        var result = new Offset3[count]; SampleInto(name, startPip, result, stepPips); return result;
++    }
++    /// <summary>Convert absolute fixed-tempo time to a pip, floored and wrapped before int32 conversion.</summary>
++    /// <remarks>For a tempo map, integrate musical beats instead. No animation is evaluated here.</remarks>
++    public static int PipAtTime(double seconds, double bpm, int periodPips, double beatZeroSeconds = 0)
++    {
++        if (!double.IsFinite(seconds)) throw new ArgumentOutOfRangeException(nameof(seconds));
++        if (!double.IsFinite(beatZeroSeconds)) throw new ArgumentOutOfRangeException(nameof(beatZeroSeconds));
++        if (!double.IsFinite(bpm) || bpm <= 0) throw new ArgumentOutOfRangeException(nameof(bpm));
++        if (periodPips <= 0 || periodPips > 65535) throw new ArgumentOutOfRangeException(nameof(periodPips));
++        double absolute = (seconds - beatZeroSeconds) * (bpm / 60) * PipsPerBeat;
++        if (!double.IsFinite(absolute) || Math.Abs(absolute) > 9007199254740991d)
++            throw new ArgumentOutOfRangeException(nameof(seconds), "Time exceeds exact integer-pip precision.");
++        double pip = Math.Floor(absolute) % periodPips;
++        return (int)(pip < 0 ? pip + periodPips : pip);
++    }
++}
+diff --git a/bindings/csharp/README.md b/bindings/csharp/README.md
+new file mode 100644
+index 0000000..de13021
+--- /dev/null
++++ b/bindings/csharp/README.md
+@@ -0,0 +1,83 @@
++# DanceRudiments for C# / .NET
++
++By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)**, part of DanceFlow.
++
++A C# interface to the **original C++ rhythmic movement library**, not a managed
++reimplementation. Enumerate the native catalogue, sample XYZ offsets at 64 pips
++per beat, fill a `Span<Offset3>` in one native call, or own a private pattern bank.
++
++## Install
++
++After a release containing this binding has been published:
++
++```sh
++dotnet add package DanceRudiments
++```
++
++The package includes the managed `net8.0` assembly and native x64/ARM64 libraries
++for Windows, Linux and macOS. It targets .NET 8+ applications;
++CI executes the contract suite on .NET 8 and .NET 10. Prefer a supported .NET
++runtime. Native availability is not the same as support for every .NET host:
++.NET Framework, Unity/Mono, IL2CPP, mobile, browser-WASM and NativeAOT are not
++claimed as supported by this first binding. Linux packages target glibc, not musl.
++
++```csharp
++using DanceRudiments;
++
++Console.WriteLine($"C++ version: {Rudiments.NativeVersion}");
++Console.WriteLine($"{Rudiments.Catalogue.Count} movements");
++var amen = Rudiments.Catalogue.Single(p => p.Name == "beat_amen_four_bar_bounce");
++int pip = Rudiments.PipAtTime(1.25, bpm: 140, periodPips: amen.PeriodPips);
++Offset3 position = Rudiments.Sample(amen.Name, pip);
++Console.WriteLine($"{position.X}, {position.Y}, {position.Z}");
++Offset3[] loop = Rudiments.SampleMany(amen.Name, 0, amen.PeriodPips);
++```
++
++No compiler or Python runtime is needed to **consume** a matching released NuGet
++package. Its native assets are selected automatically by NuGet/.NET. For an
++explicit target, publish with `dotnet publish -r win-x64 --self-contained false`
++(or another included runtime identifier). A source checkout needs CMake, a C++17
++compiler and the .NET SDK; see [the full guide](https://github.com/kieransimkin/DanceRudiments/blob/main/docs/csharp.md).
++
++## Custom data
++
++```csharp
++using var bank = PatternLibrary.Load("my-patterns.compiled.json");
++var custom = bank.Sample("my_pattern", -1);
++```
++
++Use the existing Python `dancerudiments-compile` command to author/compile JSON;
++loading and **all movement evaluation at runtime** are C++. `PatternDefinition`
++also accepts an explicit table. Samples and metadata are copied; `using` disposes
++the native bank. SafeHandle protects calls against disposal races and provides a
++finalizer fallback. An exact default reload is idempotent; changed defaults under
++the same name are rejected. No override of the global catalogue is permitted.
++
++## Timing and errors
++
++A pip is **1/64 of a quarter note**, not a millisecond or a MIDI tick. Negative
++pips wrap; each pattern has its own period. `PipAtTime` floors and wraps absolute
++fixed-tempo time, avoiding frame-by-frame drift. For tempo changes, integrate a
++musical timeline rather than multiplying all past time by the latest BPM.
++
++Unknown names or invalid native input become `ArgumentException`; range failures
++become `ArgumentOutOfRangeException`. Missing or wrong-architecture native files
++produce the usual loader exceptions. Calling a disposed bank throws
++`ObjectDisposedException`. The API changes position only; respect reduced-motion
++preferences in the consuming application and keep movement within bounded subjects.
++
++## Included material
++
++The package contains its README, full C# guide, a runnable C# example, existing
++visualizer screenshots, author credits, original third-party notices, and per-RID
++native hashes/source revisions. Symbols in `.snupkg` cover the managed assembly;
++they are not native debugging symbols.
++
++[Download the self-contained visualizer](https://github.com/kieransimkin/DanceRudiments/raw/refs/heads/main/harness/index.html)
++for audible beat/movement comparisons. It is separate from the .NET binding and
++its large HTML snapshot is deliberately not duplicated into the NuGet package.
++
++[Source and releases](https://github.com/kieransimkin/DanceRudiments) ·
++[Music / My Songs](https://kieransimkin.co.uk/my-songs/)
++
++An offline copy of the guide is included as `docs/csharp.md` inside the NuGet package.
+diff --git a/bindings/csharp/native/CMakeLists.txt b/bindings/csharp/native/CMakeLists.txt
+new file mode 100644
+index 0000000..7fd9b72
+--- /dev/null
++++ b/bindings/csharp/native/CMakeLists.txt
+@@ -0,0 +1,51 @@
++# C ABI bridge for C#. Music: https://kieransimkin.co.uk/my-songs/
++# Compile the ORIGINAL core sources into a standalone shared library. This does
++# not change the static core's CRT or the Python/WASM builds' compiler settings.
++add_library(dancerudiments_native SHARED
++  c_api.cpp
++  "${PROJECT_SOURCE_DIR}/src/dance_rudiments.cpp"
++  "${PROJECT_SOURCE_DIR}/src/sampled_pattern.cpp")
++target_include_directories(dancerudiments_native PUBLIC
++  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
++  $<INSTALL_INTERFACE:include>)
++target_compile_features(dancerudiments_native PRIVATE cxx_std_17)
++target_compile_definitions(dancerudiments_native PRIVATE
++  DANCERUDIMENTS_C_EXPORTS DANCERUDIMENTS_C_VERSION="${PROJECT_VERSION}")
++set_target_properties(dancerudiments_native PROPERTIES
++  CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN YES
++  MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
++  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/csharp-native"
++  LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/csharp-native"
++  ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/csharp-import")
++# Avoid Release/Debug suffix directories so Windows and Unix staging is identical.
++foreach(config DEBUG RELEASE RELWITHDEBINFO MINSIZEREL)
++  set_target_properties(dancerudiments_native PROPERTIES
++    RUNTIME_OUTPUT_DIRECTORY_${config} "${CMAKE_BINARY_DIR}/csharp-native"
++    LIBRARY_OUTPUT_DIRECTORY_${config} "${CMAKE_BINARY_DIR}/csharp-native")
++endforeach()
++if(MSVC)
++  target_compile_options(dancerudiments_native PRIVATE /utf-8)
++  target_compile_options(DanceRudiments PRIVATE /utf-8)
++endif()
++if(MINGW)
++  message(FATAL_ERROR "The packaged C# Windows bridge requires MSVC; MinGW DLL bundling is not configured.")
++endif()
++install(TARGETS dancerudiments_native
++  RUNTIME DESTINATION bin COMPONENT csharp
++  LIBRARY DESTINATION lib COMPONENT csharp)
++if(DANCERUDIMENTS_BUILD_TESTS)
++  find_package(Threads REQUIRED)
++  add_executable(dancerudiments_c_api_tests "${PROJECT_SOURCE_DIR}/tests/cpp/test_c_api.cpp")
++  target_link_libraries(dancerudiments_c_api_tests PRIVATE
++    DanceRudiments::DanceRudiments dancerudiments_native Threads::Threads)
++  if(MSVC)
++    target_compile_options(dancerudiments_c_api_tests PRIVATE /utf-8)
++  endif()
++  # The shared bridge lives beside neither test nor static core on Windows.
++  if(WIN32)
++    add_custom_command(TARGET dancerudiments_c_api_tests POST_BUILD
++      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:dancerudiments_native>
++        $<TARGET_FILE_DIR:dancerudiments_c_api_tests>)
++  endif()
++  add_test(NAME dancerudiments_c_api COMMAND dancerudiments_c_api_tests)
++endif()
+diff --git a/bindings/csharp/native/c_api.cpp b/bindings/csharp/native/c_api.cpp
+new file mode 100644
+index 0000000..65413ff
+--- /dev/null
++++ b/bindings/csharp/native/c_api.cpp
+@@ -0,0 +1,142 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++#include "dancerudiments/c_api.h"
++#include "dancerudiments/sampled_pattern.hpp"
++#include <algorithm>
++#include <cstring>
++#include <limits>
++#include <memory>
++#include <new>
++#include <stdexcept>
++#include <string>
++#include <utility>
++
++#ifndef DANCERUDIMENTS_C_VERSION
++# error The C ABI must be built with a project version
++#endif
++namespace d = dancerudiments;
++struct dr_library {
++  d::PatternLibrary bank;
++  std::vector<d::RudimentInfo> info;
++  explicit dr_library(std::vector<d::SampledPattern> patterns)
++    : bank(std::move(patterns)), info(bank.catalogue()) {}
++};
++namespace {
++thread_local char error_text[1024] = {};
++void set_error(const char* message) noexcept {
++  std::size_t i = 0;
++  if (message) for (; i + 1 < sizeof(error_text) && message[i]; ++i) error_text[i] = message[i];
++  error_text[i] = '\0';
++}
++template<class F> dr_status protect(F&& action) noexcept {
++  error_text[0] = '\0';
++  try { action(); return DR_OK; }
++  catch (const std::invalid_argument& e) { set_error(e.what()); return DR_INVALID_ARGUMENT; }
++  catch (const std::out_of_range& e) { set_error(e.what()); return DR_OUT_OF_RANGE; }
++  catch (const std::bad_alloc&) { set_error("Native allocation failed"); return DR_OUT_OF_MEMORY; }
++  catch (const std::exception& e) { set_error(e.what()); return DR_INTERNAL_ERROR; }
++  catch (...) { set_error("Unknown native error"); return DR_INTERNAL_ERROR; }
++}
++void require(bool ok, const char* message) {
++  if (!ok) throw std::invalid_argument(message);
++}
++void name_ok(const char* name) {
++  require(name && *name, "A pattern name is required");
++}
++void copy_info(const std::vector<d::RudimentInfo>& info, uint32_t index, dr_info* out) {
++  require(out, "A metadata output pointer is required");
++  if (index >= info.size()) throw std::out_of_range("Catalogue index is out of range");
++  const auto& v = info[index];
++  // The underlying catalogue owns strings (custom) or uses string literals (defaults).
++  *out = {v.name.data(), v.description.data(), v.period_pips, static_cast<uint32_t>(v.dimensions)};
++}
++int period(const std::vector<d::RudimentInfo>& info, const char* name) {
++  name_ok(name);
++  const auto found = std::find_if(info.begin(), info.end(),
++    [name](const d::RudimentInfo& v) { return v.name == name; });
++  if (found == info.end()) throw std::invalid_argument("Unknown dance rudiment: " + std::string(name));
++  return found->period_pips;
++}
++dr_offset3 offset(d::Offset3 v) noexcept { return {v.x, v.y, v.z}; }
++template<class Sampler>
++void batch(const std::vector<d::RudimentInfo>& info, const char* name, int32_t start,
++           int32_t step, uint32_t count, dr_offset3* out, Sampler&& sampler) {
++  require(count <= d::max_pack_samples, "Batch exceeds the sample limit");
++  require(count == 0 || out, "A batch output buffer is required");
++  const int n = period(info, name); // Validate everything BEFORE writing any output.
++  for (uint32_t i = 0; i < count; ++i) {
++    int64_t p = (static_cast<int64_t>(start) + static_cast<int64_t>(step) * i) % n;
++    if (p < 0) p += n;
++    out[i] = offset(sampler(static_cast<int>(p)));
++  }
++}
++}
++extern "C" {
++uint32_t DR_CALL dr_abi_version() noexcept { return 1; }
++uint32_t DR_CALL dr_pips_per_beat() noexcept { return d::pips_per_beat; }
++const char* DR_CALL dr_version() noexcept { return DANCERUDIMENTS_C_VERSION; }
++const char* DR_CALL dr_last_error() noexcept { return error_text; }
++dr_status DR_CALL dr_catalogue_count(uint32_t* count) noexcept {
++  return protect([&] { require(count, "A count output pointer is required");
++    *count = static_cast<uint32_t>(d::catalogue().size()); });
++}
++dr_status DR_CALL dr_catalogue_get(uint32_t index, dr_info* info) noexcept {
++  return protect([&] { copy_info(d::catalogue(), index, info); });
++}
++dr_status DR_CALL dr_sample(const char* name, int32_t pip, dr_offset3* value) noexcept {
++  return protect([&] { name_ok(name); require(value, "An output pointer is required");
++    *value = offset(d::sample(name, pip)); });
++}
++dr_status DR_CALL dr_sample_many(const char* name, int32_t start, int32_t step,
++                                uint32_t count, dr_offset3* values) noexcept {
++  return protect([&] { batch(d::catalogue(), name, start, step, count, values,
++    [&](int pip) { return d::sample(name, pip); }); });
++}
++dr_status DR_CALL dr_library_create(const dr_pattern_definition* definitions,
++                                   uint32_t count, dr_library** result) noexcept {
++  if (result) *result = nullptr;
++  return protect([&] {
++    require(result, "A library output pointer is required");
++    require(count <= d::max_pack_patterns, "Too many patterns");
++    require(count == 0 || definitions, "Pattern definitions are required");
++    std::size_t total = 0;
++    // Validate sizes before allocating or reading the sample buffers.
++    for (uint32_t i = 0; i < count; ++i) {
++      const auto& p = definitions[i];
++      require(p.name && p.description && p.samples, "A definition contains a NULL pointer");
++      require(p.count > 0 && p.count <= d::max_pattern_samples, "Invalid pattern sample count");
++      total += p.count;
++      require(total <= d::max_pack_samples, "Pattern pack is too large");
++    }
++    std::vector<d::SampledPattern> patterns;
++    patterns.reserve(count);
++    for (uint32_t i = 0; i < count; ++i) {
++      const auto& p = definitions[i];
++      std::vector<d::Offset3> values;
++      values.reserve(p.count);
++      for (uint32_t j = 0; j < p.count; ++j) values.push_back({p.samples[j].x,p.samples[j].y,p.samples[j].z});
++      patterns.emplace_back(p.name, p.description, std::move(values));
++    }
++    *result = new dr_library(std::move(patterns));
++  });
++}
++void DR_CALL dr_library_destroy(dr_library* library) noexcept { delete library; }
++dr_status DR_CALL dr_library_count(const dr_library* library, uint32_t* count) noexcept {
++  return protect([&] { require(library && count, "Library and count pointer are required");
++    *count = static_cast<uint32_t>(library->info.size()); });
++}
++dr_status DR_CALL dr_library_get(const dr_library* library, uint32_t index, dr_info* info) noexcept {
++  return protect([&] { require(library, "A library handle is required"); copy_info(library->info,index,info); });
++}
++dr_status DR_CALL dr_library_sample(const dr_library* library, const char* name,
++                                   int32_t pip, dr_offset3* value) noexcept {
++  return protect([&] { require(library && value, "Library and output pointer are required");
++    name_ok(name); *value = offset(library->bank.sample(name, pip)); });
++}
++dr_status DR_CALL dr_library_sample_many(const dr_library* library, const char* name,
++                                        int32_t start, int32_t step, uint32_t count,
++                                        dr_offset3* values) noexcept {
++  return protect([&] { require(library, "A library handle is required");
++    batch(library->info, name, start, step, count, values,
++      [&](int pip) { return library->bank.sample(name, pip); }); });
++}
++}
+diff --git a/bindings/csharp/platforms.json b/bindings/csharp/platforms.json
+new file mode 100644
+index 0000000..c07650b
+--- /dev/null
++++ b/bindings/csharp/platforms.json
+@@ -0,0 +1,53 @@
++{
++  "music_url": "https://kieransimkin.co.uk/my-songs/",
++  "include": [
++    {
++      "rid": "linux-x64",
++      "os": "ubuntu-22.04",
++      "architecture": "x64",
++      "file": "libdancerudiments_native.so",
++      "cmake_args": "",
++      "baseline": "Ubuntu 22.04 / glibc 2.35; system libstdc++ required"
++    },
++    {
++      "rid": "linux-arm64",
++      "os": "ubuntu-22.04-arm",
++      "architecture": "arm64",
++      "file": "libdancerudiments_native.so",
++      "cmake_args": "",
++      "baseline": "Ubuntu 22.04 / glibc 2.35; system libstdc++ required"
++    },
++    {
++      "rid": "win-x64",
++      "os": "windows-2022",
++      "architecture": "x64",
++      "file": "dancerudiments_native.dll",
++      "cmake_args": "-A x64",
++      "baseline": "Windows x64; MSVC static CRT"
++    },
++    {
++      "rid": "win-arm64",
++      "os": "windows-11-arm",
++      "architecture": "arm64",
++      "file": "dancerudiments_native.dll",
++      "cmake_args": "-A ARM64",
++      "baseline": "Windows 11 ARM64; MSVC static CRT"
++    },
++    {
++      "rid": "osx-x64",
++      "os": "macos-15-intel",
++      "architecture": "x64",
++      "file": "libdancerudiments_native.dylib",
++      "cmake_args": "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_OSX_ARCHITECTURES=x86_64",
++      "baseline": "macOS 14+; x64"
++    },
++    {
++      "rid": "osx-arm64",
++      "os": "macos-15",
++      "architecture": "arm64",
++      "file": "libdancerudiments_native.dylib",
++      "cmake_args": "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_OSX_ARCHITECTURES=arm64",
++      "baseline": "macOS 14+; Apple Silicon"
++    }
++  ]
++}
+diff --git a/conanfile.py b/conanfile.py
+index 7a33f59..8c66174 100644
+--- a/conanfile.py
++++ b/conanfile.py
+@@ -37,7 +37,7 @@ class DanceRudimentsConan(ConanFile):
+              dst=os.path.join(self.package_folder, "docs"))
+         copy(self, "*", src=os.path.join(self.source_folder, "examples", "bindings"),
+              dst=os.path.join(self.package_folder, "examples", "bindings"),
+-             excludes=("*/dist/*", "*/__pycache__/*"))
++             excludes=("*/dist/*", "*/bin/*", "*/obj/*", "*/__pycache__/*"))
+         copy(self, "LICENSE", src=self.source_folder,
+              dst=os.path.join(self.package_folder, "licenses"), keep_path=True)
+         copy(self, "THIRD_PARTY_NOTICES.md", src=os.path.join(self.source_folder, "collections", "initial"),
+diff --git a/docs/bindings.md b/docs/bindings.md
+index a1b76d1..aaafcd9 100644
+--- a/docs/bindings.md
++++ b/docs/bindings.md
+@@ -3,13 +3,17 @@
+ By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+ 
+ The [main README](../README.md#language-bindings) contains the complete C++, Python,
+-TypeScript and JavaScript instructions. Runnable source is in
++C#/.NET, TypeScript and JavaScript instructions. Runnable source is in
+ [examples/bindings](../examples/bindings/). CMake installs this guide, the README,
+ examples and screenshots under `share/DanceRudiments`; scikit-build's wheel
+ includes that CMake installation alongside its Python packages. The Conan package
+ includes README.md, AUTHORS.md, docs/ and examples/bindings/ at its root. The npm
+ archive includes the same first-party documentation and examples.
+ 
++The new [C# guide](csharp.md) covers native loading, custom packs, six-RID NuGet
++packaging and trusted publishing. The NuGet package contains its own linked README,
++this binding's guide, screenshots, example and author/source notices.
++
+ ## Visualizer overview
+ 
+ ![Amen comparison](images/visualizer-amen-desktop.png)
+@@ -59,7 +63,7 @@ checkout may need a newer catalogue than the most recently published version.
+ The exact music-page URL is retained in Python summary/project URLs and wheel
+ README/METADATA; npm description/homepage/author and README; the Conan recipe and
+ packaged README; CMake project metadata, installed README and author credits;
+-and C++ release PACKAGE-INFO.txt. All first-party collection READMEs also carry
++C# NuGet description/project URL and packaged README; and C++ release PACKAGE-INFO.txt. All first-party collection READMEs also carry
+ it, including those emitted by generators. Original source licences, cryptographic
+ source identities and numerical movement tables are deliberately untouched.
+ 
+diff --git a/docs/csharp.md b/docs/csharp.md
+new file mode 100644
+index 0000000..478fc00
+--- /dev/null
++++ b/docs/csharp.md
+@@ -0,0 +1,241 @@
++# C# / .NET binding, native packaging and releases
++
++By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)** · DanceFlow.
++
++## Design and API
++
++`DanceRudiments` is a NuGet package with an AnyCPU `net8.0` wrapper and a platform
++C++ shared library, `dancerudiments_native`. The wrapper calls the versioned C ABI
++in `include/dancerudiments/c_api.h` using cdecl P/Invoke and explicit UTF-8 strings.
++No C++ exception, `std::string`, `std::vector` or allocator crosses the ABI.
++
++The C ABI compiles the existing core source files unchanged. Every live XYZ value
++comes from that core. C# performs validation, JSON parsing, memory management and
++optional time-to-pip conversion, not a second set of movement equations.
++
++| API | Meaning |
++| --- | --- |
++| `Rudiments.Catalogue` | Immutable copy of the actual native catalogue; not a handwritten name list |
++| `Rudiments.Sample(name, pip)` | One double-precision `Offset3` |
++| `Rudiments.SampleMany(name, start, count, step)` | A newly allocated array, sampled in one native call |
++| `Rudiments.SampleInto(name, start, destination, step)` | Fills an existing `Span<Offset3>` without allocating a result array |
++| `Rudiments.PipAtTime(seconds, bpm, periodPips, beatZeroSeconds)` | Floor fixed-tempo time, then wrap before narrowing to `int` |
++| `new PatternDefinition(name, description, samples)` | Copies and validates an authored table |
++| `new PatternLibrary(definitions)` | An independent owned C++ bank, also exposing defaults |
++| `PatternLibrary.Load(path)` / `FromJson(json)` | Load schema-v1 `dancerudiments.compiled-pack` data |
++| `PatternLibrary.Dispose()` | Releases the native bank; use a `using` declaration |
++
++`Offset3` has immutable double fields `X`, `Y`, `Z`. `RudimentInfo` includes
++`Name`, `Description`, `PeriodPips`, `PeriodBeats` and `Dimensions`. The first
++binding exposes named movements through `Sample`; it does not manufacture 1,731
++individual C# methods. Later registered defaults are discovered automatically.
++
++Supply signed 32-bit pips. The native batch API evaluates `start + i * step` in
++64-bit arithmetic before wrapping, so batches may cross either int32 boundary
++without overflow. Zero and negative steps are supported. Limit a single batch
++to 1,048,576 results. Compiled packs retain the existing limits: 1..1024 patterns,
++1..65,535 samples per pattern and 1,048,576 total samples. Empty explicit native
++banks are allowed. JSON loading rejects duplicate keys, incorrect format/version,
++non-finite/out-of-bounds values, invalid lengths and missing required provenance
++fields. The source digest is syntax-checked, not independently re-derived from
++absent original score material. Do not treat a digest alone as proof of trust.
++
++Default metadata is copied once using a thread-safe lazy initializer. Custom
++metadata is copied during construction and remains usable after disposal. The
++native bank is immutable: concurrent reads are supported. SafeHandle holds a
++native reference for each P/Invoke, so racing disposal either lets an already
++started call finish or raises `ObjectDisposedException`. Do not use the raw C ABI
++with invalid handles, double-free a handle, or free a handle while C clients are
++reading it; the C# wrapper manages those requirements.
++
++## Use a released package
++
++```sh
++dotnet new console -n MotionDemo -f net8.0
++cd MotionDemo
++dotnet add package DanceRudiments
++```
++
++```csharp
++using DanceRudiments;
++
++var info = Rudiments.Catalogue.Single(p => p.Name == "beat_amen_four_bar_bounce");
++int pip = Rudiments.PipAtTime(1.25, 140, info.PeriodPips);
++Offset3 v = Rudiments.Sample(info.Name, pip);
++Console.WriteLine($"Amen at {pip}: {v}");
++Console.WriteLine($"Wrap backwards: {Rudiments.Sample(info.Name, -1)}");
++
++// Reuse this array on subsequent frames/exports if needed.
++var positions = new Offset3[info.PeriodPips];
++Rudiments.SampleInto(info.Name, 0, positions);
++```
++
++The package is not live merely because its source is merged. Until the first
++publishing workflow succeeds, use the checkout build or download the CI-produced
++`csharp-nuget` artifact and restore from a local NuGet source. Check `Catalogue`
++rather than hard-coding a count: registry packages can lag the checkout.
++
++The first version targets .NET 8+ desktop/server CLR applications. CI tests .NET 8
++and .NET 10. It does not claim .NET Framework 4.x, Unity/Mono, IL2CPP, mobile,
++Blazor WebAssembly, NativeAOT, trimmed builds or single-file-native extraction
++support. Those need dedicated builds/tests. A normal multi-file, framework-
++dependent `dotnet publish -r <rid> --self-contained false` is covered.
++
++## Native platforms
++
++| RID | Native file | Build/test baseline |
++| --- | --- | --- |
++| `linux-x64` | `libdancerudiments_native.so` | Ubuntu 22.04, glibc 2.35, x64 |
++| `linux-arm64` | `libdancerudiments_native.so` | Ubuntu 22.04, glibc 2.35, ARM64 |
++| `win-x64` | `dancerudiments_native.dll` | Windows Server 2022, x64 |
++| `win-arm64` | `dancerudiments_native.dll` | Windows 11 ARM64 |
++| `osx-x64` | `libdancerudiments_native.dylib` | macOS 15 Intel, deployment target 14 |
++| `osx-arm64` | `libdancerudiments_native.dylib` | macOS 15 Apple Silicon, deployment target 14 |
++
++Use an OS supported by your chosen .NET runtime as well. Linux builds require
++the normal system C/C++ runtime libraries, not Alpine/musl. Windows bridge builds
++use MSVC's static CRT to avoid an extra redistributable DLL requirement. This
++setting is scoped to the bridge and does not change ordinary Python/C++ builds.
++macOS uses the system C++ runtime. ARM and Intel are separate native builds, not
++emulated binaries renamed to a different RID. Hosted runner availability and
++platform ABI requirements are recorded in `bindings/csharp/platforms.json`.
++
++For package consumers, **do not copy DLLs manually or set a loader environment
++variable**. NuGet places native files under `runtimes/<rid>/native/`; the .NET
++loader uses the package's runtime assets. The CI consumer jobs verify this path.
++If loading fails, inspect the application architecture, its `.deps.json`, the
++included RID, OS baseline and system dependencies. Do not rename an x64 binary
++to arm64 or use the visualizer's WASM module as a desktop native library.
++
++## Build the checkout
++
++Install a C++17 compiler, CMake 3.20+ and the .NET SDK. Building the contract suite
++requires both .NET 8 and .NET 10 SDK/runtime installations. No Python is involved
++in .NET movement playback; Python 3.13 is used by CI's packaging utilities.
++
++```sh
++cmake -S . -B build-csharp -DCMAKE_BUILD_TYPE=Release -DDANCERUDIMENTS_BUILD_C_ABI=ON
++cmake --build build-csharp --config Release --parallel 2
++ctest --test-dir build-csharp -C Release --output-on-failure
++dotnet build bindings/csharp/DanceRudiments/DanceRudiments.csproj -c Release
++```
++
++For MSVC select `-A x64` or `-A ARM64` at configure time. MinGW is deliberately
++rejected for this packaged bridge because its auxiliary DLL packaging is not
++configured. This does not remove the existing library's other MinGW routes.
++
++For **source development only**, point the managed process at the absolute
++bridge filename before first use. Do not change the variable after first use:
++
++```powershell
++# Windows / PowerShell, from the repository root:
++$env:DANCERUDIMENTS_NATIVE_LIBRARY = (Resolve-Path .\build-csharp\csharp-native\dancerudiments_native.dll).Path
++dotnet run --project examples/bindings/csharp/Quickstart.csproj -c Release
++dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net8.0
++dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net10.0
++```
++
++```sh
++# Linux; on macOS substitute libdancerudiments_native.dylib.
++export DANCERUDIMENTS_NATIVE_LIBRARY="$PWD/build-csharp/csharp-native/libdancerudiments_native.so"
++dotnet run --project examples/bindings/csharp/Quickstart.csproj -c Release
++```
++
++The example inside the NuGet archive should be run with
++`-p:UsePackedBinding=true -p:BindingPackageVersion=<installed-version>`; its default
++project reference is for the repository checkout. Alternatively copy `Program.cs`
++into your own application with a normal `PackageReference`.
++
++The example also accepts a path to a compiled custom pack as its application
++argument. The authoring command is unchanged:
++
++```sh
++python tools/compile_patterns.py compile examples/bindings/pulse.score.json --json generated/tutorial.json
++dotnet run --project examples/bindings/csharp/Quickstart.csproj -c Release -- generated/tutorial.json
++```
++
++## CI and packaging
++
++`.github/workflows/csharp.yml` runs on pushes to main, pull requests, manually
++triggered validation and published GitHub releases. Manual validation never
++publishes a package. Every release job checks out that event's release tag.
++
++The workflow validates versions, builds the bridge on **six native runners**,
++runs the original C++ tests plus C ABI parity tests, and runs the C# contract suite
++on .NET 8 and .NET 10. An independent exporter linked to the original static core
++produces per-pattern little-endian-double hashes for C# sample verification.
++
++Each native job stages a checked architecture and a SHA-256/source-revision
++manifest. One pack job gathers all six, rejects missing/mixed/stale binaries and
++runs `dotnet pack`. The NuGet file contains the managed DLL/XML documentation,
++six native runtimes, per-RID manifests, README, author credits, source licences,
++usage guide, C# example and screenshots. There are no NuGet dependencies beyond
++the chosen .NET framework itself. A separate `.snupkg` contains managed symbols.
++
++A second six-runner matrix restores **that exact locally built package**, not a
++project reference or existing public package. Package-source mapping permits Microsoft
++framework packs from NuGet.org but forces `DanceRudiments` to the local artifact
++feed, using a fresh cache. It reruns managed tests with normal
++native probing and publishes/runs a RID-specific example outside the checkout.
++Publishing waits for **all** of those jobs. Tests use executable contract suites
++via `dotnet run`, with a nonzero exit status on failure; they do not require xUnit
++or a separate test-runner NuGet dependency.
++
++CI artifacts are `csharp-native-<rid>` and `csharp-nuget`. Ordinary commits do not
++upload to registries. Do not label a locally fabricated or single-platform nupkg
++as the complete release: the pack step refuses missing platforms.
++
++## One-time NuGet.org setup
++
++1. Sign in to the NuGet.org account that will own **DanceRudiments**. Confirm that
++   this ID is available or owned by that account; this change does not reserve it.
++2. Create a trusted publishing policy: repository owner **kieransimkin**, repository
++   **DanceRudiments**, workflow filename **csharp.yml**, environment **nuget**.
++   Scope the policy to `DanceRudiments`, allowing creation of a new package as
++   well as uploading subsequent versions when the registry offers those scopes.
++3. In GitHub create/use environment **nuget**, and set `NUGET_USER` to the NuGet.org
++   **profile username**, not an email address. A repository/environment variable
++   or secret is accepted. Set environment reviewers according to your policy.
++
++The workflow uses `NuGet/login@v1` to exchange GitHub OIDC identity for a short-
++lived publishing key. No long-lived NuGet API key is embedded or required. Missing
++setup is an explicit failed publishing job, not a green silently skipped upload.
++The NuGet.org account, policy and package ownership must still be configured by
++the maintainer. See the official trusted-publisher reference below.
++
++## Releases and package destinations
++
++Before a new release, update the **same version** in `CMakeLists.txt`,
++`pyproject.toml`, `package.json`, its lockfile, and
++`bindings/csharp/DanceRudiments/DanceRudiments.csproj`. The release validator now
++checks the .NET version too. Publish a GitHub release with its matching
++`vMAJOR.MINOR.PATCH` tag; pushing a tag alone does not trigger registry uploads.
++
++After successful native, managed and installed-package tests:
++
++- **NuGet.org** receives `DanceRudiments.<version>.nupkg` plus managed symbols. The
++  workflow downloads the indexed package and compares payload members, allowing
++  NuGet.org's added repository signature rather than assuming ZIP bytes remain
++  identical. Indexing can take time; an upload is not called verified prematurely.
++- **GitHub Packages** receives the same nupkg under
++  `https://nuget.pkg.github.com/kieransimkin/index.json`. `GITHUB_TOKEN` with
++  `packages: write` authenticates; `RepositoryUrl` links the package to this repo.
++  GitHub Packages may initially make a new package private, and consumers need
++  feed authentication even for public NuGet packages there. Configure visibility
++  and access in package settings. NuGet.org remains the default public install.
++- **GitHub Releases** receives the nupkg, snupkg and `SHA256SUMS-csharp.txt` as
++  attachments. They do not replace the existing Python/npm/C++ release routes.
++
++A GitHub Packages permission failure is independent of NuGet.org availability.
++Restore verification uses a temporary, isolated credentials file on the runner;
++no credentials or recovery codes are committed. Azure Artifacts and MyGet are
++not configured because no private feed was requested.
++
++## Implementation references
++
++- Native assets in .NET packages: https://learn.microsoft.com/en-us/nuget/create-packages/native-files-in-net-packages
++- .NET native interop and SafeHandle: https://learn.microsoft.com/en-us/dotnet/standard/native-interop/best-practices
++- NuGet trusted publishing: https://learn.microsoft.com/en-us/nuget/nuget-org/trusted-publishing
++- GitHub NuGet registry: https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-nuget-registry
++- .NET support lifecycle: https://dotnet.microsoft.com/en-us/platform/support/policy
++- Hosted runner labels: https://github.com/actions/runner-images
+diff --git a/examples/bindings/README.md b/examples/bindings/README.md
+index 403a2d8..59bea99 100644
+--- a/examples/bindings/README.md
++++ b/examples/bindings/README.md
+@@ -20,3 +20,8 @@ it does not implement or replace any runtime movement.
+ `pulse.score.json` compiles to a one-beat private pattern called `tutorial_pulse`.
+ It is not added to the default catalogue. C++ and Python also demonstrate a
+ four-**pip** table solely to show the storage/ownership API, not as a dance phrase.
++
++`csharp/Quickstart.csproj` exercises the real C ABI from .NET. Build the native
++bridge first for project-reference development, or pass `UsePackedBinding=true`
++and `BindingPackageVersion` to consume a built NuGet package. See the
++[C# guide](https://github.com/kieransimkin/DanceRudiments/blob/main/docs/csharp.md).
+diff --git a/examples/bindings/csharp/.gitignore b/examples/bindings/csharp/.gitignore
+new file mode 100644
+index 0000000..cd42ee3
+--- /dev/null
++++ b/examples/bindings/csharp/.gitignore
+@@ -0,0 +1,2 @@
++bin/
++obj/
+diff --git a/examples/bindings/csharp/Program.cs b/examples/bindings/csharp/Program.cs
+new file mode 100644
+index 0000000..aede733
+--- /dev/null
++++ b/examples/bindings/csharp/Program.cs
+@@ -0,0 +1,24 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++using DanceRudiments;
++
++Console.WriteLine($"DanceRudiments {Rudiments.NativeVersion} · {Rudiments.Catalogue.Count} movements");
++Console.WriteLine(Rudiments.MusicUrl);
++var amen = Rudiments.Catalogue.Single(p => p.Name == "beat_amen_four_bar_bounce");
++int pip = Rudiments.PipAtTime(seconds: 1.25, bpm: 140, periodPips: amen.PeriodPips);
++Offset3 position = Rudiments.Sample(amen.Name, pip);
++Console.WriteLine($"Amen at pip {pip}: {position}");
++Console.WriteLine($"Previous pip: {Rudiments.Sample(amen.Name, -1)}");
++Offset3[] loop = Rudiments.SampleMany(amen.Name, 0, amen.PeriodPips);
++Console.WriteLine($"Full loop: {loop.Length} pips / {amen.PeriodBeats} beats");
++
++// This demonstrates table ownership, not a new C# movement implementation.
++using var bank = new PatternLibrary(new PatternDefinition("my_offset", "Authored table", new[]
++{
++    new Offset3(0, 0), new Offset3(.2, -.3), new Offset3(0, 0)
++}));
++Console.WriteLine($"Custom table sampled by C++: {bank.Sample("my_offset", 1)}");
++if (args.Length > 0)
++{
++    using var compiled = PatternLibrary.Load(args[0]);
++    Console.WriteLine($"Loaded bank: {compiled.Catalogue.Count} entries");
++}
+diff --git a/examples/bindings/csharp/Quickstart.csproj b/examples/bindings/csharp/Quickstart.csproj
+new file mode 100644
+index 0000000..8c2bdad
+--- /dev/null
++++ b/examples/bindings/csharp/Quickstart.csproj
+@@ -0,0 +1,16 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <!-- Music: https://kieransimkin.co.uk/my-songs/ -->
++  <PropertyGroup>
++    <OutputType>Exe</OutputType>
++    <TargetFramework>net8.0</TargetFramework>
++    <ImplicitUsings>enable</ImplicitUsings>
++    <Nullable>enable</Nullable>
++    <IsPackable>false</IsPackable>
++  </PropertyGroup>
++  <ItemGroup Condition="'$(UsePackedBinding)' != 'true'">
++    <ProjectReference Include="../../../bindings/csharp/DanceRudiments/DanceRudiments.csproj" />
++  </ItemGroup>
++  <ItemGroup Condition="'$(UsePackedBinding)' == 'true'">
++    <PackageReference Include="DanceRudiments" Version="$(BindingPackageVersion)" />
++  </ItemGroup>
++</Project>
+diff --git a/include/dancerudiments/c_api.h b/include/dancerudiments/c_api.h
+new file mode 100644
+index 0000000..edb396e
+--- /dev/null
++++ b/include/dancerudiments/c_api.h
+@@ -0,0 +1,77 @@
++/* DanceRudiments C ABI v1. MIT. Kieran Simkin: https://kieransimkin.co.uk/my-songs/
++ * Optional bridge for .NET and other FFI clients. No STL or C++ exceptions cross
++ * this boundary. Caller-owned buffers must be valid for their declared lengths.
++ */
++#ifndef DANCERUDIMENTS_C_API_H
++#define DANCERUDIMENTS_C_API_H
++#include <stdint.h>
++#if defined(_WIN32)
++# define DR_CALL __cdecl
++# if defined(DANCERUDIMENTS_C_EXPORTS)
++#  define DR_API __declspec(dllexport)
++# else
++#  define DR_API __declspec(dllimport)
++# endif
++#else
++# define DR_CALL
++# define DR_API __attribute__((visibility("default")))
++#endif
++#ifdef __cplusplus
++# define DR_NOEXCEPT noexcept
++extern "C" {
++#else
++# define DR_NOEXCEPT
++#endif
++
++typedef int32_t dr_status;
++enum { DR_OK = 0, DR_INVALID_ARGUMENT = 1, DR_OUT_OF_RANGE = 2,
++       DR_OUT_OF_MEMORY = 3, DR_INTERNAL_ERROR = 4 };
++typedef struct dr_offset3 { double x, y, z; } dr_offset3;
++typedef struct dr_info {
++  const char* name;                 /* Borrowed, NUL-terminated UTF-8. */
++  const char* description;
++  uint32_t period_pips;
++  uint32_t dimensions;
++} dr_info;
++typedef struct dr_pattern_definition {
++  const char* name;
++  const char* description;
++  const dr_offset3* samples;
++  uint32_t count;
++} dr_pattern_definition;
++typedef struct dr_library dr_library;
++
++DR_API uint32_t DR_CALL dr_abi_version(void) DR_NOEXCEPT;
++DR_API uint32_t DR_CALL dr_pips_per_beat(void) DR_NOEXCEPT;
++DR_API const char* DR_CALL dr_version(void) DR_NOEXCEPT;
++/* Thread-local error, valid until the next status-returning call on this thread.
++ * Does not allocate; diagnostic messages may be truncated. Never free this pointer. */
++DR_API const char* DR_CALL dr_last_error(void) DR_NOEXCEPT;
++DR_API dr_status DR_CALL dr_catalogue_count(uint32_t* count) DR_NOEXCEPT;
++/* Default metadata strings live until the shared library is unloaded. */
++DR_API dr_status DR_CALL dr_catalogue_get(uint32_t index, dr_info* info) DR_NOEXCEPT;
++DR_API dr_status DR_CALL dr_sample(const char* name, int32_t pip, dr_offset3* value) DR_NOEXCEPT;
++/* Maximum 1,048,576 outputs. start + i*step uses int64, then wraps to the
++ * movement's period, so int32 endpoints/steps never overflow during a batch.
++ * count=0 permits a NULL output but still validates the name. */
++DR_API dr_status DR_CALL dr_sample_many(const char* name, int32_t start, int32_t step,
++                                      uint32_t count, dr_offset3* values) DR_NOEXCEPT;
++/* Copies all input data. An empty bank exposes the defaults. Output is NULL on
++ * failure. Limits/duplicate names/default-replacement rules are those of C++.
++ * No mutation is exposed; parallel sampling is safe while the handle is alive. */
++DR_API dr_status DR_CALL dr_library_create(const dr_pattern_definition* definitions,
++                                         uint32_t count, dr_library** result) DR_NOEXCEPT;
++DR_API void DR_CALL dr_library_destroy(dr_library* library) DR_NOEXCEPT;
++DR_API dr_status DR_CALL dr_library_count(const dr_library* library, uint32_t* count) DR_NOEXCEPT;
++/* Copy these strings BEFORE destroying the library. */
++DR_API dr_status DR_CALL dr_library_get(const dr_library* library, uint32_t index,
++                                      dr_info* info) DR_NOEXCEPT;
++DR_API dr_status DR_CALL dr_library_sample(const dr_library* library, const char* name,
++                                         int32_t pip, dr_offset3* value) DR_NOEXCEPT;
++DR_API dr_status DR_CALL dr_library_sample_many(const dr_library* library, const char* name,
++                                              int32_t start, int32_t step, uint32_t count,
++                                              dr_offset3* values) DR_NOEXCEPT;
++#ifdef __cplusplus
++}
++#endif
++#endif
+diff --git a/package.json b/package.json
+index d78a6d8..4989f34 100644
+--- a/package.json
++++ b/package.json
+@@ -42,7 +42,9 @@
+     "docs/bindings.md",
+     "docs/images/",
+     "examples/bindings/",
+-    "docs/troubleshooting.md"
++    "docs/troubleshooting.md",
++    "docs/csharp.md",
++    "bindings/csharp/README.md"
+   ],
+   "repository": {
+     "type": "git",
+diff --git a/packaging/CPP_BINARY_README.md b/packaging/CPP_BINARY_README.md
+index 24aa095..2fcf341 100644
+--- a/packaging/CPP_BINARY_README.md
++++ b/packaging/CPP_BINARY_README.md
+@@ -7,8 +7,8 @@ The illustrated multi-language guide and runnable examples are installed under
+ `share/DanceRudiments/examples/bindings/`.
+ 
+ This archive is for C++ applications on the platform named in the ZIP filename.
+-It does not contain the Python or TypeScript/WASM packages; install those from
+-PyPI or npm instead.
++It does not contain the Python, C#/.NET or TypeScript/WASM packages; install those from
++PyPI, NuGet.org or npm instead.
+ 
+ ## DanceFlow ecosystem
+ 
+@@ -52,3 +52,4 @@ Conan recipe when you need a different architecture or toolchain.
+ 
+ - Python: `pip install dancerudiments`
+ - TypeScript/WASM: `npm install @kieransimkin/dance-rudiments`
++- C#/.NET: `dotnet add package DanceRudiments` (after its first NuGet release)
+diff --git a/pyproject.toml b/pyproject.toml
+index edccd52..f4548bc 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -29,10 +29,10 @@ Issues = "https://github.com/kieransimkin/DanceRudiments/issues"
+ [tool.scikit-build]
+ cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF"]
+ wheel.packages = ["python/dancerudiments_authoring"]
+-sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", ".gitattributes", "examples/patterns/**", "docs/authoring.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "cmake/**", "tests/**", "README.md", "AUTHORS.md", "packaging/**", "docs/images/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**"]
++sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", ".gitattributes", "examples/patterns/**", "docs/authoring.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "cmake/**", "tests/**", "README.md", "AUTHORS.md", "packaging/**", "docs/images/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md"]
+ 
+ # Do not ship hand-off patches, credentials, or local example output in sdists.
+-sdist.exclude = ["*.patch", "npm_recovery_codes.txt", "examples/bindings/typescript/dist/**"]
++sdist.exclude = ["*.patch", "npm_recovery_codes.txt", "examples/bindings/typescript/dist/**", "bindings/csharp/**/bin/**", "bindings/csharp/**/obj/**", "tests/csharp/**/bin/**", "tests/csharp/**/obj/**", "examples/bindings/csharp/bin/**", "examples/bindings/csharp/obj/**"]
+ 
+ [tool.cibuildwheel]
+ build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+diff --git a/tests/cpp/test_c_api.cpp b/tests/cpp/test_c_api.cpp
+new file mode 100644
+index 0000000..db4cbf6
+--- /dev/null
++++ b/tests/cpp/test_c_api.cpp
+@@ -0,0 +1,111 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++#include "dancerudiments/c_api.h"
++#include "dancerudiments/sampled_pattern.hpp"
++#include <atomic>
++#include <cmath>
++#include <cstring>
++#include <iostream>
++#include <limits>
++#include <stdexcept>
++#include <thread>
++#include <vector>
++
++static std::size_t checks = 0;
++static void check(bool ok) { ++checks; if (!ok) throw std::runtime_error("C ABI check failed at " + std::to_string(checks)); }
++static void same(dr_offset3 a, dancerudiments::Offset3 b) { check(a.x == b.x && a.y == b.y && a.z == b.z); }
++int main() {
++  try {
++    check(sizeof(dr_offset3) == sizeof(double)*3);
++    check(dr_abi_version() == 1 && dr_pips_per_beat() == 64 && std::strlen(dr_version()) > 0);
++    uint32_t count = 0; check(dr_catalogue_count(&count) == DR_OK);
++    const auto& native = dancerudiments::catalogue(); check(count == native.size());
++    std::size_t samples = 0;
++    for (uint32_t i = 0; i < count; ++i) {
++      dr_info info{}; check(dr_catalogue_get(i, &info) == DR_OK);
++      check(info.name == native[i].name && info.description == native[i].description);
++      check(info.period_pips == native[i].period_pips && info.dimensions == static_cast<uint32_t>(native[i].dimensions));
++      std::vector<dr_offset3> batch(info.period_pips);
++      check(dr_sample_many(info.name, 0, 1, info.period_pips, batch.data()) == DR_OK);
++      for (uint32_t pip = 0; pip < info.period_pips; ++pip) {
++        dr_offset3 v{}; check(dr_sample(info.name, static_cast<int32_t>(pip), &v) == DR_OK);
++        const auto expected = dancerudiments::sample(info.name, static_cast<int>(pip));
++        same(v,expected); same(batch[pip],expected); ++samples;
++      }
++      for (int32_t pip : {INT32_MIN, -1, 0, INT32_MAX}) {
++        dr_offset3 v{}; check(dr_sample(info.name, pip, &v) == DR_OK);
++        same(v,dancerudiments::sample(info.name,pip));
++      }
++      dr_offset3 edge[9]{};
++      check(dr_sample_many(info.name, INT32_MIN, INT32_MAX, 9, edge) == DR_OK);
++      for (int64_t k=0;k<9;++k) {
++        int p=static_cast<int>((static_cast<int64_t>(INT32_MIN)+k*INT32_MAX)%info.period_pips);
++        same(edge[k],dancerudiments::sample(info.name,p));
++      }
++    }
++    dr_offset3 v{.1,.2,.3};
++    check(dr_sample("absent",0,&v) == DR_INVALID_ARGUMENT);
++    check(v.x == .1 && std::strstr(dr_last_error(),"absent"));
++    check(dr_sample(nullptr,0,&v) == DR_INVALID_ARGUMENT);
++    check(dr_sample("circle",0,nullptr) == DR_INVALID_ARGUMENT);
++    check(dr_catalogue_count(nullptr) == DR_INVALID_ARGUMENT);
++    dr_info info{}; check(dr_catalogue_get(count,&info) == DR_OUT_OF_RANGE);
++    check(dr_catalogue_get(0,nullptr) == DR_INVALID_ARGUMENT);
++    check(dr_sample_many("circle",0,1,0,nullptr) == DR_OK);
++    check(dr_sample_many("absent",0,1,0,nullptr) == DR_INVALID_ARGUMENT);
++    check(dr_sample_many("circle",0,1,1048577,&v) == DR_INVALID_ARGUMENT);
++    check(dr_sample_many("circle",0,1,1,nullptr) == DR_INVALID_ARGUMENT);
++
++    // C++ owns deep copies, including UTF-8 metadata. Lifetime is explicit.
++    dr_library* library = nullptr;
++    dr_offset3 points[] = {{0,0,0},{.2,-.3,.4},{-.4,.5,-.6}};
++    dr_pattern_definition definition{"csharp_test",u8"Écho — 日本語 🎵",points,3};
++    check(dr_library_create(&definition,1,&library) == DR_OK && library);
++    points[1].x = .99;
++    check(dr_library_sample(library,"csharp_test",1,&v) == DR_OK && v.x == .2);
++    check(dr_library_sample(library,"csharp_test",-1,&v) == DR_OK && v.z == -.6);
++    uint32_t bank_count{}; check(dr_library_count(library,&bank_count)==DR_OK && bank_count == count+1);
++    check(dr_library_get(library,count,&info)==DR_OK && std::strcmp(info.description,definition.description)==0);
++    check(dr_library_sample(library,"circle",64,&v)==DR_OK); same(v,dancerudiments::circle(0));
++    dr_offset3 reverse[5]{}; check(dr_library_sample_many(library,"csharp_test",-1,-1,5,reverse)==DR_OK);
++    check(reverse[1].x == .2 && reverse[4].x == .2);
++    check(dr_library_get(library,bank_count,&info)==DR_OUT_OF_RANGE);
++    dr_library_destroy(library); dr_library_destroy(nullptr);
++    check(dr_library_sample(nullptr,"circle",0,&v)==DR_INVALID_ARGUMENT);
++    check(dr_library_count(nullptr,&bank_count)==DR_INVALID_ARGUMENT);
++    check(dr_library_get(nullptr,0,&info)==DR_INVALID_ARGUMENT);
++    check(dr_library_sample_many(nullptr,"circle",0,1,0,nullptr)==DR_INVALID_ARGUMENT);
++    check(dr_library_create(nullptr,0,&library)==DR_OK && library);
++    dr_library_destroy(library);
++    library = reinterpret_cast<dr_library*>(1);
++    check(dr_library_create(nullptr,1,&library)==DR_INVALID_ARGUMENT && library==nullptr);
++    check(dr_library_create(&definition,1025,&library)==DR_INVALID_ARGUMENT && library==nullptr);
++    check(dr_library_create(nullptr,0,nullptr)==DR_INVALID_ARGUMENT);
++    definition.count=0; check(dr_library_create(&definition,1,&library)==DR_INVALID_ARGUMENT && !library);
++    definition.count=3; points[0].x=std::numeric_limits<double>::quiet_NaN();
++    check(dr_library_create(&definition,1,&library)==DR_INVALID_ARGUMENT && !library);
++    points[0].x=0; definition.name="circle";
++    check(dr_library_create(&definition,1,&library)==DR_INVALID_ARGUMENT && !library);
++    definition.name="duplicate";
++    dr_pattern_definition repeated[]={definition,definition};
++    check(dr_library_create(repeated,2,&library)==DR_INVALID_ARGUMENT && !library);
++    // Exact default reloads retain the core idempotence contract.
++    const auto& circle=native[2];std::vector<dr_offset3> circle_values(circle.period_pips);
++    check(dr_sample_many("circle",0,1,circle.period_pips,circle_values.data())==DR_OK);
++    definition={"circle",circle.description.data(),circle_values.data(),circle.period_pips};
++    check(dr_library_create(&definition,1,&library)==DR_OK);
++    check(dr_library_count(library,&bank_count)==DR_OK && bank_count==count);
++    dr_library_destroy(library);
++    // Failure messages cannot leak between threads.
++    std::atomic<int> ready{0}; std::atomic<bool> threads_ok{true};
++    auto thread_test=[&](const char* name){
++      dr_offset3 result{};
++      if(dr_sample(name,0,&result)!=DR_INVALID_ARGUMENT)threads_ok=false;
++      ++ready;while(ready.load()!=2)std::this_thread::yield();
++      if(!std::strstr(dr_last_error(),name))threads_ok=false;
++    };
++    std::thread a(thread_test,"thread_alpha"),b(thread_test,"thread_beta");a.join();b.join();
++    check(threads_ok.load());
++    check(dr_sample("circle",0,&v)==DR_OK && dr_last_error()[0]=='\0');
++    std::cout << "C ABI: " << count << " patterns; " << samples << " exact sample triples; " << checks << " checks passed\n";
++  } catch(const std::exception& e) {std::cerr << e.what() << '\n';return 1;}
++}
+diff --git a/tests/csharp/.gitignore b/tests/csharp/.gitignore
+new file mode 100644
+index 0000000..56a2172
+--- /dev/null
++++ b/tests/csharp/.gitignore
+@@ -0,0 +1,3 @@
++bin/
++obj/
++**/__pycache__/
+diff --git a/tests/csharp/DanceRudiments.Tests.csproj b/tests/csharp/DanceRudiments.Tests.csproj
+new file mode 100644
+index 0000000..b3326eb
+--- /dev/null
++++ b/tests/csharp/DanceRudiments.Tests.csproj
+@@ -0,0 +1,17 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <!-- Executable contract suite; no test-framework dependencies. Music: https://kieransimkin.co.uk/my-songs/ -->
++  <PropertyGroup>
++    <OutputType>Exe</OutputType>
++    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
++    <ImplicitUsings>enable</ImplicitUsings>
++    <Nullable>enable</Nullable>
++    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <IsPackable>false</IsPackable>
++  </PropertyGroup>
++  <ItemGroup Condition="'$(UsePackedBinding)' != 'true'">
++    <ProjectReference Include="../../bindings/csharp/DanceRudiments/DanceRudiments.csproj" />
++  </ItemGroup>
++  <ItemGroup Condition="'$(UsePackedBinding)' == 'true'">
++    <PackageReference Include="DanceRudiments" Version="$(BindingPackageVersion)" />
++  </ItemGroup>
++</Project>
+diff --git a/tests/csharp/Program.cs b/tests/csharp/Program.cs
+new file mode 100644
+index 0000000..65853f3
+--- /dev/null
++++ b/tests/csharp/Program.cs
+@@ -0,0 +1,132 @@
++// MIT. Kieran Simkin — https://kieransimkin.co.uk/my-songs/
++using DanceRudiments;
++using System.Runtime.InteropServices;
++using System.Text.Json;
++using System.Buffers.Binary;
++using System.Security.Cryptography;
++
++internal static class Program
++{
++    private static long checks;
++    private static void Check(bool condition, string label)
++    { ++checks; if (!condition) throw new Exception(label); }
++    private static void Throws<T>(Action action) where T : Exception
++    {
++        ++checks;
++        try { action(); } catch (T) { return; }
++        throw new Exception("Expected " + typeof(T).Name);
++    }
++    private static string SampleHash(Offset3[] values)
++    {
++        using var h = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
++        Span<byte> row = stackalloc byte[24];
++        foreach (var v in values)
++        {
++            BinaryPrimitives.WriteDoubleLittleEndian(row, v.X == 0 ? 0 : v.X);
++            BinaryPrimitives.WriteDoubleLittleEndian(row[8..], v.Y == 0 ? 0 : v.Y);
++            BinaryPrimitives.WriteDoubleLittleEndian(row[16..], v.Z == 0 ? 0 : v.Z);
++            h.AppendData(row);
++        }
++        return Convert.ToHexString(h.GetHashAndReset()).ToLowerInvariant();
++    }
++    public static int Main(string[] args)
++    {
++        try
++        {
++            Check(Marshal.SizeOf<Offset3>() == 24, "XYZ ABI layout");
++            var items = Rudiments.Catalogue;
++            Check(items.Count > 15, "Native catalogue is present");
++            Check(Rudiments.NativeVersion == typeof(Rudiments).Assembly.GetName().Version!.ToString(3), "Managed/native version agreement");
++            Check(items.DistinctBy(i => i.Name).Count() == items.Count, "Unique names");
++            Check(Rudiments.MusicUrl == "https://kieransimkin.co.uk/my-songs/", "Author link");
++            foreach (var info in items)
++            {
++                Check(info.PeriodPips > 0 && info.Dimensions is >= 1 and <= 3, "Native metadata");
++                var values = Rudiments.SampleMany(info.Name, 0, info.PeriodPips);
++                for (int pip = 0; pip < values.Length; ++pip)
++                {
++                    Check(values[pip] == Rudiments.Sample(info.Name, pip), "Batch/single parity");
++                    var v=values[pip];
++                    Check(double.IsFinite(v.X) && double.IsFinite(v.Y) && double.IsFinite(v.Z) &&
++                        Math.Abs(v.X)<=1 && Math.Abs(v.Y)<=1 && Math.Abs(v.Z)<=1, "Bounds");
++                }
++                Check(Rudiments.Sample(info.Name,-1)==values[^1],"Negative wrapping");
++                Check(Rudiments.Sample(info.Name,info.PeriodPips)==values[0],"Positive wrapping");
++                var edge=Rudiments.SampleMany(info.Name,int.MinValue,9,int.MaxValue);
++                for (int i=0;i<edge.Length;++i)
++                    Check(edge[i]==Rudiments.Sample(info.Name,(int)(((long)int.MinValue+(long)i*int.MaxValue)%info.PeriodPips)), "Batch overflow wrapping");
++            }
++            // An independent JSON export from the separately linked C++ core,
++            // not a second export through this binding or an assumed waveform.
++            if (args.Length > 0)
++            {
++                using var reference=JsonDocument.Parse(File.ReadAllBytes(args[0]));
++                var rows=reference.RootElement.GetProperty("patterns");
++                Check(rows.GetArrayLength()==items.Count,"Reference count"); int index=0;
++                foreach(var row in rows.EnumerateArray())
++                {
++                    var info=items[index++];
++                    Check(row.GetProperty("name").GetString()==info.Name,"Reference order");
++                    Check(row.GetProperty("description").GetString()==info.Description,"UTF-8 description");
++                    Check(row.GetProperty("period_pips").GetInt32()==info.PeriodPips,"Reference period");
++                    Check(row.GetProperty("samples_f64le_sha256").GetString() ==
++                        SampleHash(Rudiments.SampleMany(info.Name,0,info.PeriodPips)), "Direct C++ reference parity");
++                }
++            }
++            var source=new[]{new Offset3(0,0),new Offset3(.2,-.3,.4),new Offset3(-.4,.5,-.6)};
++            var definition=new PatternDefinition("dotnet_test","Écho — 日本語 🎵",source);
++            source[1]=new Offset3(.99,.99);
++            using(var bank=new PatternLibrary(definition))
++            {
++                Check(bank.Catalogue.Count==items.Count+1,"Bank count");
++                Check(bank.Catalogue[^1].Description==definition.Description,"UTF-8 custom metadata");
++                Check(bank.Sample("dotnet_test",1)==new Offset3(.2,-.3,.4),"Defensive copy");
++                Check(bank.Sample("dotnet_test",-1)==definition.Samples[^1],"Bank reverse");
++                Check(bank.Sample("circle",0)==Rudiments.Sample("circle",0),"Bank defaults");
++                var result=bank.SampleMany("dotnet_test",-1,5,-1);
++                Check(result[1]==definition.Samples[1] && result[4]==definition.Samples[1],"Reverse batch");
++                Parallel.For(0,1000,i => { if(bank.Sample("dotnet_test",i)!=definition.Samples[i%3])throw new Exception("Concurrent sample"); });
++                bank.Dispose(); bank.Dispose();
++                Throws<ObjectDisposedException>(()=>bank.Sample("dotnet_test",0));
++            }
++            using(var empty=new PatternLibrary())Check(empty.Catalogue.Count==items.Count,"Empty custom bank");
++            var circle=items.Single(i=>i.Name=="circle");
++            using(var exact=new PatternLibrary(new PatternDefinition("circle",circle.Description,
++                Rudiments.SampleMany("circle",0,circle.PeriodPips))))Check(exact.Catalogue.Count==items.Count,"Idempotent reload");
++            Throws<ArgumentException>(()=>new PatternLibrary(new PatternDefinition("circle","Wrong metadata",new[]{new Offset3(0,0)})));
++            Throws<ArgumentException>(()=>new PatternLibrary(definition,definition));
++            Throws<ArgumentException>(()=>Rudiments.Sample("does_not_exist",0));
++            Throws<ArgumentException>(()=>Rudiments.Sample("circle\0wrong",0));
++            Throws<ArgumentNullException>(()=>Rudiments.Sample(null!,0));
++            Throws<ArgumentException>(()=>new PatternDefinition("invalid name","",source));
++            Throws<ArgumentException>(()=>new PatternDefinition("invalid","bad\0description",source));
++            Throws<ArgumentException>(()=>new PatternDefinition("invalid","",new[]{new Offset3(double.NaN,0)}));
++            Throws<ArgumentException>(()=>new PatternDefinition("invalid","",new[]{new Offset3(1.001,0)}));
++            Throws<ArgumentOutOfRangeException>(()=>Rudiments.SampleMany("circle",0,-1));
++            Check(Rudiments.SampleMany("circle",0,0).Length==0,"Empty batch");
++            Check(Rudiments.PipAtTime(-.001,120,256)==255,"Floor negative time");
++            Check(Rudiments.PipAtTime(1,120,256)==128,"Tempo conversion");
++            Check(Rudiments.PipAtTime(1,120,256,1)==0,"Beat-zero offset");
++            Throws<ArgumentOutOfRangeException>(()=>Rudiments.PipAtTime(1,0,256));
++            Throws<ArgumentOutOfRangeException>(()=>Rudiments.PipAtTime(double.NaN,120,256));
++            Throws<ArgumentOutOfRangeException>(()=>Rudiments.PipAtTime(double.MaxValue,120,256));
++            var pack=new {format="dancerudiments.compiled-pack",schema_version=1,pips_per_beat=64,
++                patterns=new[]{new{name="json_test",description="Écho JSON",period_pips=2,
++                    samples=new[]{new[]{0.0,0.0,0.0},new[]{.5,-.5,.25}},source_sha256=new string('a',64),
++                    provenance=new{},diagnostics=new{}}}};
++            string json=JsonSerializer.Serialize(pack);
++            using(var bank=PatternLibrary.FromJson(json))Check(bank.Sample("json_test",-1)==new Offset3(.5,-.5,.25),"JSON interchange");
++            Throws<ArgumentException>(()=>PatternLibrary.FromJson(json.Replace("\"pips_per_beat\":64","\"pips_per_beat\":16")));
++            Throws<ArgumentException>(()=>PatternLibrary.FromJson(json.Replace("\"schema_version\":1","\"schema_version\":1,\"schema_version\":1")));
++            Throws<ArgumentException>(()=>PatternLibrary.FromJson(json.Replace("\"period_pips\":2","\"period_pips\":3")));
++            // A read racing Dispose may finish or throw ObjectDisposedException,
++            // but SafeHandle must keep its native pointer alive during P/Invoke.
++            var racing=new PatternLibrary(definition);
++            var worker=Task.Run(()=>{for(int i=0;i<10000;++i){try{_ = racing.Sample("dotnet_test",i);}catch(ObjectDisposedException){break;}}});
++            racing.Dispose(); worker.GetAwaiter().GetResult();
++            Console.WriteLine($"C# contracts passed: {items.Count} movements, {checks} checks, {RuntimeInformation.FrameworkDescription}, {RuntimeInformation.RuntimeIdentifier}");
++            return 0;
++        }
++        catch(Exception e){Console.Error.WriteLine(e);return 1;}
++    }
++}
+diff --git a/tests/csharp/packaging/test_packaging.py b/tests/csharp/packaging/test_packaging.py
+new file mode 100644
+index 0000000..c12da51
+--- /dev/null
++++ b/tests/csharp/packaging/test_packaging.py
+@@ -0,0 +1,210 @@
++"""Package-structure tests use deliberately synthetic headers, never distributable binaries.
++Actual native execution is covered by CTest and the managed contract suite.
++Music: https://kieransimkin.co.uk/my-songs/
++"""
++import importlib.util
++import json
++from pathlib import Path
++import re
++import struct
++import subprocess
++import sys
++import tempfile
++import unittest
++import xml.etree.ElementTree as ET
++import zipfile
++
++ROOT=Path(__file__).resolve().parents[3]
++spec=importlib.util.spec_from_file_location('csharp_package',ROOT/'tools/csharp_package.py')
++package=importlib.util.module_from_spec(spec);spec.loader.exec_module(package)
++COMMIT='918c43d725b3ed91b663930430079c37cd6d3a25'
++
++
++def synthetic_header(rid):
++    """Minimum fixture recognized by the inspector, NOT an executable library."""
++    b=bytearray(256);arm=rid.endswith('arm64')
++    if rid.startswith('linux'):
++        b[:6]=b'\x7fELF\x02\x01';struct.pack_into('<HH',b,16,3,183 if arm else 62)
++    elif rid.startswith('win'):
++        b[:2]=b'MZ';struct.pack_into('<I',b,60,64);b[64:68]=b'PE\0\0'
++        struct.pack_into('<H',b,68,0xaa64 if arm else 0x8664);struct.pack_into('<H',b,86,0x2000)
++    else:
++        b[:4]=b'\xcf\xfa\xed\xfe';struct.pack_into('<I',b,4,0x0100000c if arm else 0x01000007)
++        struct.pack_into('<I',b,12,6)
++    return bytes(b)
++
++
++def write_zip(path,members):
++    with zipfile.ZipFile(path,'w') as z:
++        for key,value in members.items():z.writestr(key,value)
++
++
++class PackagingTests(unittest.TestCase):
++    def setUp(self):
++        self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
++        self.folder=Path(self.temp.name)
++    def native_tree(self):
++        for p in package.PLATFORMS:
++            build=self.folder/('build-'+p['rid'])/'csharp-native';build.mkdir(parents=True)
++            (build/p['file']).write_bytes(synthetic_header(p['rid']))
++            package.stage(build.parent,p['rid'],self.folder/'staged',COMMIT)
++        return self.folder/'staged'
++    def members(self):
++        folder=self.native_tree()
++        members={p.relative_to(folder).as_posix().replace('manifests/','build-info/'):p.read_bytes()
++                 for p in folder.rglob('*') if p.is_file()}
++        for name in ('README.md','AUTHORS.md','docs/csharp.md'):
++            members[name]=package.MUSIC_URL.encode()
++        for name in ('licenses/LICENSE','licenses/THIRD_PARTY_NOTICES.md','licenses/D3-ease-LICENSE',
++                     'lib/net8.0/DanceRudiments.dll','lib/net8.0/DanceRudiments.xml',
++                     'examples/bindings/csharp/Program.cs',
++                     'docs/images/visualizer-amen-desktop.png','docs/images/visualizer-midi-score.png',
++                     'docs/images/visualizer-mobile.png'):
++            members[name]=b'unit-test fixture only'
++        members['build-info/platforms.json']=(ROOT/'bindings/csharp/platforms.json').read_bytes()
++        root=ET.Element('package',xmlns='http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd')
++        meta=ET.SubElement(root,'metadata')
++        for k,v in dict(id='DanceRudiments',version=package.version(),authors='Kieran Simkin',
++                        readme='README.md',description='Music: '+package.MUSIC_URL,projectUrl=package.MUSIC_URL).items():
++            ET.SubElement(meta,k).text=v
++        ET.SubElement(meta,'repository',type='git',url=package.REPOSITORY,commit=COMMIT)
++        members['DanceRudiments.nuspec']=ET.tostring(root)
++        return members
++    def test_six_named_native_targets(self):
++        self.assertEqual(set(package.BY_RID),{'linux-x64','linux-arm64','win-x64','win-arm64','osx-x64','osx-arm64'})
++        self.assertEqual(len(package.PLATFORMS),6)
++    def test_headers_reject_cross_architecture_and_truncation(self):
++        for rid in package.BY_RID:
++            with self.subTest(rid=rid):
++                data=synthetic_header(rid);package.check_binary(data,rid)
++                opposite=rid.replace('arm64','x64') if rid.endswith('arm64') else rid.replace('x64','arm64')
++                with self.assertRaises(ValueError):package.check_binary(data,opposite)
++                with self.assertRaises(ValueError):package.check_binary(data[:20],rid)
++    def test_executables_are_not_native_library_assets(self):
++        for rid in package.BY_RID:
++            b=bytearray(synthetic_header(rid))
++            if rid.startswith('linux'):struct.pack_into('<H',b,16,2)
++            elif rid.startswith('win'):struct.pack_into('<H',b,86,0)
++            else:struct.pack_into('<I',b,12,2)
++            with self.assertRaises(ValueError):package.check_binary(bytes(b),rid)
++    def test_bad_pe_offset_is_rejected(self):
++        b=bytearray(synthetic_header('win-x64'));struct.pack_into('<I',b,60,2**32-1)
++        with self.assertRaises(ValueError):package.check_binary(bytes(b),'win-x64')
++    def test_staged_six_platform_set_verifies(self):
++        package.verify_tree(self.native_tree(),COMMIT)
++    def test_missing_native_rejected(self):
++        folder=self.native_tree();(folder/'runtimes/linux-arm64/native/libdancerudiments_native.so').unlink()
++        with self.assertRaises(OSError):package.verify_tree(folder,COMMIT)
++    def test_extra_native_rejected(self):
++        folder=self.native_tree();(folder/'runtimes/unexpected.txt').write_text('wrong')
++        with self.assertRaises(ValueError):package.verify_tree(folder,COMMIT)
++    def test_native_changes_after_staging_rejected(self):
++        folder=self.native_tree();p=folder/'runtimes/linux-x64/native/libdancerudiments_native.so'
++        p.write_bytes(p.read_bytes()+b'tampered')
++        with self.assertRaises(ValueError):package.verify_tree(folder,COMMIT)
++    def test_native_mixed_revision_rejected(self):
++        folder=self.native_tree()
++        with self.assertRaises(ValueError):package.verify_tree(folder,'a'*40)
++    def test_stage_requires_full_revision(self):
++        with self.assertRaises(ValueError):package.stage(self.folder,'linux-x64',self.folder/'out','main')
++    def test_archive_structure_and_signature_normalization(self):
++        members=self.members();a=self.folder/'expected.zip';b=self.folder/'signed.zip'
++        write_zip(a,members);package.check_archive(a,COMMIT)
++        write_zip(b,{**members,'.signature.p7s':b'synthetic repository signature'})
++        package.compare_packages(a,b)
++    def test_docs_credits_and_runtime_are_required(self):
++        members=self.members()
++        for name in ('README.md','licenses/THIRD_PARTY_NOTICES.md','docs/images/visualizer-mobile.png',
++                     'runtimes/osx-arm64/native/libdancerudiments_native.dylib'):
++            with self.subTest(name=name):
++                copy=dict(members);copy.pop(name);p=self.folder/'missing.zip';write_zip(p,copy)
++                with self.assertRaises((ValueError,KeyError)):package.check_archive(p,COMMIT)
++    def test_music_link_is_required(self):
++        members=self.members();members['README.md']=b'No credit here';p=self.folder/'bad.zip';write_zip(p,members)
++        with self.assertRaises(ValueError):package.check_archive(p,COMMIT)
++    def test_package_commit_is_required(self):
++        members=self.members();members['DanceRudiments.nuspec']=members['DanceRudiments.nuspec'].replace(COMMIT.encode(),b'')
++        p=self.folder/'bad.zip';write_zip(p,members)
++        with self.assertRaises(ValueError):package.check_archive(p)
++    def test_package_native_source_must_match_managed_source(self):
++        members=self.members();name='build-info/win-arm64.json';m=json.loads(members[name]);m['source_commit']='b'*40
++        members[name]=json.dumps(m).encode();p=self.folder/'bad.zip';write_zip(p,members)
++        with self.assertRaises(ValueError):package.check_archive(p,COMMIT)
++    def test_package_native_hash_checked(self):
++        members=self.members();members['runtimes/win-x64/native/dancerudiments_native.dll']+=b'changed'
++        p=self.folder/'bad.zip';write_zip(p,members)
++        with self.assertRaises(ValueError):package.check_archive(p,COMMIT)
++    def test_zip_path_and_private_data_rejected(self):
++        members=self.members()
++        for name in ('../escape','C:/absolute','x\\..\\escape','npm_recovery_codes.txt','old.patch'):
++            with self.subTest(name=name):
++                p=self.folder/'bad.zip';write_zip(p,{**members,name:b'x'})
++                with self.assertRaises(ValueError):package.check_archive(p,COMMIT)
++    def test_runtime_label_or_manifest_change_rejected(self):
++        members=self.members();members['build-info/platforms.json']=b'{}'
++        p=self.folder/'bad.zip';write_zip(p,members)
++        with self.assertRaises(ValueError):package.check_archive(p,COMMIT)
++    def test_restored_different_same_version_rejected(self):
++        a=self.folder/'a.zip';b=self.folder/'b.zip';write_zip(a,{'file':b'a'});write_zip(b,{'file':b'b'})
++        with self.assertRaises(ValueError):package.compare_packages(a,b)
++    def test_duplicate_zip_member_rejected(self):
++        import warnings
++        p=self.folder/'bad.zip'
++        with warnings.catch_warnings():
++            warnings.simplefilter('ignore')
++            with zipfile.ZipFile(p,'w') as z:z.writestr('duplicate','a');z.writestr('duplicate','b')
++        with self.assertRaises(ValueError):package.package_payload(p)
++        with self.assertRaises(ValueError):package.check_archive(p)
++    def test_consumer_binding_source_is_local_only(self):
++        source=self.folder/'artifacts & more';source.mkdir();p=self.folder/'nuget.config'
++        package.consumer_config(source,p);root=ET.parse(p)
++        sources={n.get('key'):n.get('value') for n in root.findall('./packageSources/add')}
++        self.assertEqual(sources['local-binding'],str(source.resolve()))
++        local=root.findall('./packageSourceMapping/packageSource[@key="local-binding"]/package')
++        public=root.findall('./packageSourceMapping/packageSource[@key="nuget.org"]/package')
++        self.assertEqual([n.get('pattern') for n in local],['DanceRudiments'])
++        self.assertEqual([n.get('pattern') for n in public],['Microsoft.*'])
++    def test_version_source_and_documentation(self):
++        self.assertRegex(package.version(),r'^\d+\.\d+\.\d+$');package.check_source()
++    def test_release_validator_detects_csharp_mismatch(self):
++        # A fully isolated fixture; never changes the working tree.
++        root=self.folder/'checkout';(root/'tools').mkdir(parents=True)
++        (root/'tools/check_release_version.py').write_bytes((ROOT/'tools/check_release_version.py').read_bytes())
++        for n in ('CMakeLists.txt','package.json','pyproject.toml'):(root/n).write_bytes((ROOT/n).read_bytes())
++        project=root/'bindings/csharp/DanceRudiments/DanceRudiments.csproj';project.parent.mkdir(parents=True)
++        project.write_text('<Project><PropertyGroup><Version>99.0.0</Version></PropertyGroup></Project>')
++        r=subprocess.run([sys.executable,str(root/'tools/check_release_version.py'),'v'+package.version()],capture_output=True,text=True)
++        self.assertNotEqual(r.returncode,0);self.assertIn('C# NuGet=99.0.0',r.stderr)
++    def test_managed_imports_cover_exported_c_abi(self):
++        header=(ROOT/'include/dancerudiments/c_api.h').read_text()
++        imports=(ROOT/'bindings/csharp/DanceRudiments/NativeMethods.cs').read_text()
++        exports=set(re.findall(r'DR_CALL (dr_\w+)\(',header));entrypoints=re.findall(r'EntryPoint="(dr_\w+)"',imports)
++        self.assertEqual(exports,set(entrypoints));self.assertEqual(len(entrypoints),14)
++        self.assertEqual(imports.count('CallingConvention=CallingConvention.Cdecl'),14)
++        self.assertIn('SafeHandleZeroOrMinusOneIsInvalid',imports)
++    def test_pack_has_complete_native_guard_and_author_metadata(self):
++        root=ET.parse(package.PROJECT)
++        self.assertEqual(root.findtext('./PropertyGroup/TargetFramework'),'net8.0')
++        errors=root.findall('./Target[@Name="RequireAllNativeRuntimes"]/Error');self.assertEqual(len(errors),6)
++        self.assertEqual(root.findtext('./PropertyGroup/PackageReadmeFile'),'README.md')
++        self.assertEqual(root.findtext('./PropertyGroup/RepositoryUrl'),package.REPOSITORY)
++    def test_workflow_publish_is_release_only_and_after_consumers(self):
++        text=(ROOT/'.github/workflows/csharp.yml').read_text()
++        for name in ('publish-nuget','publish-github-packages','attach-release'):
++            body=text.split('  '+name+':',1)[1]
++            self.assertTrue(body.lstrip().startswith('needs: [validate, pack, consume]\n    if: github.event_name == \'release\''))
++        self.assertIn('unset DANCERUDIMENTS_NATIVE_LIBRARY',text)
++        self.assertIn('--configfile artifacts/consume.config',text)
++        self.assertIn('-p:UsePackedBinding=true',text)
++        self.assertIn('NuGet/login@v1',text)
++        self.assertIn('python tools/csharp_package.py compare',text)
++        self.assertNotIn('pull_request_target:',text)
++    def test_original_core_is_not_a_managed_motion_mirror(self):
++        native=(ROOT/'bindings/csharp/native/CMakeLists.txt').read_text()
++        self.assertIn('${PROJECT_SOURCE_DIR}/src/dance_rudiments.cpp',native)
++        self.assertIn('${PROJECT_SOURCE_DIR}/src/sampled_pattern.cpp',native)
++        methods=(ROOT/'bindings/csharp/DanceRudiments/Rudiments.cs').read_text()
++        self.assertIn('NativeMethods.Sample(',methods);self.assertIn('NativeMethods.SampleMany(',methods)
++        self.assertNotIn('Math.Sin',methods)
++
++if __name__=='__main__':unittest.main()
+diff --git a/tools/check_release_version.py b/tools/check_release_version.py
+index 5f80310..7bd66db 100644
+--- a/tools/check_release_version.py
++++ b/tools/check_release_version.py
+@@ -3,6 +3,7 @@ import pathlib
+ import re
+ import sys
+ import tomllib
++import xml.etree.ElementTree as ET
+ 
+ root = pathlib.Path(__file__).resolve().parents[1]
+ tag = sys.argv[1] if len(sys.argv) > 1 else ""
+@@ -16,8 +17,11 @@ cmake_text = (root / "CMakeLists.txt").read_text(encoding="utf-8")
+ match = re.search(r"project\(DanceRudiments VERSION ([0-9]+\.[0-9]+\.[0-9]+)", cmake_text)
+ cmake_version = match.group(1) if match else None
+ 
++csharp_project = root / "bindings/csharp/DanceRudiments/DanceRudiments.csproj"
++csharp_version = ET.parse(csharp_project).findtext("./PropertyGroup/Version")
++
+ versions = {"release tag": version, "package.json": package_version,
+-            "pyproject.toml": python_version, "CMakeLists.txt": cmake_version}
++            "pyproject.toml": python_version, "CMakeLists.txt": cmake_version, "C# NuGet": csharp_version}
+ if len(set(versions.values())) != 1:
+     raise SystemExit("Version mismatch: " + ", ".join(f"{key}={value}" for key, value in versions.items()))
+ print(f"Release version {version} is consistent across all package manifests.")
+diff --git a/tools/csharp_package.py b/tools/csharp_package.py
+new file mode 100644
+index 0000000..d4e3917
+--- /dev/null
++++ b/tools/csharp_package.py
+@@ -0,0 +1,262 @@
++#!/usr/bin/env python3
++"""Build/inspect native-backed NuGet packages. No registry access except explicit verify-published.
++Music: https://kieransimkin.co.uk/my-songs/
++"""
++from __future__ import annotations
++import argparse
++from hashlib import sha256
++import json
++from pathlib import Path
++import re
++import struct
++import subprocess
++import sys
++import time
++import urllib.error
++import urllib.request
++import xml.etree.ElementTree as ET
++import zipfile
++from io import BytesIO
++
++ROOT = Path(__file__).resolve().parents[1]
++PROJECT = ROOT / 'bindings/csharp/DanceRudiments/DanceRudiments.csproj'
++MUSIC_URL = 'https://kieransimkin.co.uk/my-songs/'
++REPOSITORY = 'https://github.com/kieransimkin/DanceRudiments'
++PLATFORMS = json.loads((ROOT / 'bindings/csharp/platforms.json').read_text(encoding='utf-8'))['include']
++BY_RID = {p['rid']: p for p in PLATFORMS}
++
++
++def version() -> str:
++    value = ET.parse(PROJECT).findtext('./PropertyGroup/Version') or ''
++    if not re.fullmatch(r'\d+\.\d+\.\d+', value):
++        raise ValueError('C# project must declare a release version MAJOR.MINOR.PATCH')
++    return value
++
++
++def check_source() -> None:
++    project = ET.parse(PROJECT)
++    if project.findtext('./PropertyGroup/PackageId') != 'DanceRudiments':
++        raise ValueError('Unexpected NuGet package ID')
++    for tag in ('Description', 'PackageProjectUrl'):
++        if MUSIC_URL not in (project.findtext('./PropertyGroup/' + tag) or ''):
++            raise ValueError(f'C# {tag} is missing the author music URL')
++    for name in ('bindings/csharp/README.md', 'docs/csharp.md', 'examples/bindings/csharp/Program.cs'):
++        if MUSIC_URL not in (ROOT / name).read_text(encoding='utf-8'):
++            raise ValueError('Missing author link: ' + name)
++    subprocess.run([sys.executable, str(ROOT/'tools/check_release_version.py'), 'v'+version()], check=True)
++    print('C# source, author links and cross-language versions verified')
++
++
++def check_binary(data: bytes, rid: str) -> None:
++    """Reject incorrectly labelled x64/ARM64 or non-library artifacts before packaging."""
++    expected = BY_RID[rid]
++    arch = expected['architecture']
++    if rid.startswith('linux-'):
++        if len(data) < 64 or data[:6] != b'\x7fELF\x02\x01':
++            raise ValueError(f'{rid}: not a little-endian ELF64 library')
++        kind, machine = struct.unpack_from('<HH', data, 16)
++        if kind != 3 or machine != {'x64':62, 'arm64':183}[arch]:
++            raise ValueError(f'{rid}: wrong ELF type or machine')
++    elif rid.startswith('win-'):
++        if len(data) < 64 or data[:2] != b'MZ':
++            raise ValueError(f'{rid}: not a PE library')
++        offset = struct.unpack_from('<I', data, 60)[0]
++        if offset+26 > len(data) or data[offset:offset+4] != b'PE\0\0':
++            raise ValueError(f'{rid}: invalid PE header')
++        machine = struct.unpack_from('<H', data, offset+4)[0]
++        flags = struct.unpack_from('<H', data, offset+22)[0]
++        if machine != {'x64':0x8664, 'arm64':0xaa64}[arch] or not flags & 0x2000:
++            raise ValueError(f'{rid}: wrong PE machine or missing DLL flag')
++    else:
++        if len(data) < 32 or data[:4] != b'\xcf\xfa\xed\xfe':
++            raise ValueError(f'{rid}: not a thin little-endian Mach-O 64 library')
++        cpu = struct.unpack_from('<I', data, 4)[0]
++        kind = struct.unpack_from('<I', data, 12)[0]
++        if cpu != {'x64':0x01000007, 'arm64':0x0100000c}[arch] or kind != 6:
++            raise ValueError(f'{rid}: wrong Mach-O CPU or file type')
++
++
++def consumer_config(source: Path, output: Path) -> None:
++    """Permit framework-pack downloads without ever using a public binding as a test substitute."""
++    if not source.is_dir(): raise ValueError('Local NuGet artifact directory is missing')
++    root=ET.Element('configuration')
++    sources=ET.SubElement(root,'packageSources');ET.SubElement(sources,'clear')
++    ET.SubElement(sources,'add',key='local-binding',value=str(source.resolve()))
++    ET.SubElement(sources,'add',key='nuget.org',value='https://api.nuget.org/v3/index.json')
++    mapping=ET.SubElement(root,'packageSourceMapping');ET.SubElement(mapping,'clear')
++    local=ET.SubElement(mapping,'packageSource',key='local-binding')
++    ET.SubElement(local,'package',pattern='DanceRudiments')
++    public=ET.SubElement(mapping,'packageSource',key='nuget.org')
++    ET.SubElement(public,'package',pattern='Microsoft.*')
++    output.parent.mkdir(parents=True,exist_ok=True)
++    ET.ElementTree(root).write(output,encoding='utf-8',xml_declaration=True)
++
++
++def package_payload(path: Path) -> dict[str, bytes]:
++    with zipfile.ZipFile(path) as z:
++        names=z.namelist()
++        if len(names)!=len(set(names)):raise ValueError('Duplicate package members')
++        return {n:sha256(z.read(n)).digest() for n in names if n!='.signature.p7s'}
++
++
++def compare_packages(expected: Path, actual: Path) -> None:
++    if package_payload(expected)!=package_payload(actual):
++        raise ValueError('Restored package differs from the tested package')
++    print('Restored package matches every non-signature package member')
++
++
++def stage(build: Path, rid: str, destination: Path, commit: str) -> None:
++    if not re.fullmatch('[0-9a-f]{40}', commit):
++        raise ValueError('Native provenance requires a full Git commit')
++    p = BY_RID[rid]
++    source = build/'csharp-native'/p['file']
++    data = source.read_bytes(); check_binary(data,rid)
++    output = destination/'runtimes'/rid/'native'/p['file']
++    output.parent.mkdir(parents=True,exist_ok=True); output.write_bytes(data)
++    manifest = dict(package='DanceRudiments',version=version(),source_commit=commit,
++                    abi_version=1,rid=rid,file=p['file'],sha256=sha256(data).hexdigest(),
++                    size=len(data),baseline=p['baseline'],music_url=MUSIC_URL)
++    folder = destination/'manifests';folder.mkdir(parents=True,exist_ok=True)
++    (folder/(rid+'.json')).write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
++    print(f'Staged {rid}: {len(data)} bytes')
++
++
++def verify_tree(folder: Path, commit: str) -> None:
++    expected_files = set()
++    for p in PLATFORMS:
++        relative = Path('runtimes')/p['rid']/'native'/p['file']
++        expected_files.add(relative.as_posix())
++        data=(folder/relative).read_bytes();check_binary(data,p['rid'])
++        manifest=json.loads((folder/'manifests'/(p['rid']+'.json')).read_text(encoding='utf-8'))
++        expected=dict(package='DanceRudiments',version=version(),source_commit=commit,abi_version=1,
++                      rid=p['rid'],file=p['file'],sha256=sha256(data).hexdigest(),size=len(data),
++                      baseline=p['baseline'],music_url=MUSIC_URL)
++        if manifest != expected: raise ValueError('Stale or mixed native artifact: '+p['rid'])
++    actual={p.relative_to(folder).as_posix() for p in (folder/'runtimes').rglob('*') if p.is_file()}
++    if actual!=expected_files:raise ValueError('Unexpected/missing native runtime file')
++
++
++def native_reference(exporter: Path, output: Path) -> None:
++    # This executable links the original static C++ core, NOT the C ABI bridge.
++    result=subprocess.run([str(exporter.resolve())],check=True,stdout=subprocess.PIPE)
++    doc=json.loads(result.stdout)
++    rows=[]
++    for row in doc['patterns']:
++        h=sha256()
++        for xyz in row['samples']:h.update(struct.pack('<ddd',*(float(v)+0.0 for v in xyz)))
++        rows.append({**{k:v for k,v in row.items() if k!='samples'},'samples_f64le_sha256':h.hexdigest()})
++    output.parent.mkdir(parents=True,exist_ok=True)
++    output.write_text(json.dumps(dict(pips_per_beat=64,patterns=rows),ensure_ascii=True)+'\n',encoding='utf-8')
++    print(f'Independent reference: {len(rows)} patterns')
++
++
++def check_archive(path: Path, commit: str | None = None) -> None:
++    with zipfile.ZipFile(path) as z:
++        names=z.namelist()
++        if len(names)!=len(set(names)):raise ValueError('Duplicate ZIP members')
++        if any(n.startswith('/') or '\\' in n or ':' in n.split('/')[0] or '..' in n.split('/') for n in names):raise ValueError('Unsafe ZIP member')
++        required=['README.md','AUTHORS.md','docs/csharp.md','licenses/LICENSE',
++                  'licenses/THIRD_PARTY_NOTICES.md','licenses/D3-ease-LICENSE',
++                  'lib/net8.0/DanceRudiments.dll','lib/net8.0/DanceRudiments.xml',
++                  'examples/bindings/csharp/Program.cs', 'build-info/platforms.json']
++        required += ['docs/images/'+x for x in ('visualizer-amen-desktop.png','visualizer-midi-score.png','visualizer-mobile.png')]
++        for name in required:
++            if name not in names or not z.read(name):raise ValueError('Missing/empty NuGet asset: '+name)
++        for name in ('README.md','AUTHORS.md','docs/csharp.md'):
++            if MUSIC_URL not in z.read(name).decode('utf-8'):raise ValueError('Author URL missing from '+name)
++        nuspecs=[n for n in names if n.endswith('.nuspec')]
++        if len(nuspecs)!=1:raise ValueError('Expected exactly one nuspec')
++        document=ET.fromstring(z.read(nuspecs[0]));metadata=document.find('{*}metadata')
++        if metadata is None:raise ValueError('No NuGet metadata')
++        def text(tag):return metadata.findtext('{*}'+tag) or ''
++        if text('id')!='DanceRudiments' or text('version')!=version():raise ValueError('NuGet identity mismatch')
++        if text('readme')!='README.md' or text('authors')!='Kieran Simkin':raise ValueError('NuGet README/author mismatch')
++        if text('projectUrl')!=MUSIC_URL or MUSIC_URL not in text('description'):raise ValueError('NuGet music URL missing')
++        repository=metadata.find('{*}repository')
++        if repository is None or repository.get('url')!=REPOSITORY:raise ValueError('Missing repository association')
++        if not re.fullmatch('[0-9a-f]{40}', repository.get('commit') or ''):raise ValueError('Missing full package source commit')
++        if commit and repository.get('commit')!=commit:raise ValueError('Package commit mismatch')
++        seen_commits=set()
++        for p in PLATFORMS:
++            member=f'runtimes/{p["rid"]}/native/{p["file"]}'
++            data=z.read(member);check_binary(data,p['rid'])
++            m=json.loads(z.read('build-info/'+p['rid']+'.json'))
++            if m.get('sha256')!=sha256(data).hexdigest() or m.get('size')!=len(data):raise ValueError('Native payload hash mismatch: '+member)
++            if m.get('package')!='DanceRudiments' or m.get('baseline')!=p['baseline'] or m.get('rid')!=p['rid'] or m.get('file')!=p['file'] or m.get('abi_version')!=1 or m.get('version')!=version() or m.get('music_url')!=MUSIC_URL:
++                raise ValueError('Native payload metadata mismatch: '+member)
++            seen_commits.add(m.get('source_commit'))
++        if seen_commits!={repository.get('commit')} or (commit and seen_commits!={commit}):
++            raise ValueError('Mixed native source revisions')
++        if json.loads(z.read('build-info/platforms.json')) != json.loads((ROOT/'bindings/csharp/platforms.json').read_text(encoding='utf-8')):
++            raise ValueError('Platform manifest differs from source')
++        expected_runtime={f'runtimes/{p["rid"]}/native/{p["file"]}' for p in PLATFORMS}
++        if {n for n in names if n.startswith('runtimes/') and not n.endswith('/')}!=expected_runtime:
++            raise ValueError('Unexpected runtime files')
++        if any(n.endswith(('.patch','.pyd','.so.debug')) or '/obj/' in n or 'recovery_codes' in n for n in names):
++            raise ValueError('Unwanted development/private data in package')
++    print(path.name+': six architectures, native hashes, versions, author links and documentation verified')
++
++
++def pack(folder: Path, output: Path, commit: str) -> None:
++    check_source();verify_tree(folder,commit)
++    output.mkdir(parents=True,exist_ok=True)
++    subprocess.run(['dotnet','pack',str(PROJECT),'-c','Release','-o',str(output.resolve()),
++                    '-p:ContinuousIntegrationBuild=true','-p:RepositoryCommit='+commit,
++                    '-p:NativeArtifactsDir='+str(folder.resolve())],check=True)
++    target=output/('DanceRudiments.'+version()+'.nupkg')
++    check_archive(target,commit)
++    symbols=output/('DanceRudiments.'+version()+'.snupkg')
++    if not symbols.is_file():raise ValueError('Managed symbol package was not produced')
++    files=[target,symbols]
++    (output/'SHA256SUMS-csharp.txt').write_text(''.join(sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='utf-8')
++
++
++def verify_published(path: Path, feed: str, attempts: int = 12) -> None:
++    """NuGet.org adds a repository signature: compare ZIP payloads, not raw ZIP bytes.
++    GitHub feed verification uses an isolated dotnet restore in the workflow.
++    """
++    if feed!='nuget.org':raise ValueError('Only the public NuGet.org feed is supported here')
++    url=f'https://api.nuget.org/v3-flatcontainer/dancerudiments/{version()}/dancerudiments.{version()}.nupkg'
++    with zipfile.ZipFile(path) as local:
++        expected={n:sha256(local.read(n)).digest() for n in local.namelist() if n!='.signature.p7s'}
++    last=None
++    for attempt in range(attempts):
++        try:
++            with urllib.request.urlopen(url,timeout=60) as response: data=response.read(256*1024*1024+1)
++            if len(data)>256*1024*1024:raise ValueError('Published package exceeds verification size limit')
++            with zipfile.ZipFile(BytesIO(data)) as remote:
++                actual={n:sha256(remote.read(n)).digest() for n in remote.namelist() if n!='.signature.p7s'}
++            if expected!=actual:raise ValueError('Published package payload differs; refusing to treat a different same-version upload as success')
++            print('NuGet.org download matches every non-signature package member');return
++        except (urllib.error.URLError,zipfile.BadZipFile) as error:
++            last=error
++            if attempt+1<attempts:time.sleep(15)
++    raise RuntimeError('Upload/download verification did not complete: '+str(last))
++
++
++def main() -> None:
++    p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
++    sub.add_parser('version');sub.add_parser('matrix');sub.add_parser('check-source')
++    s=sub.add_parser('consumer-config');s.add_argument('--source',type=Path,required=True);s.add_argument('--output',type=Path,required=True)
++    s=sub.add_parser('compare');s.add_argument('expected',type=Path);s.add_argument('actual',type=Path)
++    s=sub.add_parser('stage');s.add_argument('--build',type=Path,required=True);s.add_argument('--rid',choices=BY_RID,required=True)
++    s.add_argument('--output',type=Path,required=True);s.add_argument('--commit',required=True)
++    s=sub.add_parser('reference');s.add_argument('--exporter',type=Path,required=True);s.add_argument('--output',type=Path,required=True)
++    s=sub.add_parser('pack');s.add_argument('--native',type=Path,required=True);s.add_argument('--output',type=Path,required=True);s.add_argument('--commit',required=True)
++    s=sub.add_parser('check');s.add_argument('package',type=Path);s.add_argument('--commit')
++    s=sub.add_parser('verify-published');s.add_argument('package',type=Path);s.add_argument('--feed',default='nuget.org')
++    a=p.parse_args()
++    try:
++        if a.command=='version':print(version())
++        elif a.command=='matrix':print(json.dumps({'include':PLATFORMS},separators=(',',':')))
++        elif a.command=='check-source':check_source()
++        elif a.command=='consumer-config':consumer_config(a.source,a.output)
++        elif a.command=='compare':compare_packages(a.expected,a.actual)
++        elif a.command=='stage':stage(a.build,a.rid,a.output,a.commit)
++        elif a.command=='reference':native_reference(a.exporter,a.output)
++        elif a.command=='pack':pack(a.native,a.output,a.commit)
++        elif a.command=='check':check_archive(a.package,a.commit)
++        elif a.command=='verify-published':verify_published(a.package,a.feed)
++    except (OSError,ValueError,KeyError,ET.ParseError,subprocess.CalledProcessError,RuntimeError,zipfile.BadZipFile) as error:
++        p.exit(1,str(error)+'\n')
++if __name__=='__main__':main()
+-- 
+2.47.3
+

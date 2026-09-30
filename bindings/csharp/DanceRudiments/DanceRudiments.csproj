@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Kieran Simkin / DanceFlow: https://kieransimkin.co.uk/my-songs/ -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Version>0.1.3</Version>
+    <PackageId>DanceRudiments</PackageId>
+    <Authors>Kieran Simkin</Authors>
+    <Description>C# bindings to the DanceFlow C++ rhythmic motion library. Music: https://kieransimkin.co.uk/my-songs/</Description>
+    <PackageProjectUrl>https://kieransimkin.co.uk/my-songs/</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/kieransimkin/DanceRudiments</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>DanceFlow;animation;music;rhythm;native;CSharp;Amen</PackageTags>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <DebugType>portable</DebugType>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <NativeArtifactsDir Condition="'$(NativeArtifactsDir)' == ''">$(MSBuildThisFileDirectory)../../../artifacts/csharp</NativeArtifactsDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="../README.md" Pack="true" PackagePath="README.md" />
+    <None Include="../../../AUTHORS.md" Pack="true" PackagePath="AUTHORS.md" />
+    <None Include="../../../LICENSE" Pack="true" PackagePath="licenses/LICENSE" />
+    <None Include="../../../collections/initial/THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="licenses/THIRD_PARTY_NOTICES.md" />
+    <None Include="../../../collections/initial/sources/d3-ease/LICENSE" Pack="true" PackagePath="licenses/D3-ease-LICENSE" />
+    <None Include="../../../docs/csharp.md" Pack="true" PackagePath="docs/csharp.md" />
+    <None Include="../../../docs/images/*.png" Pack="true" PackagePath="docs/images/" />
+    <None Include="../../../examples/bindings/csharp/*.cs;../../../examples/bindings/csharp/*.csproj" Pack="true" PackagePath="examples/bindings/csharp/" />
+    <None Include="../platforms.json" Pack="true" PackagePath="build-info/platforms.json" />
+    <None Include="$(NativeArtifactsDir)/manifests/*.json" Pack="true" PackagePath="build-info/" />
+    <None Include="$(NativeArtifactsDir)/runtimes/**/*" Pack="true" PackagePath="runtimes/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+  <!-- A normal source build may have no native artifacts. A package may not. -->
+  <Target Name="RequireAllNativeRuntimes" BeforeTargets="GenerateNuspec">
+    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/linux-x64/native/libdancerudiments_native.so')" Text="Missing linux-x64 bridge; use tools/csharp_package.py pack after native CI builds." />
+    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/linux-arm64/native/libdancerudiments_native.so')" Text="Missing linux-arm64 bridge." />
+    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/win-x64/native/dancerudiments_native.dll')" Text="Missing win-x64 bridge." />
+    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/win-arm64/native/dancerudiments_native.dll')" Text="Missing win-arm64 bridge." />
+    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/osx-x64/native/libdancerudiments_native.dylib')" Text="Missing osx-x64 bridge." />
+    <Error Condition="!Exists('$(NativeArtifactsDir)/runtimes/osx-arm64/native/libdancerudiments_native.dylib')" Text="Missing osx-arm64 bridge." />
+  </Target>
+</Project>

@@ -37,7 +37,7 @@ class DanceRudimentsConan(ConanFile):
              dst=os.path.join(self.package_folder, "docs"))
         copy(self, "*", src=os.path.join(self.source_folder, "examples", "bindings"),
              dst=os.path.join(self.package_folder, "examples", "bindings"),
-             excludes=("*/dist/*", "*/__pycache__/*"))
+             excludes=("*/dist/*", "*/bin/*", "*/obj/*", "*/__pycache__/*"))
         copy(self, "LICENSE", src=self.source_folder,
              dst=os.path.join(self.package_folder, "licenses"), keep_path=True)
         copy(self, "THIRD_PARTY_NOTICES.md", src=os.path.join(self.source_folder, "collections", "initial"),

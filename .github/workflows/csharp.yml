@@ -1,0 +1,282 @@
+name: C# binding and NuGet
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csharp-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'release' }}
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+
+jobs:
+  validate:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+      matrix: ${{ steps.version.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Validate source, version and packaging tests
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python tools/csharp_package.py check-source
+          python -m unittest discover -s tests/csharp/packaging -v
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
+            python tools/check_release_version.py "$RELEASE_TAG"
+          fi
+      - id: version
+        shell: bash
+        run: |
+          echo "value=$(python tools/csharp_package.py version)" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(python tools/csharp_package.py matrix)" >> "$GITHUB_OUTPUT"
+
+  native:
+    needs: validate
+    name: C# / native (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - name: Build the original core and its C ABI bridge
+        run: |
+          cmake -S . -B build-csharp -DCMAKE_BUILD_TYPE=Release -DDANCERUDIMENTS_BUILD_C_ABI=ON -DDANCERUDIMENTS_BUILD_DEMO_TOOLS=ON ${{ matrix.cmake_args }}
+          cmake --build build-csharp --config Release --parallel 2
+          ctest --test-dir build-csharp -C Release --output-on-failure
+      - name: Stage and identify the native runtime
+        run: |
+          python tools/csharp_package.py stage --build build-csharp --rid "${{ matrix.rid }}" --output artifacts/csharp --commit "$GITHUB_SHA"
+          EXPORTER=build-csharp/dancerudiments_export_demo
+          if [ "$RUNNER_OS" = Windows ]; then EXPORTER=build-csharp/Release/dancerudiments_export_demo.exe; fi
+          python tools/csharp_package.py reference --exporter "$EXPORTER" --output "artifacts/csharp/references/${{ matrix.rid }}.json"
+      - name: Run C# contracts on .NET 8 and .NET 10 against real C++
+        run: |
+          # cygpath prevents an MSYS-style path being passed unchanged to .NET.
+          LIBRARY="$PWD/build-csharp/csharp-native/${{ matrix.file }}"
+          if [ "$RUNNER_OS" = Windows ]; then LIBRARY=$(cygpath -w "$LIBRARY"); fi
+          export DANCERUDIMENTS_NATIVE_LIBRARY="$LIBRARY"
+          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net8.0 -- "artifacts/csharp/references/${{ matrix.rid }}.json"
+          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net10.0 -- "artifacts/csharp/references/${{ matrix.rid }}.json"
+          dotnet run --project examples/bindings/csharp/Quickstart.csproj -c Release
+      - uses: actions/upload-artifact@v6
+        with:
+          name: csharp-native-${{ matrix.rid }}
+          path: artifacts/csharp/
+          if-no-files-found: error
+
+  pack:
+    needs: [validate, native]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: csharp-native-*
+          path: artifacts/csharp
+          merge-multiple: true
+      - name: Pack only the complete, version-matched six-platform set
+        shell: bash
+        run: python tools/csharp_package.py pack --native artifacts/csharp --output artifacts/nuget --commit "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: csharp-nuget
+          path: artifacts/nuget/
+          if-no-files-found: error
+
+  consume:
+    needs: [validate, pack]
+    name: NuGet install (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.validate.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - uses: actions/download-artifact@v7
+        with:
+          name: csharp-nuget
+          path: artifacts/nuget
+      - uses: actions/download-artifact@v7
+        with:
+          name: csharp-native-${{ matrix.rid }}
+          path: artifacts/reference
+      - name: Restore only the packaged binding; exercise automatic native probing
+        env:
+          BINDING_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          unset DANCERUDIMENTS_NATIVE_LIBRARY
+          CACHE="$RUNNER_TEMP/csharp-nuget-cache"
+          python tools/csharp_package.py consumer-config --source artifacts/nuget --output artifacts/consume.config
+          dotnet restore tests/csharp/DanceRudiments.Tests.csproj --configfile artifacts/consume.config --packages "$CACHE" -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION"
+          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net8.0 --no-restore -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION" -- "artifacts/reference/references/${{ matrix.rid }}.json"
+          dotnet run --project tests/csharp/DanceRudiments.Tests.csproj -c Release -f net10.0 --no-restore -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION" -- "artifacts/reference/references/${{ matrix.rid }}.json"
+      - name: Verify explicit-RID publish output outside the checkout
+        env:
+          BINDING_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          OUT="$RUNNER_TEMP/csharp-published"
+          dotnet publish examples/bindings/csharp/Quickstart.csproj -c Release -r "${{ matrix.rid }}" --self-contained false -p:UseAppHost=false -p:UsePackedBinding=true -p:BindingPackageVersion="$BINDING_VERSION" -p:RestoreConfigFile="$PWD/artifacts/consume.config" -p:RestorePackagesPath="$RUNNER_TEMP/csharp-nuget-cache" -o "$OUT"
+          cd "$OUT"
+          dotnet Quickstart.dll
+
+  publish-nuget:
+    needs: [validate, pack, consume]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-22.04
+    environment: nuget
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v7
+        with:
+          name: csharp-nuget
+          path: artifacts/nuget
+      - name: Check NuGet publishing is configured
+        shell: bash
+        env:
+          NUGET_USER: ${{ secrets.NUGET_USER || vars.NUGET_USER }}
+        run: |
+          if [ -z "$NUGET_USER" ]; then
+            echo '::error::Set NUGET_USER and configure the NuGet.org trusted publisher for csharp.yml / environment nuget. See docs/csharp.md.'
+            exit 1
+          fi
+      - name: Obtain a short-lived NuGet.org publishing key
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ secrets.NUGET_USER || vars.NUGET_USER }}
+      - name: Publish to NuGet.org, including managed symbols
+        shell: bash
+        env:
+          NUGET_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+          BINDING_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python tools/csharp_package.py check "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" --commit "$GITHUB_SHA"
+          dotnet nuget push "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" --api-key "$NUGET_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+          python tools/csharp_package.py verify-published "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg"
+
+  publish-github-packages:
+    needs: [validate, pack, consume]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v7
+        with:
+          name: csharp-nuget
+          path: artifacts/nuget
+      - name: Publish the same package to the repository's GitHub NuGet feed
+        shell: bash
+        env:
+          GH_PACKAGE_TOKEN: ${{ github.token }}
+          GH_OWNER: ${{ github.repository_owner }}
+          BINDING_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          CONFIG="$RUNNER_TEMP/nuget-publish.config"
+          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$CONFIG"
+          trap 'rm -f "$CONFIG"' EXIT
+          dotnet nuget add source "https://nuget.pkg.github.com/$GH_OWNER/index.json" --name github --username "$GH_OWNER" --password "$GH_PACKAGE_TOKEN" --store-password-in-clear-text --configfile "$CONFIG"
+          dotnet nuget push "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" --source github --api-key "$GH_PACKAGE_TOKEN" --no-symbols --skip-duplicate --configfile "$CONFIG"
+          # Verify the feed can actually resolve this version. No registry credentials are committed.
+          dotnet new classlib -n FeedCheck -o "$RUNNER_TEMP/csharp-feed-check" --framework net10.0 --no-restore
+          dotnet add "$RUNNER_TEMP/csharp-feed-check/FeedCheck.csproj" package DanceRudiments --version "$BINDING_VERSION" --no-restore
+          dotnet restore "$RUNNER_TEMP/csharp-feed-check/FeedCheck.csproj" --configfile "$CONFIG" --packages "$RUNNER_TEMP/csharp-feed-cache" --disable-parallel
+
+          python tools/csharp_package.py compare "artifacts/nuget/DanceRudiments.$BINDING_VERSION.nupkg" "$RUNNER_TEMP/csharp-feed-cache/dancerudiments/$BINDING_VERSION/dancerudiments.$BINDING_VERSION.nupkg"
+
+  attach-release:
+    needs: [validate, pack, consume]
+    if: github.event_name == 'release'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: csharp-nuget
+          path: artifacts/nuget
+      - name: Attach .NET packages and checksums
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$RELEASE_TAG" artifacts/nuget/*.nupkg artifacts/nuget/*.snupkg artifacts/nuget/SHA256SUMS-csharp.txt --repo "$GH_REPO" --clobber

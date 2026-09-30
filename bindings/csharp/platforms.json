@@ -1,0 +1,53 @@
+{
+  "music_url": "https://kieransimkin.co.uk/my-songs/",
+  "include": [
+    {
+      "rid": "linux-x64",
+      "os": "ubuntu-22.04",
+      "architecture": "x64",
+      "file": "libdancerudiments_native.so",
+      "cmake_args": "",
+      "baseline": "Ubuntu 22.04 / glibc 2.35; system libstdc++ required"
+    },
+    {
+      "rid": "linux-arm64",
+      "os": "ubuntu-22.04-arm",
+      "architecture": "arm64",
+      "file": "libdancerudiments_native.so",
+      "cmake_args": "",
+      "baseline": "Ubuntu 22.04 / glibc 2.35; system libstdc++ required"
+    },
+    {
+      "rid": "win-x64",
+      "os": "windows-2022",
+      "architecture": "x64",
+      "file": "dancerudiments_native.dll",
+      "cmake_args": "-A x64",
+      "baseline": "Windows x64; MSVC static CRT"
+    },
+    {
+      "rid": "win-arm64",
+      "os": "windows-11-arm",
+      "architecture": "arm64",
+      "file": "dancerudiments_native.dll",
+      "cmake_args": "-A ARM64",
+      "baseline": "Windows 11 ARM64; MSVC static CRT"
+    },
+    {
+      "rid": "osx-x64",
+      "os": "macos-15-intel",
+      "architecture": "x64",
+      "file": "libdancerudiments_native.dylib",
+      "cmake_args": "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_OSX_ARCHITECTURES=x86_64",
+      "baseline": "macOS 14+; x64"
+    },
+    {
+      "rid": "osx-arm64",
+      "os": "macos-15",
+      "architecture": "arm64",
+      "file": "libdancerudiments_native.dylib",
+      "cmake_args": "-DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_OSX_ARCHITECTURES=arm64",
+      "baseline": "macOS 14+; Apple Silicon"
+    }
+  ]
+}

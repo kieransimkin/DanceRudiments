@@ -20,3 +20,8 @@ it does not implement or replace any runtime movement.
 `pulse.score.json` compiles to a one-beat private pattern called `tutorial_pulse`.
 It is not added to the default catalogue. C++ and Python also demonstrate a
 four-**pip** table solely to show the storage/ownership API, not as a dance phrase.
+
+`csharp/Quickstart.csproj` exercises the real C ABI from .NET. Build the native
+bridge first for project-reference development, or pass `UsePackedBinding=true`
+and `BindingPackageVersion` to consume a built NuGet package. See the
+[C# guide](https://github.com/kieransimkin/DanceRudiments/blob/main/docs/csharp.md).

@@ -7,6 +7,7 @@ project(DanceRudiments VERSION 0.1.3
 option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
+option(DANCERUDIMENTS_BUILD_C_ABI "Build the shared C ABI for C#/.NET" OFF)
 option(DANCERUDIMENTS_BUILD_WASM "Build the Emscripten JavaScript module" OFF)
 
 add_library(DanceRudiments STATIC src/dance_rudiments.cpp src/sampled_pattern.cpp)
@@ -115,4 +116,13 @@ install(FILES README.md AUTHORS.md DESTINATION "${DANCERUDIMENTS_DOC_DIR}")
 install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
   FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "capture.json")
 install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
-  PATTERN "dist" EXCLUDE PATTERN "__pycache__" EXCLUDE)
+  PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
+
+
+# .NET is built by dotnet, not by CMake. Only the optional native bridge is built here.
+if(DANCERUDIMENTS_BUILD_C_ABI)
+  if(EMSCRIPTEN)
+    message(FATAL_ERROR "The C# native bridge targets desktop/server .NET, not Emscripten.")
+  endif()
+  add_subdirectory(bindings/csharp/native)
+endif()

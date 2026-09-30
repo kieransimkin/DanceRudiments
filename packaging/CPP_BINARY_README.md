@@ -7,8 +7,8 @@ The illustrated multi-language guide and runnable examples are installed under
 `share/DanceRudiments/examples/bindings/`.
 
 This archive is for C++ applications on the platform named in the ZIP filename.
-It does not contain the Python or TypeScript/WASM packages; install those from
-PyPI or npm instead.
+It does not contain the Python, C#/.NET or TypeScript/WASM packages; install those from
+PyPI, NuGet.org or npm instead.
 
 ## DanceFlow ecosystem
 
@@ -52,3 +52,4 @@ Conan recipe when you need a different architecture or toolchain.
 
 - Python: `pip install dancerudiments`
 - TypeScript/WASM: `npm install @kieransimkin/dance-rudiments`
+- C#/.NET: `dotnet add package DanceRudiments` (after its first NuGet release)

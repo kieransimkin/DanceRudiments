@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Executable contract suite; no test-framework dependencies. Music: https://kieransimkin.co.uk/my-songs/ -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(UsePackedBinding)' != 'true'">
+    <ProjectReference Include="../../bindings/csharp/DanceRudiments/DanceRudiments.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UsePackedBinding)' == 'true'">
+    <PackageReference Include="DanceRudiments" Version="$(BindingPackageVersion)" />
+  </ItemGroup>
+</Project>
