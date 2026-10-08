@@ -26,3 +26,7 @@ collections/dancefloor/** text eol=lf
 harness/index.html text eol=lf
 harness/index.json text eol=lf
 harness/beats.json text eol=lf
+
+# Keep original DanceFlow artwork byte-identical across platform packages.
+**/branding/*.svg text eol=lf
+**/branding/*.png binary
