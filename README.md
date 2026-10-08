@@ -1,6 +1,6 @@
 # DanceRudiments
 
-[![DanceRudiments logo](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/v0.2.2/docs/branding/logo.png)](https://kieransimkin.co.uk/danceflow/)
+[![DanceRudiments logo](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/v0.2.3/docs/branding/logo.png)](https://kieransimkin.co.uk/danceflow/)
 
 By **[Kieran Simkin](https://kieransimkin.co.uk/)** · [DanceFlow ecosystem](https://kieransimkin.co.uk/danceflow/) · [Vector logo and usage guide](docs/branding/README.md).
 

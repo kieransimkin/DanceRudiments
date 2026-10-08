@@ -39,6 +39,7 @@ def check_source(root: Path = ROOT) -> None:
     for filename in BRANDING:
         if not (root / 'docs/branding' / filename).is_file():
             raise ValueError(f'Missing branding file: {filename}')
+    require_link((root / 'docs/branding/README.md').read_text(encoding='utf-8'), 'docs/branding/README.md')
     for family in ('atlas', 'continuum', 'club', 'dancefloor'):
         require_link((root / f'tools/build_{family}_collection.py').read_text(encoding='utf-8'), family+' README generator')
     print('Source: author metadata, first-party READMEs and screenshots verified')

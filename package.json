@@ -1,6 +1,6 @@
 {
   "name": "@kieransimkin/dance-rudiments",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Deterministic rhythmic position functions with C++, Python, TypeScript/WASM and C# bindings. https://kieransimkin.co.uk/my-songs/",
   "license": "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0",
   "type": "module",

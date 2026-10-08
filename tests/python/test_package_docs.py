@@ -56,6 +56,10 @@ class PackageDocumentationTests(unittest.TestCase):
         files=self.fixture();del files['package/docs/branding/logo.svg']
         with self.assertRaisesRegex(ValueError,'missing docs/branding/logo.svg'): self.check_zip(files)
 
+    def test_branding_readme_requires_canonical_author_link(self):
+        files=self.fixture();files['package/docs/branding/README.md']=b'https://kieransimkin.co.uk/'
+        with self.assertRaisesRegex(ValueError,'missing author music link'): self.check_zip(files)
+
     def test_wheel_metadata_required(self):
         with self.assertRaisesRegex(ValueError,'distribution metadata'): self.check_zip(self.fixture(),'.whl')
 

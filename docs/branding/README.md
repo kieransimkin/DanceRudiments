@@ -4,6 +4,8 @@
 
 By [Kieran Simkin](https://kieransimkin.co.uk/), part of [DanceFlow](https://kieransimkin.co.uk/danceflow/).
 
+Music and author website: https://kieransimkin.co.uk/my-songs/
+
 Stepped path and beat nodes: discrete deterministic rhythmic positions.
 
 Original vector artwork, created 8 October 2026. Shared family: 128-unit square, rounded 30-unit frame, 5.5-unit rounded strokes, plum `#171124`, mint `#bff7df`, gold `#f5ce85`. The symbol remains unique without colour. `logo.svg` is the self-contained dark badge; `logo-monochrome.svg` is a transparent dark mark for light surfaces; `logo.png` is the 256px registry/export companion. Prefer SVG for scaling and label tiny marks with the tool name. No external fonts, scripts, remote references, animation or model-generated assets.
