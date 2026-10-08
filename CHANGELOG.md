@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.4 - 2026-10-08
+
+- Add explicit agent capability, improvement, validation and upstream PR guidance to the README and contributor instructions.
+
 ## 0.2.3 - 2026-10-08
 
 - Preserve the canonical My Songs author link in the branding guide and validate it in source checks as well as real archives. Fixes the 0.2.2 Python/native packaging guard failure; already published 0.2.2 assets remain immutable.
