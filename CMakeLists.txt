@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.2.1
-  DESCRIPTION "Rhythmic motion for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
+project(DanceRudiments VERSION 0.2.2
+  DESCRIPTION "Deterministic rhythmic position functions for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
   HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
   LANGUAGES CXX)
 
@@ -114,7 +114,7 @@ install(FILES collections/initial/sources/d3-ease/LICENSE
 set(DANCERUDIMENTS_DOC_DIR "${CMAKE_INSTALL_DATADIR}/DanceRudiments")
 install(FILES README.md AUTHORS.md DESTINATION "${DANCERUDIMENTS_DOC_DIR}")
 install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
-  FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "capture.json")
+  FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "*.svg" PATTERN "capture.json")
 install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
   PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
 

@@ -1,7 +1,7 @@
 {
   "name": "@kieransimkin/dance-rudiments",
-  "version": "0.2.1",
-  "description": "C++/WASM rhythmic motion for DanceFlow, with TypeScript bindings. Music: https://kieransimkin.co.uk/my-songs/",
+  "version": "0.2.2",
+  "description": "Deterministic rhythmic position functions with C++, Python, TypeScript/WASM and C# bindings. https://kieransimkin.co.uk/my-songs/",
   "license": "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0",
   "type": "module",
   "main": "dist/typescript/index.js",
@@ -44,7 +44,8 @@
     "examples/bindings/",
     "docs/troubleshooting.md",
     "docs/csharp.md",
-    "bindings/csharp/README.md"
+    "bindings/csharp/README.md",
+    "docs/branding/"
   ],
   "repository": {
     "type": "git",

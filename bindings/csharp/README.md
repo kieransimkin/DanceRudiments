@@ -1,5 +1,9 @@
 # DanceRudiments for C# / .NET
 
+[![DanceRudiments logo](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/v0.2.2/docs/branding/logo.png)](https://kieransimkin.co.uk/danceflow/)
+
+[DanceFlow](https://kieransimkin.co.uk/danceflow/) · [Kieran Simkin](https://kieransimkin.co.uk/)
+
 By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)**, part of DanceFlow.
 
 A C# interface to the **original C++ rhythmic movement library**, not a managed

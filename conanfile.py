@@ -11,7 +11,7 @@ class DanceRudimentsConan(ConanFile):
     license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0"
     author = "Kieran Simkin — https://kieransimkin.co.uk/my-songs/"
     homepage = "https://kieransimkin.co.uk/my-songs/"
-    description = "Rhythmic motion for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
+    description = "Deterministic rhythmic position functions for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
     settings = "os", "compiler", "build_type", "arch"
     exports_sources = "CMakeLists.txt", "cmake/**", "include/**", "src/**", "LICENSE", "collections/initial/THIRD_PARTY_NOTICES.md", "collections/initial/sources/d3-ease/LICENSE", "README.md", "AUTHORS.md", "docs/**", "examples/bindings/**"
 

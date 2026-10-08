@@ -14,6 +14,7 @@ import zipfile
 MUSIC_URL = 'https://kieransimkin.co.uk/my-songs/'
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ('visualizer-amen-desktop.png', 'visualizer-midi-score.png', 'visualizer-mobile.png')
+BRANDING = ('logo.svg', 'logo-monochrome.svg', 'logo.png', 'README.md')
 
 
 def require_link(text: str, label: str) -> None:
@@ -35,6 +36,9 @@ def check_source(root: Path = ROOT) -> None:
     for image in IMAGES:
         if not (root / 'docs/images' / image).is_file():
             raise ValueError(f'Missing README screenshot: {image}')
+    for filename in BRANDING:
+        if not (root / 'docs/branding' / filename).is_file():
+            raise ValueError(f'Missing branding file: {filename}')
     for family in ('atlas', 'continuum', 'club', 'dancefloor'):
         require_link((root / f'tools/build_{family}_collection.py').read_text(encoding='utf-8'), family+' README generator')
     print('Source: author metadata, first-party READMEs and screenshots verified')
@@ -59,7 +63,8 @@ def check_archive(path: Path) -> None:
         raise ValueError(f'Unsupported archive: {path}')
     if not any(n.endswith('/README.md') or n == 'README.md' for n in names):
         raise ValueError(f'{path}: no packaged README')
-    for suffix in ('AUTHORS.md', 'docs/bindings.md', *('docs/images/'+n for n in IMAGES)):
+    for suffix in ('AUTHORS.md', 'docs/bindings.md', *('docs/images/'+n for n in IMAGES),
+                   *('docs/branding/'+n for n in BRANDING)):
         if not any(n == suffix or n.endswith('/'+suffix) for n in names):
             raise ValueError(f'{path}: missing {suffix}')
     if not any(n.endswith('examples/bindings/python/quickstart.py') for n in names):

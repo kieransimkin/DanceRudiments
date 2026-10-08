@@ -2,15 +2,16 @@
   <!-- Kieran Simkin / DanceFlow: https://kieransimkin.co.uk/my-songs/ -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Version>0.2.1</Version>
+    <Version>0.2.2</Version>
     <PackageId>DanceRudiments</PackageId>
     <Authors>Kieran Simkin</Authors>
-    <Description>C# bindings to the DanceFlow C++ rhythmic motion library. Music: https://kieransimkin.co.uk/my-songs/</Description>
+    <Description>Deterministic rhythmic position functions with native C# bindings. Music: https://kieransimkin.co.uk/my-songs/</Description>
     <PackageProjectUrl>https://kieransimkin.co.uk/my-songs/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/kieransimkin/DanceRudiments</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>docs/branding/logo.png</PackageIcon>
     <PackageTags>DanceFlow;animation;music;rhythm;native;CSharp;Amen</PackageTags>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -28,6 +29,7 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="../README.md" Pack="true" PackagePath="README.md" />
+    <None Include="../../../docs/branding/*" Pack="true" PackagePath="docs/branding/" />
     <None Include="../../../AUTHORS.md" Pack="true" PackagePath="AUTHORS.md" />
     <None Include="../../../LICENSE" Pack="true" PackagePath="licenses/" />
     <None Include="../../../collections/initial/THIRD_PARTY_NOTICES.md" Pack="true" PackagePath="licenses/" />

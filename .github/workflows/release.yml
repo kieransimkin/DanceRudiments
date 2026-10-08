@@ -106,7 +106,12 @@ jobs:
           mkdir -p npm-package-check
           npm pack --ignore-scripts --pack-destination npm-package-check
           python3 tools/check_package_docs.py --archive npm-package-check/*.tgz
-      - run: npm publish --access public
+      - uses: actions/upload-artifact@v6
+        with:
+          name: npm-distribution
+          path: npm-package-check/*.tgz
+          if-no-files-found: error
+      - run: npm publish ./npm-package-check/*.tgz --ignore-scripts --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -159,19 +164,19 @@ jobs:
           if-no-files-found: error
 
   attach-github-release:
-    needs: [cpp-archives, python-wheels, python-sdist]
+    needs: [cpp-archives, python-wheels, python-sdist, publish-npm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/download-artifact@v7
         with:
-          pattern: "cpp-*"
+          pattern: "{cpp-*,wheels-*,python-sdist,npm-distribution}"
           path: release-assets
           merge-multiple: true
       - name: Write SHA-256 checksums
         working-directory: release-assets
-        run: sha256sum *.zip > SHA256SUMS.txt
+        run: sha256sum *.zip *.whl *.tar.gz *.tgz > SHA256SUMS.txt
       - name: Wait for the tag preflight to create the GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -186,7 +191,7 @@ jobs:
       - name: Attach verified packages
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" release-assets/*.zip release-assets/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
+        run: gh release upload "$GITHUB_REF_NAME" release-assets/*.zip release-assets/*.whl release-assets/*.tar.gz release-assets/*.tgz release-assets/SHA256SUMS.txt --repo "$GITHUB_REPOSITORY"
 
   publish-conan:
     needs: validate

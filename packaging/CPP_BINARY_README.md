@@ -1,5 +1,9 @@
 # DanceRudiments C++ static library
 
+[![DanceRudiments logo](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/v0.2.2/docs/branding/logo.png)](https://kieransimkin.co.uk/danceflow/)
+
+[DanceFlow](https://kieransimkin.co.uk/danceflow/) · [Kieran Simkin](https://kieransimkin.co.uk/)
+
 By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)**.
 
 The illustrated multi-language guide and runnable examples are installed under

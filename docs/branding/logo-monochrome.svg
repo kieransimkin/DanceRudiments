@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">DanceRudiments logo</title>
+  <desc id="desc">Stepped path and beat nodes: discrete deterministic rhythmic positions. Original DanceFlow family mark by Kieran Simkin.</desc>
+  
+  <g fill="none" stroke="#171124" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"><path d="M30 88V68h22V46h22V30h20"/><circle cx="30" cy="88" r="6" fill="#171124" stroke="none"/><circle cx="52" cy="68" r="6" fill="#171124" stroke="none"/><circle cx="74" cy="46" r="6" fill="#171124" stroke="none"/><path d="M76 88h20M88 78v20" stroke="#171124"/></g>
+</svg>

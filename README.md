@@ -1,5 +1,12 @@
 # DanceRudiments
 
+[![DanceRudiments logo](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/v0.2.2/docs/branding/logo.png)](https://kieransimkin.co.uk/danceflow/)
+
+By **[Kieran Simkin](https://kieransimkin.co.uk/)** · [DanceFlow ecosystem](https://kieransimkin.co.uk/danceflow/) · [Vector logo and usage guide](docs/branding/README.md).
+
+Deterministic rhythmic position functions with C++, Python, TypeScript/WASM and C# bindings. https://kieransimkin.co.uk/
+
+
 By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)** · Part of the **DanceFlow** motion workflow.
 
 [Visualizer](#visualizer) · [Language bindings](#language-bindings) · [C++](#c-binding) · [Python](#python-binding) · [C# / .NET](#csharp-binding) · [TypeScript / JavaScript](#typescriptwasm-binding)

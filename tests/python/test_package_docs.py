@@ -26,6 +26,7 @@ class PackageDocumentationTests(unittest.TestCase):
             'package/docs/bindings.md': link,
             'package/examples/bindings/python/quickstart.py': b'# test example',
             **{'package/docs/images/'+name: b'PNG fixture' for name in check.IMAGES},
+            **{'package/docs/branding/'+name: link for name in check.BRANDING},
             'package/package.json': json.dumps({'homepage':check.MUSIC_URL}).encode(),
         }
 
@@ -50,6 +51,10 @@ class PackageDocumentationTests(unittest.TestCase):
     def test_missing_examples_rejected(self):
         files=self.fixture();del files['package/examples/bindings/python/quickstart.py']
         with self.assertRaisesRegex(ValueError,'runnable binding examples'): self.check_zip(files)
+
+    def test_missing_logo_rejected(self):
+        files=self.fixture();del files['package/docs/branding/logo.svg']
+        with self.assertRaisesRegex(ValueError,'missing docs/branding/logo.svg'): self.check_zip(files)
 
     def test_wheel_metadata_required(self):
         with self.assertRaisesRegex(ValueError,'distribution metadata'): self.check_zip(self.fixture(),'.whl')

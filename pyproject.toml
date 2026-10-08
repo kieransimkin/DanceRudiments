@@ -4,8 +4,8 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "dancerudiments"
-version = "0.2.1"
-description = "C++ rhythmic motion with Python bindings for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
+version = "0.2.2"
+description = "Deterministic rhythmic position functions with C++, Python, TypeScript/WASM and C# bindings. https://kieransimkin.co.uk/my-songs/"
 readme = "README.md"
 license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0"
 requires-python = ">=3.9"
@@ -21,6 +21,7 @@ classifiers = [
 dancerudiments-compile = "dancerudiments_authoring.cli:main"
 
 [project.urls]
+"DanceFlow ecosystem" = "https://kieransimkin.co.uk/danceflow/"
 "Music / My Songs" = "https://kieransimkin.co.uk/my-songs/"
 Homepage = "https://github.com/kieransimkin/DanceRudiments"
 Repository = "https://github.com/kieransimkin/DanceRudiments"
@@ -29,7 +30,7 @@ Issues = "https://github.com/kieransimkin/DanceRudiments/issues"
 [tool.scikit-build]
 cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF"]
 wheel.packages = ["python/dancerudiments_authoring"]
-sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", ".gitattributes", "examples/patterns/**", "docs/authoring.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "cmake/**", "tests/**", "README.md", "AUTHORS.md", "packaging/**", "docs/images/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md"]
+sdist.include = ["CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", ".gitattributes", "examples/patterns/**", "docs/authoring.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "cmake/**", "tests/**", "README.md", "AUTHORS.md", "packaging/**", "docs/images/**", "docs/branding/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md"]
 
 # Do not ship hand-off patches, credentials, or local example output in sdists.
 sdist.exclude = ["*.patch", "npm_recovery_codes.txt", "examples/bindings/typescript/dist/**", "bindings/csharp/**/bin/**", "bindings/csharp/**/obj/**", "tests/csharp/**/bin/**", "tests/csharp/**/obj/**", "examples/bindings/csharp/bin/**", "examples/bindings/csharp/obj/**"]
