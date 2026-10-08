@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.2.3
+project(DanceRudiments VERSION 0.2.4
   DESCRIPTION "Deterministic rhythmic position functions for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
   HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
   LANGUAGES CXX)
