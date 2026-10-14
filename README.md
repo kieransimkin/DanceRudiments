@@ -43,7 +43,7 @@ The downloadable file is the checked-in snapshot; the **Pattern visualizer**
 workflow also rebuilds a fresh version from every pushed native catalogue.
 [Beat player, rebuilding, release downloads and optional live hosting](docs/midi-harness.md).
 
-[![Four Amen-based movements compared in the real self-contained visualizer](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/main/docs/images/visualizer-amen-desktop.png)](https://github.com/kieransimkin/DanceRudiments/raw/refs/heads/main/harness/index.html)
+[![Four Amen-based movements compared in the real self-contained visualizer](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/main/docs/images/visualizer-amen-desktop.png)](https://kieransimkin.github.io/DanceRudiments/)
 
 *Captured from the running C++/WebAssembly visualizer at beat 2.75. Audio was not started during this screenshot.*
 
