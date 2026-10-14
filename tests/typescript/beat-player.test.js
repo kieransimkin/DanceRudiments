@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import '../../tools/release_demo_assets/beat_player.js';
+import '../../python/dancerudiments_authoring/harness_assets/beat_player.js';
 const {normalizeBeat,eventsBetween,midiRead,midiWrite,BeatTransport,rational}=globalThis.DanceBeat;
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 const score={id:'test',title:'Test',period_beats:'4',bpm:120,meter:[4,4],events:[

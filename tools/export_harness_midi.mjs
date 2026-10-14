@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
-import './release_demo_assets/beat_player.js';
+import '../python/dancerudiments_authoring/harness_assets/beat_player.js';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const out=path.resolve(process.argv[2]||path.join(root,'dist/midi'));
 const bpm=process.argv[3]===undefined?null:Number(process.argv[3]);

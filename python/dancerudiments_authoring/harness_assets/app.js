@@ -14,12 +14,16 @@
   const $ = id => document.getElementById(id);
   const data = JSON.parse($('data').textContent);
   const patterns = data.pack.patterns;
+  const recording = !!data.recording_mode;
+  const firstPip = recording ? data.clock.start_pip : 0;
+  const lastPip = recording ? firstPip + patterns[0].period_pips - 1 : 0;
+  const projections = new Map(patterns.map((p,i)=>[i,[0, (p.dimensions?.length||3)>1?1:-1, (p.dimensions?.length||3)>2?2:-1]]));
   let phrasePips = Math.max(...patterns.map(p => p.period_pips));
-  $('seek').max = phrasePips - 1;
+  $('seek').min = firstPip; $('seek').max = recording ? lastPip : phrasePips - 1;
   const project = v => [v[0]+.25*v[2], v[1]-.2*v[2]];
   const STORAGE = 'dancerudiments-review:' + data.collection_id + ':' + data.pack_sha256;
   const names = new Map(patterns.map((p, i) => [p.name, i]));
-  const reviews = new Map(patterns.map(p => [p.name, {status: 'keep', note: ''}]));
+  const reviews = new Map(patterns.map(p => [p.name, {status: recording ? 'unreviewed' : 'keep', note: ''}]));
   const compared = new Set();
   // The catalogue stays complete in the DOM, but offscreen canvases need not
   // allocate high-DPI backing stores or redraw on every musical-clock frame.
@@ -38,7 +42,7 @@
     dirty = true;
   }, {rootMargin:'160px 0px'});
   let native, plots = [], baseBeat = 0, origin = performance.now(), running = false;
-  let bpm = 120, amplitude = .7, dirty = true, audioURL = null, storageOK = true;
+  let bpm = recording ? data.clock.bpm : 120, amplitude = .7, dirty = true, audioURL = null, storageOK = true;
   const audio = $('audio');
   const beatLibrary = data.beat_library || {beats:[],pattern_beats:{},sources:{}};
   const beats = new Map(beatLibrary.beats.map(b=>[b.id,DanceBeat.normalizeBeat(b)]));
@@ -48,6 +52,22 @@
     updatePlay();dirty=true;
   }});
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  if(recording){
+    if(!Number.isFinite(bpm)||bpm<=0)throw Error('Recording requires BPM');
+    transport.sound=false;
+    $('bpm').value=bpm; $('bpm').disabled=true;
+    $('offset').value=data.clock.beat_zero_seconds; $('offset').disabled=true;
+    document.querySelector('.midi-panel').hidden=true;
+    document.querySelector('header h1').textContent='Audio into movement.';
+    document.querySelector('.subtitle').textContent=`${patterns.length} recordings · ${bpm} BPM (${data.clock.bpm_status}) · phase ${data.clock.phase_status}`;
+    document.querySelector('.seek').firstChild.textContent='Recording ';
+    document.querySelector('.seek').parentElement.querySelector('.small').textContent='64 pips per beat · non-looping · recorded BPM and beat origin are locked';
+    const details=document.querySelector('.audio-row').closest('details'); details.open=true;
+    details.querySelector('summary').textContent='Original track / audio-synchronised playback';
+    details.querySelector('p.small').textContent='Choose the original source track. Tempo and beat origin come from the recording, not a guess. No MIDI or audio starts automatically.';
+    document.querySelector('.section-label h2').textContent='Generated movements';
+    document.querySelector('footer p').textContent='Shared DanceRudiments visualizer. Every live position comes from the native C++/WebAssembly recording sampler. X/Y/Z are selectable projections of N-dimensional data; full recording downloads retain all dimensions. Paths are display-decimated only.';
+  }
 
   function message(text, error = false) {
     $('status').textContent = text;
@@ -96,6 +116,7 @@
   }
   function setBeat(value) {
     if (!Number.isFinite(value)) throw new Error('Beat must be finite');
+    if(recording)value=Math.max(firstPip/64,Math.min(lastPip/64,value));
     if (audioURL) {
       const time = Number($('offset').value || 0) + value*60/bpm;
       if (Number.isFinite(audio.duration)) audio.currentTime=Math.max(0,Math.min(audio.duration,time));
@@ -116,10 +137,11 @@
     finally {playPending=false;updatePlay();dirty=true;}
   }
   $('play').onclick=() => running || playPending ? pause() : play();
-  $('reset').onclick=() => { setBeat(0); dirty=true; };
+  $('reset').onclick=() => { setBeat(recording ? firstPip/64 : 0); dirty=true; };
   $('back').onclick=() => { pause(); setBeat((Math.floor(beatNow()*64+1e-8)-1)/64); };
   $('forward').onclick=() => { pause(); setBeat((Math.floor(beatNow()*64+1e-8)+1)/64); };
   $('bpm').onchange=() => {
+    if(recording){$('bpm').value=bpm;return;}
     const next=Number($('bpm').value);
     if (!Number.isFinite(next) || next<20 || next>300) { $('bpm').value=bpm; return; }
     bpm=next;transport.setBpm(next);dirty=true;
@@ -127,23 +149,37 @@
   $('amplitude').oninput=() => { amplitude=Number($('amplitude').value)/100; $('amp-label').textContent=Math.round(amplitude*100)+'%'; dirty=true; };
   $('trails').onchange=() => { for (const p of plots) p.background=null; dirty=true; };
   $('seek').oninput=() => setBeat(Number($('seek').value)/64);
-  $('offset').onchange=() => { if (!Number.isFinite(Number($('offset').value))) $('offset').value=0; dirty=true; };
+  $('offset').onchange=() => { if(recording)$('offset').value=data.clock.beat_zero_seconds; else if (!Number.isFinite(Number($('offset').value))) $('offset').value=0; dirty=true; };
   audio.addEventListener('play',() => { running=true; updatePlay(); dirty=true; });
   audio.addEventListener('pause',() => { running=false; updatePlay(); dirty=true; });
   audio.addEventListener('ended',() => { running=false; updatePlay(); dirty=true; });
   audio.addEventListener('seeked',() => { dirty=true; });
   audio.addEventListener('error',() => message('This browser could not decode the selected audio file.',true));
-  $('audio-file').onchange=() => {
+  let audioLoadSerial=0;
+  $('audio-file').onchange=async () => {
     const file=$('audio-file').files[0]; if (!file) return;
-    pause(); if (audioURL) URL.revokeObjectURL(audioURL);
-    audioURL=URL.createObjectURL(file); audio.src=audioURL; midiAvailability();
-    message('Local audio loaded. Set its BPM and beat-zero offset, then press Play.');
+    const serial=++audioLoadSerial;
+    pause();
+    try{
+      if(recording && data.audio?.sha256){
+        if(!crypto.subtle)throw Error('This browser cannot verify the source audio. Use a current browser or the included audio option.');
+        if(file.size>512*1024*1024)throw Error('Local file verification is limited to 512 MiB.');
+        const bytes=await file.arrayBuffer(), digest=await crypto.subtle.digest('SHA-256',bytes);
+        const hex=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+        if(hex!==data.audio.sha256)throw Error('This is not the source audio used by these recordings.');
+      }
+      if(serial!==audioLoadSerial)return;
+      if(audioURL)URL.revokeObjectURL(audioURL);
+      audioURL=URL.createObjectURL(file); audio.src=audioURL; midiAvailability();
+      message(recording?'Source verified. Recorded BPM and phase are retained. Press Play.':'Local audio loaded. Set its BPM and beat-zero offset, then press Play.');
+    }catch(error){message(error.message,true);}
+
   };
   $('clear-audio').onclick=() => {
-    const current=beatNow(); pause();
+    ++audioLoadSerial; const current=beatNow(); pause();
     if (audioURL) URL.revokeObjectURL(audioURL);
     audioURL=null; audio.removeAttribute('src'); audio.load(); $('audio-file').value='';
-    transport.seek(current);midiAvailability();dirty=true;message('Audio removed. MIDI beat and movements use the shared clock.');
+    transport.seek(current);midiAvailability();dirty=true;message(recording?'Audio removed. Silent preview uses the recorded BPM.':'Audio removed. MIDI beat and movements use the shared clock.');
   };
   reducedMotion.addEventListener('change', e => { if (e.matches) { pause(); message('Reduced motion enabled. Playback paused; manual stepping remains available.'); } });
   document.addEventListener('visibilitychange',() => { if (document.hidden) pause(); });
@@ -252,6 +288,18 @@
     if(running&&(x<parent.scrollLeft+left||x>parent.scrollLeft+parent.clientWidth-20))parent.scrollLeft=Math.max(0,x-parent.clientWidth*.7);
   }
   populateBeats();midiAvailability();
+  if(recording){
+    transport.seek(firstPip/64);
+    const rangeStart=data.audio?.range_start ?? Math.max(0,data.clock.beat_zero_seconds+firstPip*60/(64*bpm));
+    const rangeEnd=data.audio?.range_end ?? data.clock.beat_zero_seconds+(lastPip+1)*60/(64*bpm);
+    audio.addEventListener('loadedmetadata',()=>{audio.currentTime=rangeStart;message('Source audio loaded. Recorded BPM and beat origin are retained.');});
+    audio.addEventListener('timeupdate',()=>{
+      if(audioURL && (audio.currentTime<rangeStart-0.00001 || audio.currentTime>rangeEnd)){
+        const before=audio.currentTime<rangeStart; pause();audio.currentTime=before?rangeStart:rangeEnd;dirty=true;
+      }
+    });
+    if(data.audio?.relative_path){audioURL=data.audio.relative_path;audio.src=audioURL;midiAvailability();}
+  }
   if(beats.size)selectBeat(beats.has('amen_four_bar')?'amen_four_bar':beats.keys().next().value);
 
   function node(tag,className,text) {
@@ -283,6 +331,19 @@
     const plot={i,stage,wave,background:null,waveBackground:null,amp:-1,visible:false};
     c.motionPlot=plot;plots.push(plot);visibility.observe(c);
     const body=node('div','card-body'); body.append(node('p','desc',p.description));
+    if(recording){
+      const controls=node('div','row projection-controls');
+      ['X','Y','Z'].forEach((label,axis)=>{
+        const group=node('label','',label+' '),select=node('select');select.setAttribute('aria-label',label+' axis');
+        const zero=node('option','','Zero');zero.value='-1';select.append(zero);
+        p.dimensions.forEach((d,j)=>{const o=node('option','',d);o.value=String(j);select.append(o);});
+        select.value=String(projections.get(i)[axis]);
+        select.onchange=()=>{const mapping=[...projections.get(i)];mapping[axis]=Number(select.value);setProjection(i,mapping);};
+        group.append(select);controls.append(group);
+      });
+      body.append(controls,node('p','small',`${p.dimensions.length} dimensions · viewing the selected projection`));
+      if(p.recording_path){const link=node('a','source-button','Download full recording');link.href=p.recording_path;link.download='';body.append(link);}
+    }
     if (!comparison) {
       const buttons=node('div','review-buttons');
       for (const [value,label] of [['keep','Keep'],['maybe','Maybe'],['skip','Skip']]) {
@@ -393,14 +454,26 @@
   }
   function sample(i,pip) {
     if (!native) throw new Error('Native sampler not ready');
-    if (!Number.isInteger(i) || i<0 || i>=patterns.length || !Number.isInteger(pip) || pip < -2147483648 || pip > 2147483647)
+    if (!Number.isInteger(i)||i<0||i>=patterns.length||!Number.isInteger(pip)||pip< -2147483648||pip>2147483647)
       throw new Error('Invalid native sample index or int32 pip');
-    return [0,1,2].map(axis=>native.sample_component(i,pip,axis));
+    if(recording&&(pip<firstPip||pip>lastPip))throw new Error('Pip outside non-looping recording');
+    return Array.from({length:recording?patterns[i].dimensions.length:3},(_,axis)=>native.sample_component(i,pip,axis));
+  }
+  function viewSample(i,pip){
+    if(!recording)return sample(i,pip);
+    const safe=Math.max(firstPip,Math.min(lastPip,pip));
+    return projections.get(i).map(axis=>axis<0?0:native.sample_component(i,safe,axis));
+  }
+  function setProjection(i,mapping){
+    if(!recording||!names.has(patterns[i]?.name)||mapping.length!==3||mapping.some(a=>!Number.isInteger(a)||a< -1||a>=patterns[i].dimensions.length))throw Error('Invalid axis projection');
+    projections.set(i,[...mapping]);curves[i]=null;render();
   }
   const curves=[];
   function makeBackground(plot) {
-    if (!curves[plot.i]) curves[plot.i]=Array.from(
-      {length:patterns[plot.i].period_pips},(_,pip)=>sample(plot.i,pip));
+    if(!curves[plot.i]){
+      const total=patterns[plot.i].period_pips, count=recording?Math.min(total,2048):total;
+      curves[plot.i]=Array.from({length:count},(_,j)=>viewSample(plot.i,recording?firstPip+Math.round(j*(total-1)/Math.max(1,count-1)):j));
+    }
     const {stage,wave,i}=plot, w=stage.width,h=stage.height;
     const dpr=Math.min(devicePixelRatio||1,2), scale=Math.min(w*.38,h*.4)*amplitude;
     const bg=document.createElement('canvas');bg.width=w;bg.height=h;
@@ -410,7 +483,7 @@
     if ($('trails').checked) {
       ctx.strokeStyle='#556c83';ctx.lineWidth=dpr;ctx.beginPath();
       curves[i].forEach((v,j)=>{const q=project(v),x=w/2+q[0]*scale,y=h/2+q[1]*scale;j?ctx.lineTo(x,y):ctx.moveTo(x,y);});
-      ctx.closePath();ctx.stroke();
+      if(!recording)ctx.closePath();ctx.stroke();
     }
     ctx.fillStyle='#6b8098';ctx.font=`${10*dpr}px system-ui`;ctx.fillText('−X',9*dpr,h/2-7*dpr);ctx.fillText('+X',w-24*dpr,h/2-7*dpr);
     plot.background=bg;plot.scale=scale;plot.amp=amplitude;
@@ -418,11 +491,12 @@
     const wc=wb.getContext('2d');wc.fillStyle='#111923';wc.fillRect(0,0,wb.width,wb.height);
     const period=patterns[i].period_pips;
     wc.strokeStyle='#2b374a';wc.lineWidth=dpr*.6;
-    for (let p=0;p<=period;p+=64) { const x=p/period*wb.width;wc.beginPath();wc.moveTo(x,0);wc.lineTo(x,wb.height);wc.stroke(); }
+    for (let p=0;p<=period;p+=64*Math.max(1,Math.ceil(period/64/128))) { const x=p/period*wb.width;wc.beginPath();wc.moveTo(x,0);wc.lineTo(x,wb.height);wc.stroke(); }
     ['#bcacf8','#83e8d0', ...(curves[i].some(v=>v[2]!==0)?['#eab769']:[])].forEach((color,axis) => {
       wc.strokeStyle=color;wc.lineWidth=dpr;wc.beginPath();
-      for(let j=0;j<=period;j++) {
-        const x=j/period*wb.width,y=wb.height/2-curves[i][j%period][axis]*(wb.height*.38);
+      const length=curves[i].length, end=recording?length-1:length;
+      for(let j=0;j<=end;j++) {
+        const x=j/Math.max(1,end)*wb.width,y=wb.height/2-curves[i][j%length][axis]*(wb.height*.38);
         j?wc.lineTo(x,y):wc.moveTo(x,y);
       } wc.stroke();
     });
@@ -438,9 +512,9 @@
   function draw(beat=beatNow()) {
     if (!native) return;
     const absolutePip=Math.floor(beat*64+1e-8);
-    const pip=absolutePip;
+    const pip=recording?Math.max(firstPip,Math.min(lastPip,absolutePip)):absolutePip;
     $('clock').textContent=`Beat ${Math.floor(beat)+1} · pip ${((absolutePip%64)+64)%64}`;
-    $('seek').value=((pip%phrasePips)+phrasePips)%phrasePips; drawBeatScore(beat);
+    $('seek').value=recording?pip:((pip%phrasePips)+phrasePips)%phrasePips; drawBeatScore(beat);
     renderedLastFrame=0;
     for (const plot of plots) {
       if (!plot.visible) continue;
@@ -452,25 +526,28 @@
       const dpr=Math.min(devicePixelRatio||1,2), scale=plot.scale;
       if ($('trails').checked) {
         for(let back=24;back>=4;back-=4) {
-          const v=sample(i,pip-back);ctx.globalAlpha=.08+(1-back/28)*.35;ctx.fillStyle='#83e8d0';
+          const v=viewSample(i,pip-back);ctx.globalAlpha=.08+(1-back/28)*.35;ctx.fillStyle='#83e8d0';
           ctx.beginPath();ctx.arc(stage.width/2+project(v)[0]*scale,stage.height/2+project(v)[1]*scale,2.5*dpr,0,Math.PI*2);ctx.fill();
         } ctx.globalAlpha=1;
       }
-      const v=sample(i,pip),q=project(v),x=stage.width/2+q[0]*scale,y=stage.height/2+q[1]*scale;
+      const v=viewSample(i,pip),q=project(v),x=stage.width/2+q[0]*scale,y=stage.height/2+q[1]*scale;
       ctx.fillStyle='#83e8d0';ctx.beginPath();ctx.arc(x,y,6*dpr,0,Math.PI*2);ctx.fill();
       ctx.strokeStyle='#d3fff1';ctx.lineWidth=dpr;ctx.stroke();
       ctx.fillStyle='#9db0c8';ctx.font=`${10*dpr}px ui-monospace,monospace`;
       ctx.fillText(`x ${v[0].toFixed(2)}   y ${v[1].toFixed(2)}   z ${v[2].toFixed(2)}`,10*dpr,stage.height-9*dpr);
       const wc=wave.getContext('2d');wc.drawImage(plot.waveBackground,0,0);
-      const local=((pip%patterns[i].period_pips)+patterns[i].period_pips)%patterns[i].period_pips;
+      const local=recording?pip-firstPip:((pip%patterns[i].period_pips)+patterns[i].period_pips)%patterns[i].period_pips;
       wc.strokeStyle='#edf5ff';wc.lineWidth=dpr;wc.beginPath();
       wc.moveTo(local/patterns[i].period_pips*wave.width,0);wc.lineTo(local/patterns[i].period_pips*wave.width,wave.height);wc.stroke();
     }
     dirty=false;
   }
-  function frame() { if (running || dirty) draw(); requestAnimationFrame(frame); }
+  function frame() {
+    if(recording&&running&&beatNow()*64>=lastPip+1){pause();setBeat(lastPip/64);message('Recording complete. Restart to replay; no implicit loop.');}
+    if(running||dirty)draw();requestAnimationFrame(frame);
+  }
   // Small documented test/debug surface; never runs user-provided code.
-  window.audition={ready:false, sample, metadata:()=>patterns, setBeat:(b)=>{pause();setBeat(b);draw();},
+  window.audition={ready:false, sample, setProjection, projection:i=>projections.get(i), metadata:()=>patterns, setBeat:(b)=>{pause();setBeat(b);draw();},
     review:reviewDocument,importReview,setStatus,selectedPack,selectedScores,
     compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
        compared.clear();ids.forEach(n=>compared.add(names.get(n)));if(ids.length && $('follow-beat').checked)followBeat(ids[0]);render();},
@@ -484,6 +561,16 @@
     try {
       const bytes=decodeBase64(data.wasm);
       const result=await WebAssembly.instantiate(bytes,{});native=result.instance.exports;
+      if(recording){
+        const api=native, raw=decodeBase64(data.recording_data), base=api.table_base();
+        if(raw.length>128*1024*1024||raw.length%8)throw Error('Invalid recording data size');
+        const pages=Math.ceil((base+raw.length-api.memory.buffer.byteLength)/65536);
+        if(pages>0)api.memory.grow(pages);
+        new Uint8Array(api.memory.buffer,base,raw.length).set(raw);
+        if(patterns.some(p=>p.period_pips!==patterns[0].period_pips||p.start_pip!==firstPip||p.column_offsets.length!==p.dimensions.length||p.column_offsets.some(o=>!Number.isInteger(o)||o<0||o%8||o+p.period_pips*8>raw.length)))throw Error('Invalid recording column layout');
+        native={pattern_count:()=>patterns.length,pattern_period:i=>patterns[i].period_pips,
+          sample_component:(i,pip,axis)=>api.sample_recording(base+patterns[i].column_offsets[axis],patterns[i].period_pips,1,firstPip,pip,0)};
+      }
       if (native.pattern_count()!==patterns.length || patterns.some((p,i)=>native.pattern_period(i)!==p.period_pips))
         throw new Error('Native bank does not match the embedded collection');
       window.audition.ready=true; $('engine').textContent='C++ / WASM · offline'; $('play').disabled=false;

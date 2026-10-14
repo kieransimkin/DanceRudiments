@@ -3,6 +3,7 @@
 #include <utility>
 #include "dancerudiments/dance_rudiments.hpp"
 #include "dancerudiments/sampled_pattern.hpp"
+#include "dancerudiments/recording.hpp"
 
 namespace py = pybind11;
 using namespace dancerudiments;
@@ -11,6 +12,16 @@ using namespace pybind11::literals;
 PYBIND11_MODULE(dancerudiments, m) {
   m.doc() = "Integer-pip rhythmic position functions";
   m.attr("PIPS_PER_BEAT") = pips_per_beat;
+  py::class_<SampledRecording>(m, "SampledRecording")
+    .def(py::init<std::string, std::vector<std::string>, const std::vector<std::vector<double>>&, double, double, int>(),
+         py::arg("name"), py::arg("dimensions"), py::arg("samples"), py::arg("bpm"), py::arg("beat_zero_seconds")=0., py::arg("start_pip")=0)
+    .def_property_readonly("name", &SampledRecording::name)
+    .def_property_readonly("dimensions", &SampledRecording::dimensions)
+    .def_property_readonly("sample_count", &SampledRecording::sample_count)
+    .def_property_readonly("bpm", &SampledRecording::bpm)
+    .def_property_readonly("beat_zero_seconds", &SampledRecording::beat_zero_seconds)
+    .def_property_readonly("start_pip", &SampledRecording::start_pip)
+    .def("sample", &SampledRecording::sample, py::arg("pip").noconvert());
   py::class_<Offset3>(m, "Offset3")
     .def_readonly("x", &Offset3::x).def_readonly("y", &Offset3::y).def_readonly("z", &Offset3::z)
     .def("as_tuple", [](const Offset3& v) { return py::make_tuple(v.x, v.y, v.z); });

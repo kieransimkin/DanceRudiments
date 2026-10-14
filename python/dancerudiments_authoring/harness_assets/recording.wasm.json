@@ -1,0 +1,5 @@
+{
+  "tools/recording_wasm.cpp": "f4713cc7c773fa065715383fc68dccd91398fff08cd89167c5f24e64c0cecea9",
+  "include/dancerudiments/recording_view.hpp": "19dd73a150a82c4d9074fe4b9ba4c2f09d41e206028a6a6dc922d94e00dc4b8d",
+  "wasm_sha256": "d4cd976156860aa7a5c9665b27d2fda3cf6a0fa0da3dc0b9df365e425f1c6e29"
+}

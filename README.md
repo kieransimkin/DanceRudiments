@@ -49,7 +49,7 @@ workflow also rebuilds a fresh version from every pushed native catalogue.
 
 
 
-DanceRudiments is a C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Built-in and custom patterns each keep their own loop period. Every sampler wraps positive or negative input into its own loop before sampling.
+DanceRudiments is a C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Built-in and custom patterns each keep their own loop period. Every legacy pattern sampler wraps positive or negative input into its own loop before sampling.
 
 Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pixels, CSS units, metres, or another scale. There is deliberately no time interpolation in the public API: renderers advance with integer pips and get one exact sample per pip.
 
@@ -88,6 +88,33 @@ python tools/build_default_catalogue.py --check
 
 The release workflow builds the complete native catalogue demo plus an offline,
 audio-enabled 68-rhythm / 16-mapping comparison page. All live motion comes from C++/WASM.
+
+## BPM-synchronised N-dimensional recordings and comparison harness
+
+The additive `dancerudiments.recording` format stores **any number of named
+float64 dimensions** at **64 pips per beat**, with a mandatory BPM estimate or
+confirmed value and separate beat-phase provenance. `SampledRecording` provides
+native non-looping C++/Python playback, including captures beyond the old
+65,535-pip loop length; existing XYZ patterns and their wrapping rules are unchanged.
+
+```python
+from dancerudiments_authoring import load_recording
+from dancerudiments_authoring.harness import build_recording_harness
+r = load_recording("output/recordings/audio_recording.json")
+values = r.to_native().sample(r.clock.start_pip)  # every dimension, real C++
+build_recording_harness([r], "output/index.html")
+```
+
+The exported page uses **the same packaged visualizer assets as catalogue/release
+pages**, with native WASM sampling, shared transport, four-card comparison and
+review import/export. Recording mode adds arbitrary-axis X/Y/Z selection, locked
+BPM/origin and non-looping completion. The tiny generic WASM sampler is bundled;
+no compiler or CDN is needed at export time. StemLab's `record-rudiment` and
+`generate-batch` produce individual or varied stem/filter combinations using this
+API without copying it. Music is not bundled unless explicitly requested.
+
+See **[recording format, harness, native API and compatibility](docs/recordings.md)**.
+Build the updated source to use this unreleased API; earlier releases lack it.
 
 ## Curve and event authoring
 
@@ -154,7 +181,7 @@ another movement implementation. The examples below are checked into
 | TypeScript / JavaScript | `catalogue` (an array, not a function) | `sample(name, pip)` after `bindNative()` | `info.periodPips` | Call the custom bank's `dispose()` |
 
 **One beat is 64 pips.** Supply a signed 32-bit integer, not milliseconds or a
-floating-point beat number. Every sampler wraps negative as well as positive
+floating-point beat number. Every legacy pattern sampler wraps negative as well as positive
 positions into its own loop. Offsets are `{x, y, z}`, dimensionless and bounded to
 `[-1, 1]`; choose the pixel/metre scale in your application. There is no automatic
 interpolation, BPM detection or audio playback inside a binding.

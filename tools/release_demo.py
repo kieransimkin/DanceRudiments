@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import base64
 from hashlib import sha256
-import html
 import importlib.metadata
 import json
 import math
@@ -21,7 +20,7 @@ import tempfile
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-ASSETS = ROOT / 'tools/release_demo_assets'
+ASSETS = ROOT / 'python/dancerudiments_authoring/harness_assets'
 SAMPLER = r'''
 #include "data.inc"
 extern "C" {
@@ -98,19 +97,12 @@ def beat_library():
 
 
 def render_template(payload):
-    """Assemble a genuinely self-contained HTML document, without external assets."""
-    note = ('All movements in this native catalogue. MIDI beats and animations share one tempo. '
-            'Personal review choices do not change the library.')
-    if payload.get('source_kind') != 'native-default-catalogue':
-        note = ('Preview assembled from a retained native-export snapshot; not a fresh native build. '
-                'MIDI beats and animations share one tempo.')
-    page = (ASSETS/'template.html').read_text(encoding='utf-8')
-    for key,value in [('__VERSION__',payload['version']),('__COUNT__',str(len(payload['pack']['patterns']))),
-                      ('__COMMIT__',payload['source_commit']),('__BUILD_NOTE__',note)]:
-        page = page.replace(key,html.escape(value))
-    for key,file in [('/*__STYLE__*/','style.css'),('/*__BEAT_PLAYER__*/','beat_player.js'),('/*__APP__*/','app.js')]:
-        page = page.replace(key,(ASSETS/file).read_text(encoding='utf-8'))
-    return page.replace('__PAYLOAD__',canonical(payload).replace('<','\\u003c'))
+    # One installed renderer serves both native catalogue demos and audio recordings.
+    python_root = str(ROOT / 'python')
+    if python_root not in sys.path:
+        sys.path.insert(0, python_root)
+    from dancerudiments_authoring.harness import render_template as render
+    return render(payload)
 
 
 def build_page(patterns, version, commit, output_dir, compiler='clang++', *, native=True, notices=''):
