@@ -24,7 +24,9 @@ Project website: [https://kieransimkin.co.uk/danceflow/](https://kieransimkin.co
 
 ## ▶ Try the pattern visualizer
 
-**[Download the self-contained visualizer — HTML](https://github.com/kieransimkin/DanceRudiments/raw/refs/heads/main/harness/index.html)**
+**[▶ Open the movement visualiser](https://kieransimkin.github.io/DanceRudiments/)**
+
+[Download the self-contained HTML for offline use](https://github.com/kieransimkin/DanceRudiments/raw/refs/heads/main/harness/index.html)
 
 Save the file and open it in a browser. **No install, server, CDN, soundfont or
 separate WASM file is required.** The complete 1,731-movement catalogue includes a
