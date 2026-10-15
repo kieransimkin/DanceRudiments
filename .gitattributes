@@ -30,3 +30,10 @@ harness/beats.json text eol=lf
 # Keep original DanceFlow artwork byte-identical across platform packages.
 **/branding/*.svg text eol=lf
 **/branding/*.png binary
+
+# Recording WASM provenance hashes the actual C++ source bytes. Do not let
+# core.autocrlf turn these into CRLF on Windows; do not weaken the SHA tests.
+tools/recording_wasm.cpp text eol=lf
+include/dancerudiments/recording_view.hpp text eol=lf
+python/dancerudiments_authoring/harness_assets/recording.wasm.json text eol=lf
+python/dancerudiments_authoring/harness_assets/recording.wasm.b64 text eol=lf
