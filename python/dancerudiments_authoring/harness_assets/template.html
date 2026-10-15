@@ -12,6 +12,7 @@
   <div class="row"><button id="play" class="primary" disabled>Play</button><button id="reset" title="Reset musical phase">Restart</button>
     <button id="back" title="Previous pip">−1 pip</button><button id="forward" title="Next pip">+1 pip</button>
     <label>BPM <input id="bpm" type="number" min="20" max="300" step="1" value="120"></label>
+    <label>View <select id="view-mode" aria-label="Movement view"><option value="xy">X–Y plot</option><option value="bars">Bar graph</option></select></label>
     <label>Size <input id="amplitude" type="range" min="10" max="100" value="70"><output id="amp-label">70%</output></label>
     <label><input id="trails" type="checkbox" checked>Show paths</label>
     <output id="clock">Beat 1 · pip 0</output></div>

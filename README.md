@@ -559,3 +559,14 @@ Apply an output to a bounded subject. DanceRudiments changes position only; it m
 ## Troubleshooting history
 
 See [build and release troubleshooting](docs/troubleshooting.md) for prior failures, causes and fixes.
+
+### Switch the shared visualizer between trajectories and bars
+
+Use **Movement view → X–Y plot / Bar graph**. Bar view uses the same native
+C++/WebAssembly sample and the existing clock, shows **every dimension** as a
+separate signed bar, and keeps comparison cards on one common scale. Switching
+views does not interrupt playback or change the underlying recording. The
+selection is local to your browser; long dimension sets scroll horizontally.
+This applies to catalogue/release pages and recording harnesses exported by
+StemLab. Rebuild old generated pages to include the control. See
+[recording visualizer controls](docs/recordings.md#trajectory-or-all-dimension-bars).

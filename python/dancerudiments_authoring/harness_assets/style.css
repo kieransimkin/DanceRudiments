@@ -12,3 +12,16 @@
 #beat-score{display:block;max-width:none}.lane-switch{font-size:12px}#midi-mode{margin:4px 0;color:var(--accent)}
 .use-beat{width:100%;margin:8px 0}#beat-notes{max-width:1100px}#beat-score-details summary{white-space:normal}
 @media(max-width:650px){.beat-picker{min-width:0;flex-basis:100%}.beat-picker select,#beat-kind{max-width:100%}.midi-panel .row{gap:8px}#midi-volume{width:100px}.transport{position:static}}
+
+/* Same native samples and scale in trajectory and all-dimension bar views. */
+.channel-bars { height:250px; display:flex; gap:8px; overflow-x:auto; padding:12px;
+  background:#111923; align-items:stretch; overscroll-behavior-x:contain; }
+.channel-bars[hidden], .stage[hidden], .wave[hidden] { display:none; }
+.dimension-bar { flex:1 0 42px; min-width:42px; display:flex; flex-direction:column; align-items:center; }
+.bar-value { font:11px ui-monospace,monospace; color:#d3e4f6; padding-bottom:5px; }
+.bar-track { position:relative; flex:1; width:70%; min-width:18px; max-width:56px; background:#1c2938; }
+.bar-zero { position:absolute; left:-3px; right:-3px; top:50%; height:1px; background:#bacbd9; z-index:1; }
+.bar-fill { position:absolute; left:0; right:0; background:#83e8d0; }
+.bar-fill.negative { background:#bcacf8; }
+.bar-label { color:#b4c6d8; font-size:11px; max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-top:7px; }
+.bar-mode .projection-controls { display:none; }

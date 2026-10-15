@@ -25,7 +25,9 @@ jobs:
           python -m pip install . playwright
           python -m playwright install --with-deps chromium
       - name: Check committed sampler/source hashes and shared package APIs
-        run: python -m unittest discover -s tests/python -p test_recording.py -v
+        run: |
+          python -m unittest discover -s tests/python -p test_recording.py -v
+          python -m unittest discover -s tests/python -p test_harness_display.py -v
       - name: Check unchanged beat-player contracts after moving shared assets
         run: node --test tests/typescript/beat-player.test.js
       - name: Rebuild the generic native recording accessor
@@ -49,4 +51,5 @@ jobs:
           path: |
             recording-harness/
             recording-comparison.png
+            recording-comparison-bars.png
           if-no-files-found: warn

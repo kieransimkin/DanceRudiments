@@ -22,6 +22,9 @@
   $('seek').min = firstPip; $('seek').max = recording ? lastPip : phrasePips - 1;
   const project = v => [v[0]+.25*v[2], v[1]-.2*v[2]];
   const STORAGE = 'dancerudiments-review:' + data.collection_id + ':' + data.pack_sha256;
+  const VIEW_STORAGE = 'dancerudiments-view:' + data.collection_id;
+  let viewMode = 'xy';
+  try { if(localStorage.getItem(VIEW_STORAGE)==='bars') viewMode='bars'; } catch (_) { /* Storage is optional. */ }
   const names = new Map(patterns.map((p, i) => [p.name, i]));
   const reviews = new Map(patterns.map(p => [p.name, {status: recording ? 'unreviewed' : 'keep', note: ''}]));
   const compared = new Set();
@@ -35,6 +38,7 @@
       plot.visible = entry.isIntersecting;
       if (!plot.visible) {
         plot.background = plot.waveBackground = null;
+        plot.bars.replaceChildren(); plot.barNodes=null;
         plot.stage.width = plot.wave.width = 1;
         plot.stage.height = plot.wave.height = 1;
       }
@@ -66,7 +70,7 @@
     details.querySelector('summary').textContent='Original track / audio-synchronised playback';
     details.querySelector('p.small').textContent='Choose the original source track. Tempo and beat origin come from the recording, not a guess. No MIDI or audio starts automatically.';
     document.querySelector('.section-label h2').textContent='Generated movements';
-    document.querySelector('footer p').textContent='Shared DanceRudiments visualizer. Every live position comes from the native C++/WebAssembly recording sampler. X/Y/Z are selectable projections of N-dimensional data; full recording downloads retain all dimensions. Paths are display-decimated only.';
+    document.querySelector('footer p').textContent='Shared DanceRudiments visualizer. Every live position comes from the native C++/WebAssembly recording sampler. Switch between X/Y/Z projection and signed bars for every dimension; full recording downloads retain all dimensions. Paths are display-decimated only.';
   }
 
   function message(text, error = false) {
@@ -327,8 +331,11 @@
     const stage=node('canvas','stage'), wave=node('canvas','wave');
     stage.setAttribute('aria-label',meta.title+' motion preview');
     wave.setAttribute('aria-label','X, Y and available Z position curves over one cycle');
-    c.append(stage,wave);
-    const plot={i,stage,wave,background:null,waveBackground:null,amp:-1,visible:false};
+    const bars=node('div','channel-bars');
+    bars.setAttribute('role','group'); bars.setAttribute('aria-label',meta.title+' dimension bars');
+    c.append(stage,wave,bars);
+    const plot={i,card:c,stage,wave,bars,barNodes:null,background:null,waveBackground:null,amp:-1,visible:false};
+    applyView(plot);
     c.motionPlot=plot;plots.push(plot);visibility.observe(c);
     const body=node('div','card-body'); body.append(node('p','desc',p.description));
     if(recording){
@@ -341,7 +348,7 @@
         select.onchange=()=>{const mapping=[...projections.get(i)];mapping[axis]=Number(select.value);setProjection(i,mapping);};
         group.append(select);controls.append(group);
       });
-      body.append(controls,node('p','small',`${p.dimensions.length} dimensions · viewing the selected projection`));
+      body.append(controls,node('p','small',`${p.dimensions.length} dimensions · projection in X–Y mode; all channels in bar mode`));
       if(p.recording_path){const link=node('a','source-button','Download full recording');link.href=p.recording_path;link.download='';body.append(link);}
     }
     if (!comparison) {
@@ -377,6 +384,55 @@
       body.append(note);
     }
     c.append(body); return c;
+  }
+  function applyView(plot) {
+    const bars=viewMode==='bars';
+    plot.card.classList.toggle('bar-mode',bars);
+    plot.stage.hidden=plot.wave.hidden=bars;
+    plot.bars.hidden=!bars;
+    if(!bars){plot.bars.replaceChildren();plot.barNodes=null;}
+    plot.background=plot.waveBackground=null;
+  }
+  function setViewMode(mode) {
+    if(!['xy','bars'].includes(mode))throw Error('View mode must be xy or bars');
+    viewMode=mode; $('view-mode').value=mode;
+    $('trails').disabled=mode==='bars';
+    try {localStorage.setItem(VIEW_STORAGE,mode);} catch (_) { /* No persistence is required for playback. */ }
+    for(const plot of plots)applyView(plot);
+    dirty=true;
+  }
+  $('view-mode').value=viewMode;
+  $('trails').disabled=viewMode==='bars';
+  $('view-mode').onchange=()=>setViewMode($('view-mode').value);
+  function drawBars(plot,pip) {
+    const values=sample(plot.i,pip);
+    if(!plot.barNodes){
+      const dimensions=patterns[plot.i].dimensions || ['X','Y','Z'];
+      plot.barNodes=dimensions.map((name,axis)=>{
+        const column=node('div','dimension-bar');column.dataset.axis=String(axis);
+        const value=node('output','bar-value','0.00');
+        const track=node('div','bar-track'),fill=node('div','bar-fill');
+        track.setAttribute('role','meter');track.setAttribute('aria-label',name);
+        track.setAttribute('aria-valuemin','-1');track.setAttribute('aria-valuemax','1');
+        track.append(node('div','bar-zero'),fill);
+        const label=node('div','bar-label',name);label.title=name;
+        column.append(value,track,label);plot.bars.append(column);
+        return {column,value,track,fill};
+      });
+    }
+    values.forEach((value,axis)=>{
+      const bar=plot.barNodes[axis],height=Math.max(-1,Math.min(1,value*amplitude));
+      // The displayed number is the native value; the visual amplitude control
+      // only changes bar geometry. Keep a shared signed scale, never per-bar AGC.
+      bar.column.dataset.value=String(value);
+      bar.value.textContent=value.toFixed(2);
+      bar.track.setAttribute('aria-valuenow',String(Math.max(-1,Math.min(1,value))));
+      bar.track.setAttribute('aria-valuetext',String(value));
+      bar.track.title=String(value);
+      bar.fill.style.height=Math.abs(height)*50+'%';
+      bar.fill.style.top=(height>=0?50-height*50:50)+'%';
+      bar.fill.classList.toggle('negative',value<0);
+    });
   }
   function matches(p) {
     const family=$('family').value, status=$('review').value, search=$('search').value.trim().toLowerCase();
@@ -519,6 +575,7 @@
     for (const plot of plots) {
       if (!plot.visible) continue;
       renderedLastFrame++;
+      if(viewMode==='bars'){drawBars(plot,pip);continue;}
       const resized=sizeCanvas(plot.stage)|sizeCanvas(plot.wave);
       if (resized || !plot.background || plot.amp!==amplitude) makeBackground(plot);
       const {stage,wave,i}=plot;
@@ -547,11 +604,11 @@
     if(running||dirty)draw();requestAnimationFrame(frame);
   }
   // Small documented test/debug surface; never runs user-provided code.
-  window.audition={ready:false, sample, setProjection, projection:i=>projections.get(i), metadata:()=>patterns, setBeat:(b)=>{pause();setBeat(b);draw();},
+  window.audition={ready:false, setViewMode, sample, setProjection, projection:i=>projections.get(i), metadata:()=>patterns, setBeat:(b)=>{pause();setBeat(b);draw();},
     review:reviewDocument,importReview,setStatus,selectedPack,selectedScores,
     compare:(ids)=>{if(ids.length>4 || ids.some(n=>!names.has(n))) throw new Error('Invalid comparison');
        compared.clear();ids.forEach(n=>compared.add(names.get(n)));if(ids.length && $('follow-beat').checked)followBeat(ids[0]);render();},
-    state:()=>({running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly',midi:transport.state(),selectedBeat:selectedBeat?.id,beatCount:beats.size,renderedLastFrame,plotCount:plots.length}),
+    state:()=>({viewMode,running,beat:beatNow(),storageOK,count:patterns.length,engine:'C++/WebAssembly',midi:transport.state(),selectedBeat:selectedBeat?.id,beatCount:beats.size,renderedLastFrame,plotCount:plots.length}),
     packSha256:data.pack_sha256,
     beatMetadata:()=>[...beats.values()],selectBeat,
     transport, midiExport:()=>DanceBeat.midiWrite(selectedBeat,bpm),

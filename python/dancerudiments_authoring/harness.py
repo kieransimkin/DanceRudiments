@@ -12,6 +12,9 @@ import sys
 from ._validation import canonical_json, ScoreError
 from .recording import Recording
 
+HARNESS_DISPLAY_API_VERSION = 1
+DISPLAY_MODES = ('xy', 'bars')
+
 ASSETS = Path(__file__).with_name('harness_assets')
 MAX_HARNESS_BYTES = 128 * 1024 * 1024
 
@@ -120,6 +123,6 @@ def build_recording_harness(recordings, output, *, collection_id='audio-recordin
                   candidates=len(patterns), unique_columns=len(pool), sample_bytes=len(blob),
                   clock=asdict(clock), pack_sha256=payload['pack_sha256'], wasm_sha256=built['wasm_sha256'],
                   html_sha256=hashlib.sha256(page.encode()).hexdigest(), native_engine='C++/WebAssembly',
-                  renderer='shared DanceRudiments release visualizer', audio_included=bool(audio.get('relative_path')))
+                  renderer='shared DanceRudiments release visualizer', display_modes=list(DISPLAY_MODES), audio_included=bool(audio.get('relative_path')))
     output.with_suffix('.json').write_text(json.dumps(report, indent=2)+'\n', encoding='utf-8')
     return report

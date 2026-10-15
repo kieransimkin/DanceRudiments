@@ -178,3 +178,19 @@ Set `DANCERUDIMENTS_REQUIRE_NATIVE=1` to reject missing native tests rather than
 Existing versions/tags are unchanged by this patch. Publish a fresh matching
 release only after review and CI. This source API is not present in earlier
 published packages.
+
+## Trajectory or all-dimension bars
+
+The shared harness has a **Movement view** selector. X–Y plot is the default and
+retains its existing selectable X/Y/Z projection. **Bar graph** draws one
+signed bar for every recorded dimension (X/Y/Z for native catalogue patterns),
+not just the selected projection. Positive values extend above zero and negative
+values below it. The numerical value is the actual native sample; the existing
+amplitude slider scales the geometry only. All bars share the same fixed scale.
+Long channel sets scroll horizontally; no channels are silently dropped.
+
+The selector affects catalogue and comparison cards without seeking, pausing,
+changing the selected MIDI beat, changing review choices or rewriting recordings.
+It is remembered per collection when browser storage is available. Offscreen bars
+are released and reconstructed on demand, just like the existing canvas cache.
+Rebuild exported HTML to get a new UI: already-published snapshots are immutable.
