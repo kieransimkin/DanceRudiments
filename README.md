@@ -13,14 +13,15 @@ By **[Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/)** · Par
 
 <a id="visualizer"></a>
 
+## Before every new workflow
 
-## Agents and contributors
+Check the latest stable official release and the actual installed/imported version before starting; do not infer currency from a directory name or a development checkout. Read the current release notes, tagged capability documentation and relevant Potential problems. Use the [DanceFlow release preflight](https://github.com/kieransimkin/DanceFlow/blob/main/docs/workflows/release-preflight.md) and [complete capability references](https://github.com/kieransimkin/DanceFlow/blob/main/docs/capabilities/index.md).
 
-Agents using DanceRudiments should inspect its available capabilities, use them fully where they fit the task, and look for useful improvements wherever possible. When a required feature is missing, or a reusable reliability, usability, performance or documentation gap is found, improve this tool rather than maintaining a separate workaround. If no worthwhile change is justified, explain why.
+People and agents should consider the full ecosystem, use all capabilities that materially serve the task, compose supported files/APIs, and improve a demonstrated reusable gap in its canonical tool. Record why no worthwhile change is justified when that is the result. Keep independent tool identities, compatibility, source clocks, privacy, model/download costs and publication/deployment permissions intact. Store weights and model-specific caches in the owning project's ignored `models/`.
 
-Submit every improvement as a pull request to [DanceRudiments](https://github.com/kieransimkin/DanceRudiments/pulls), with relevant tests, documentation and a reproducible example. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for the contribution and validation workflow.
+## Find your route
 
-Project website: [https://kieransimkin.co.uk/danceflow/](https://kieransimkin.co.uk/danceflow/).
+[▶ Try the pattern visualizer](#-try-the-pattern-visualizer) · [Which package should I use?](#which-package-should-i-use) · [Included rudiments](#included-rudiments) · [Default collections](#default-collections) · [Dancefloor 06](#dancefloor-06) · [BPM-synchronised N-dimensional recordings and comparison harness](#bpm-synchronised-n-dimensional-recordings-and-comparison-harness) · [Curve and event authoring](#curve-and-event-authoring) · [Language bindings](#language-bindings) · [Harness](#harness)
 
 ## ▶ Try the pattern visualizer
 
@@ -52,6 +53,28 @@ workflow also rebuilds a fresh version from every pushed native catalogue.
 DanceRudiments is a C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Built-in and custom patterns each keep their own loop period. Every legacy pattern sampler wraps positive or negative input into its own loop before sampling.
 
 Outputs are dimensionless offsets, normally in `[-1, 1]`. The caller chooses pixels, CSS units, metres, or another scale. There is deliberately no time interpolation in the public API: renderers advance with integer pips and get one exact sample per pip.
+
+## Which package should I use?
+
+| You are building | Install or download | What you get |
+| --- | --- | --- |
+| C# / .NET application | `dotnet add package DanceRudiments` from [NuGet.org](https://www.nuget.org/packages/DanceRudiments) after its first release | Managed .NET 8+ wrapper and x64/ARM64 native assets for Windows, Linux and macOS |
+| Python application | `pip install dancerudiments` from [PyPI](https://pypi.org/project/dancerudiments/) | Native Python extension and the catalogue/sample API |
+| TypeScript or JavaScript application | `npm install @kieransimkin/dance-rudiments` from [npm](https://www.npmjs.com/package/@kieransimkin/dance-rudiments) | TypeScript declarations, JavaScript wrapper, and WebAssembly module |
+| C++ application using a listed release platform | Download the matching `DanceRudiments-cpp-<version>-<platform>-static.zip` from [GitHub Releases](https://github.com/kieransimkin/DanceRudiments/releases) | Headers, static library, CMake package files, licence, platform manifest, and instructions |
+| C++ application using another toolchain or architecture | Build from source or use `conan create` with `conanfile.py` | A library compiled for your own settings |
+
+GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI, the C# package on NuGet.org (mirrored to GitHub Packages), and the TypeScript/WASM package on npm, while GitHub release attachments include C++ archives and the separately generated HTML demos, screenshots and checksums.
+
+## Included rudiments
+
+The general motions are `bounce`, `sway`, `circle`, `figure_eight`, `step_touch`, `box_step`, `helix`, and `clay_background`.
+
+The first drum-derived set is `single_stroke_roll`, `multiple_bounce_roll`, `double_stroke_roll`, `single_paradiddle`, `flam`, `drag`, and `five_stroke_roll`. The first six mirror the fundamentals in Vic Firth's Tier One learning sequence and collectively cover the roll, diddle, flam, and drag families in the Percussive Arts Society's 40 International Drum Rudiments. A right-hand stroke moves right, a left-hand stroke moves left, and both rise slightly. Every stroke is a raised-cosine (`sin²`) gesture: zero displacement at the start, smooth attack, a rounded peak, and smooth decay back to zero before the next motion. Accents use greater amplitude rather than an instantaneous position jump.
+
+Source references: [Percussive Arts Society International Drum Rudiments](https://pas.org/rudiments/) and [Vic Firth 40 Essential Rudiments](https://ae.vicfirth.com/education/40-essential-rudiments/), accessed 28 September 2026.
+
+`clay_background` preserves the translation waypoints from the Clay/Stars `ks-particle-dance` background treatment as a normalized 256-pip lookup table. The source effect's opacity, rotation, and scale are not position offsets, so they are intentionally excluded.
 
 ## Default collections
 
@@ -134,38 +157,6 @@ native build. See the [authoring and native API guide](docs/authoring.md) for cu
 formats, event anchoring, loop validation, generated functions, Python playback,
 WASM loading, provenance and testing. These are original infrastructure examples,
 not imported third-party preset banks.
-
-## DanceFlow ecosystem
-
-DanceRudiments is the reusable motion-vocabulary layer in Kieran Simkin's DanceFlow BPM and motion-response ecosystem:
-
-- **StemLab** is the music-understanding layer. It analyses audio to produce BPM, beat, structure, stem, lyric, harmony, and related timing evidence.
-- **DanceRudiments** turns integer musical positions at 64 pips per beat into deterministic 1D, 2D, or 3D position offsets.
-- **DanceMoves** is the WordPress EPK motion runtime. It schedules and applies BPM-, cue-, and lyric-timed effects on public pages.
-
-The three components can also be used independently. They exchange explicit timing and analysis data rather than depending directly on one another. DanceRudiments' 64-pips-per-beat sampling convention is intentionally higher resolution and is not the same unit as DanceMoves' 16-ticks-per-beat runtime clock.
-
-## Which package should I use?
-
-| You are building | Install or download | What you get |
-| --- | --- | --- |
-| C# / .NET application | `dotnet add package DanceRudiments` from [NuGet.org](https://www.nuget.org/packages/DanceRudiments) after its first release | Managed .NET 8+ wrapper and x64/ARM64 native assets for Windows, Linux and macOS |
-| Python application | `pip install dancerudiments` from [PyPI](https://pypi.org/project/dancerudiments/) | Native Python extension and the catalogue/sample API |
-| TypeScript or JavaScript application | `npm install @kieransimkin/dance-rudiments` from [npm](https://www.npmjs.com/package/@kieransimkin/dance-rudiments) | TypeScript declarations, JavaScript wrapper, and WebAssembly module |
-| C++ application using a listed release platform | Download the matching `DanceRudiments-cpp-<version>-<platform>-static.zip` from [GitHub Releases](https://github.com/kieransimkin/DanceRudiments/releases) | Headers, static library, CMake package files, licence, platform manifest, and instructions |
-| C++ application using another toolchain or architecture | Build from source or use `conan create` with `conanfile.py` | A library compiled for your own settings |
-
-GitHub automatically adds “Source code” ZIP and tar.gz links to every release; those are repository snapshots, not precompiled packages. Python wheels belong on PyPI, the C# package on NuGet.org (mirrored to GitHub Packages), and the TypeScript/WASM package on npm, while GitHub release attachments include C++ archives and the separately generated HTML demos, screenshots and checksums.
-
-## Included rudiments
-
-The general motions are `bounce`, `sway`, `circle`, `figure_eight`, `step_touch`, `box_step`, `helix`, and `clay_background`.
-
-The first drum-derived set is `single_stroke_roll`, `multiple_bounce_roll`, `double_stroke_roll`, `single_paradiddle`, `flam`, `drag`, and `five_stroke_roll`. The first six mirror the fundamentals in Vic Firth's Tier One learning sequence and collectively cover the roll, diddle, flam, and drag families in the Percussive Arts Society's 40 International Drum Rudiments. A right-hand stroke moves right, a left-hand stroke moves left, and both rise slightly. Every stroke is a raised-cosine (`sin²`) gesture: zero displacement at the start, smooth attack, a rounded peak, and smooth decay back to zero before the next motion. Accents use greater amplitude rather than an instantaneous position jump.
-
-Source references: [Percussive Arts Society International Drum Rudiments](https://pas.org/rudiments/) and [Vic Firth 40 Essential Rudiments](https://ae.vicfirth.com/education/40-essential-rudiments/), accessed 28 September 2026.
-
-`clay_background` preserves the translation waypoints from the Clay/Stars `ks-particle-dance` background treatment as a normalized 256-pip lookup table. The source effect's opacity, rotation, and scale are not position offsets, so they are intentionally excluded.
 
 ## Language bindings
 
@@ -514,6 +505,34 @@ after installing this checkout's native extension. The builder also needs
 `clang++` and `wasm-ld`; screenshot automation needs Playwright/Chromium. Those
 are build-time requirements, not dependencies of the downloaded HTML.
 
+## DanceFlow ecosystem
+
+DanceRudiments is the reusable motion-vocabulary layer in Kieran Simkin's DanceFlow BPM and motion-response ecosystem:
+
+- **StemLab** is the music-understanding layer. It analyses audio to produce BPM, beat, structure, stem, lyric, harmony, and related timing evidence.
+- **DanceRudiments** turns integer musical positions at 64 pips per beat into deterministic 1D, 2D, or 3D position offsets.
+- **DanceMoves** is the WordPress EPK motion runtime. It schedules and applies BPM-, cue-, and lyric-timed effects on public pages.
+
+The three components can also be used independently. They exchange explicit timing and analysis data rather than depending directly on one another. DanceRudiments' 64-pips-per-beat sampling convention is intentionally higher resolution and is not the same unit as DanceMoves' 16-ticks-per-beat runtime clock.
+
+## Motion safety
+
+Apply an output to a bounded subject. DanceRudiments changes position only; it must not be used to add a repetitive full-frame tint, brightness, flash, or colour-grade effect. Under `prefers-reduced-motion`, do not autoplay the harness or production motion.
+
+## Troubleshooting history
+
+See [build and release troubleshooting](docs/troubleshooting.md) for prior failures, causes and fixes.
+
+### Switch the shared visualizer between trajectories and bars
+
+Use **Movement view → X–Y plot / Bar graph**. Bar view uses the same native
+C++/WebAssembly sample and the existing clock, shows **every dimension** as a
+separate signed bar, and keeps comparison cards on one common scale. Switching
+views does not interrupt playback or change the underlying recording. The
+selection is local to your browser; long dimension sets scroll horizontally.
+This applies to catalogue/release pages and recording harnesses exported by
+StemLab. Rebuild old generated pages to include the control. See
+[recording visualizer controls](docs/recordings.md#trajectory-or-all-dimension-bars).
 
 ## Continuous integration and releases
 
@@ -551,26 +570,6 @@ One-time registry configuration is required before the first release:
 5. For C#, configure the `nuget` environment and NuGet.org Trusted Publisher as described in [the C# guide](docs/csharp.md#one-time-nugetorg-setup).
 
 The PyPI publishing job requests short-lived OIDC identity. npm can use Trusted Publishing when configured; the workflow retains `NPM_TOKEN` as a bootstrap/fallback credential. See the official [PyPI Trusted Publisher](https://docs.pypi.org/trusted-publishers/using-a-publisher/) and [npm Trusted Publishing](https://docs.npmjs.com/trusted-publishers/) documentation.
-
-## Motion safety
-
-Apply an output to a bounded subject. DanceRudiments changes position only; it must not be used to add a repetitive full-frame tint, brightness, flash, or colour-grade effect. Under `prefers-reduced-motion`, do not autoplay the harness or production motion.
-
-## Troubleshooting history
-
-See [build and release troubleshooting](docs/troubleshooting.md) for prior failures, causes and fixes.
-
-### Switch the shared visualizer between trajectories and bars
-
-Use **Movement view → X–Y plot / Bar graph**. Bar view uses the same native
-C++/WebAssembly sample and the existing clock, shows **every dimension** as a
-separate signed bar, and keeps comparison cards on one common scale. Switching
-views does not interrupt playback or change the underlying recording. The
-selection is local to your browser; long dimension sets scroll horizontally.
-This applies to catalogue/release pages and recording harnesses exported by
-StemLab. Rebuild old generated pages to include the control. See
-[recording visualizer controls](docs/recordings.md#trajectory-or-all-dimension-bars).
-
 
 ## Coordinated releases and latest-release dependencies
 
@@ -612,3 +611,11 @@ Pages deployment, live HTML and seekable audio. Do not start a duplicate manual
 Arcadians analysis during that tagged build. Read
 **[the full release, resume, verification and troubleshooting guide](docs/released-viewers.md)**
 before running it. Keep this README and AGENTS.md synchronized with future changes.
+
+## Agents and contributors
+
+Agents using DanceRudiments should inspect its available capabilities, use them fully where they fit the task, and look for useful improvements wherever possible. When a required feature is missing, or a reusable reliability, usability, performance or documentation gap is found, improve this tool rather than maintaining a separate workaround. If no worthwhile change is justified, explain why.
+
+Submit every improvement as a pull request to [DanceRudiments](https://github.com/kieransimkin/DanceRudiments/pulls), with relevant tests, documentation and a reproducible example. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for the contribution and validation workflow.
+
+Project website: [https://kieransimkin.co.uk/danceflow/](https://kieransimkin.co.uk/danceflow/).
