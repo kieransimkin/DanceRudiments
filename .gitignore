@@ -26,3 +26,6 @@ Thumbs.db
 
 # Locally compiled authoring outputs
 /generated/
+
+# Project-local model weights and caches
+models/
