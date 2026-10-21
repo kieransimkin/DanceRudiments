@@ -1,0 +1,68 @@
+name: Rigify motion
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  blender-native:
+    name: Blender 5.2.2 and native motion
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DANCERUDIMENTS_REQUIRE_NATIVE: '1'
+      PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+      TMPDIR: ${{ github.workspace }}/.cache/tmp
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Probe project-local temporary output
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import tempfile
+          parent = Path(os.environ['TMPDIR'])
+          parent.mkdir(parents=True, exist_ok=True)
+          with tempfile.TemporaryDirectory(dir=parent) as directory:
+              path = Path(directory) / 'probe'
+              path.write_bytes(b'rig-motion')
+              assert path.read_bytes() == b'rig-motion'
+              renamed = path.with_name('renamed')
+              path.rename(renamed)
+              assert renamed.read_bytes() == b'rig-motion'
+              renamed.unlink()
+          PY
+      - name: Install Blender runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-6 libxxf86vm1 libxi6 libxfixes3 libxrender1 libsm6 libgl1 libegl1
+      - name: Install this native package and the pinned official bpy runtime
+        run: python -m pip install '.[motion-import]' bpy==5.2.2
+      - name: Validate profiles, interchange, clock and native playback
+        run: |
+          python -m unittest discover -s tests/python -p 'test_motion*.py' -v
+          python -m unittest discover -s tests/python -p 'test_rig*.py' -v
+          python -m unittest discover -s tests/python -p 'test_bvh_import.py' -v
+          python -m unittest discover -s tests/python -p 'test_acquire*.py' -v
+      - name: Exercise the installed CLI and synthetic timed motion
+        run: |
+          dancerudiments-rig profile human --output generated/human.profile.json
+          dancerudiments-rig channels generated/human.profile.json --output generated/human.channels.csv
+          python examples/rig-motion/quickstart.py --output generated/rig-motion --native
+          dancerudiments-rig inspect generated/rig-motion/synthetic.motion.json
+      - name: Verify generated rig, capture, native samples and actual skin deformation
+        run: python tools/test_blender_rigify_bridge.py --output-dir .cache/rigify-bridge-smoke
+      - name: Verify real BVH, FBX and glTF imports and capture timing
+        run: python tools/test_blender_motion_imports.py --output-dir .cache/blender-imports
+      - name: Verify multi-action extraction, source carriers and explicit Rigify mapping
+        run: python tools/test_blender_motion_batch.py --output-dir .cache/blender-batch

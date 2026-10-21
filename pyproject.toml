@@ -4,7 +4,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "dancerudiments"
-version = "0.3.0"
+version = "0.4.0"
 description = "Deterministic rhythmic position functions with C++, Python, TypeScript/WASM and C# bindings. https://kieransimkin.co.uk/my-songs/"
 readme = "README.md"
 license = "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0"
@@ -19,6 +19,11 @@ classifiers = [
 
 [project.scripts]
 dancerudiments-compile = "dancerudiments_authoring.cli:main"
+dancerudiments-rig = "dancerudiments_authoring.motion_cli:main"
+dancerudiments-motion-pack = "dancerudiments_authoring.motion_package_cli:main"
+
+[project.optional-dependencies]
+motion-import = ["numpy>=1.23,<3"]
 
 [project.urls]
 "DanceFlow ecosystem" = "https://kieransimkin.co.uk/danceflow/"
@@ -30,10 +35,13 @@ Issues = "https://github.com/kieransimkin/DanceRudiments/issues"
 [tool.scikit-build]
 cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF"]
 wheel.packages = ["python/dancerudiments_authoring"]
-sdist.include = ["AGENTS.md", "CONTRIBUTING.md", "CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", ".gitattributes", "examples/patterns/**", "docs/authoring.md", "docs/recordings.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "cmake/**", "tests/**", "README.md", "AUTHORS.md", "packaging/**", "docs/images/**", "docs/branding/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md"]
+# Root-only names must be anchored: otherwise they also include matching files
+# inside ignored environments, caches and optional motion packages. Explicit
+# includes override excludes, so negate caches and optional payloads here too.
+sdist.include = ["/AGENTS.md", "/CONTRIBUTING.md", "/CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", "/.gitattributes", "examples/patterns/**", "examples/rig-motion/**", "examples/motion-packages/**", "docs/motion-packages.md", "docs/blender-motion-import.md", "motion-packages/**", "docs/rig-motion.md", "docs/rigify-catalogue.md", "docs/motion-sources.md", "docs/authoring.md", "docs/recordings.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "cmake/**", "tests/**", "/README.md", "/AUTHORS.md", "packaging/**", "docs/images/**", "docs/branding/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md", "!/motion-packs/**", "!/optional-motion-packs/**", "!/.cache/**", "!**/__pycache__/**", "!**/*.pyc", "!**/*.pyo"]
 
-# Do not ship hand-off patches, credentials, or local example output in sdists.
-sdist.exclude = ["*.patch", "npm_recovery_codes.txt", "examples/bindings/typescript/dist/**", "bindings/csharp/**/bin/**", "bindings/csharp/**/obj/**", "tests/csharp/**/bin/**", "tests/csharp/**/obj/**", "examples/bindings/csharp/bin/**", "examples/bindings/csharp/obj/**"]
+# Do not ship hand-off patches, credentials, interpreter caches, or local example output in sdists.
+sdist.exclude = ["motion-packs/**", "optional-motion-packs/**", ".cache/**", "*.patch", "npm_recovery_codes.txt", "**/__pycache__/**", "**/*.pyc", "**/*.pyo", "examples/bindings/typescript/dist/**", "bindings/csharp/**/bin/**", "bindings/csharp/**/obj/**", "tests/csharp/**/bin/**", "tests/csharp/**/obj/**", "examples/bindings/csharp/bin/**", "examples/bindings/csharp/obj/**"]
 
 [tool.cibuildwheel]
 build = "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"

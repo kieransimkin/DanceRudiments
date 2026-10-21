@@ -28,6 +28,40 @@
 
 Before every new workflow run, check the latest stable official release and observe the actual runtime used by the job. Follow [the shared preflight](https://github.com/kieransimkin/DanceFlow/blob/main/docs/workflows/release-preflight.md) and this project's [people-and-agent guide](docs/ECOSYSTEM.md). Review the complete relevant capability inventory rather than only a familiar command. Consider every DanceFlow component against the actual task; use and compose all applicable supported capabilities, and improve a concrete reusable gap in its canonical repository. Record why existing capabilities suffice when no change is justified. No catalogue checklist expands the task, authorises model downloads/training, or proves integration. Preserve exact source/package identity, clocks, model-local storage, privacy, costs, immutable releases and separate deployment gates.
 
+## Rigify motion validation
+
+For rig-motion changes, read `docs/rig-motion.md`, `docs/rigify-catalogue.md` and
+`docs/motion-sources.md`. Keep native 64-pip playback and the existing normalized
+Recording contract; do not introduce another live sampler. Preserve each saved
+profile's numbered channels and fingerprint. Regenerate built-in profiles only
+with the explicitly pinned Blender/Rigify source, and label contextual components
+and custom rigs accurately. Run the `test_motion*.py` and `test_rig*.py` suites
+and `tools/test_blender_rigify_bridge.py` in the pinned `bpy` environment for
+Blender-facing changes. For interchange changes, also run
+`tools/test_blender_motion_imports.py --output-dir .cache/blender-imports`.
+The `Rigify motion` workflow supplies that optional
+integration gate. Use synthetic fixtures; research catalogue entries do not
+authorize downloading or bundling third-party motion, models or media.
+
+## Optional motion packages
+
+Read `docs/motion-packages.md` and `docs/blender-motion-import.md` for changes to
+optional model recordings. Keep motion payloads in ignored `motion-packs/`,
+outside base npm/Python/native artifacts and the default catalogue. Do not add
+automatic downloads, global data registration or a second live sampler.
+Source-package downloads require task authorization and source-specific rights;
+retain licence, attribution, source hash and conversion changes with every pack.
+Never label a source skeleton as a Rigify retarget or time-only data as musical
+beat alignment. Preserve complete-action pip bounds and distinguish action counts
+from chunk counts.
+
+Run `test_motion_packages.py`, `test_bvh_import.py`, the TypeScript package/page
+tests via `npm test`, and the existing rig/recording tests. Blender import changes
+also require `tools/test_blender_motion_batch.py` in the pinned runtime. The
+`motion-import` extra supplies NumPy only for offline BVH conversion. Verify
+base-package file lists exclude generated motion data before packaging; npm's
+separate recording WASM asset must match its checked-in source hashes.
+
 ## Preflight temporary-directory access
 
 Before any long, costly, model-backed, media-rendering, build, test, packaging or release command that creates private or atomic temporary directories, run a disposable preflight with the exact runtime, user or sandbox, and intended output parent. The probe must create a unique directory, write and read a file, atomically rename it, then remove the file and directory.

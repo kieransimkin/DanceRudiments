@@ -1,4 +1,11 @@
 import { approvedDefaults, ApprovedDefaultName } from "./defaults.js";
+export { createMotionPackageLoader, createRecordingWasmAdapter } from "./motion-packages.js";
+export type {
+  MotionJson, MotionJsonObject, MotionPackageAsset, MotionPackageClip, MotionPackageManifest,
+  MotionRigChannel, MotionRigProfile, MotionRecordingClock, MotionRecording,
+  NativeMotionRecording, NativeMotionRecordingFactory, MotionPackageTarget,
+  MotionLoadOptions, MotionPackageLoaderOptions, LoadedRigMotion, MotionPackageLoader,
+} from "./motion-packages.js";
 
 export type Offset3 = Readonly<{ x: number; y: number; z: number }>;
 export type RudimentName = "bounce" | "sway" | "circle" | "figure_eight" | "step_touch" | "box_step" | "helix" | "clay_background" | "single_stroke_roll" | "double_stroke_roll" | "multiple_bounce_roll" | "single_paradiddle" | "flam" | "drag" | "five_stroke_roll" | ApprovedDefaultName;

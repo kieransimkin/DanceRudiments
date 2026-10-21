@@ -37,3 +37,8 @@ tools/recording_wasm.cpp text eol=lf
 include/dancerudiments/recording_view.hpp text eol=lf
 python/dancerudiments_authoring/harness_assets/recording.wasm.json text eol=lf
 python/dancerudiments_authoring/harness_assets/recording.wasm.b64 text eol=lf
+
+# Numbered rig profiles and source provenance remain reproducible on Windows.
+python/dancerudiments_authoring/rig_profiles/** text eol=lf
+python/dancerudiments_authoring/motion_sources/** text eol=lf
+examples/rig-motion/** text eol=lf

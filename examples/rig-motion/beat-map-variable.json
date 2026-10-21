@@ -1,0 +1,16 @@
+{
+  "format": "dancerudiments.beat-map",
+  "schema_version": 1,
+  "pips_per_beat": 64,
+  "interpolation": "linear",
+  "anchors": [
+    {"seconds": 0, "beat": 0},
+    {"seconds": 1, "beat": 2},
+    {"seconds": 2, "beat": 3},
+    {"seconds": 2.5, "beat": 5}
+  ],
+  "source": "Synthetic hand-authored timing: 120 BPM, then 60 BPM, then 240 BPM",
+  "bpm_status": "confirmed",
+  "phase_status": "supplied",
+  "extrapolate": false
+}

@@ -1,0 +1,372 @@
+{
+  "format": "dancerudiments.motion-sources",
+  "schema_version": 1,
+  "reviewed_on": "2026-10-21",
+  "status": "research_index",
+  "included_assets": false,
+  "notes": [
+    "This catalogue describes candidate sources; it is not a downloader or a blanket permission to use every asset.",
+    "Retarget and bake source motion onto a generated Rigify rig before capturing its channel frames.",
+    "Source BPM does not establish the first-beat phase; no automatic mocap beat detection is claimed.",
+    "Human source coverage does not imply compatible animal, facial or finger animation.",
+    "Data, character, body-model, music, video and software licences must be tracked separately."
+  ],
+  "sources": [
+    {
+      "id": "100style",
+      "name": "100STYLE",
+      "source_url": "https://www.ianxmason.com/100style/",
+      "motion_family": "human_locomotion",
+      "formats": [
+        "BVH"
+      ],
+      "additional_formats_note": "Author links a separately retargeted FBX/BVH version.",
+      "access": {
+        "method": "official_download_links",
+        "account": "depends_on_selected_host"
+      },
+      "timing": {
+        "fps": 60,
+        "musical_beats": "not_documented",
+        "annotations": [
+          "trim_frame_csv"
+        ],
+        "notes": "28-bone source skeleton; supply source beat anchors or BPM and phase."
+      },
+      "license": {
+        "name": "CC-BY-4.0",
+        "url": "https://creativecommons.org/licenses/by/4.0/",
+        "evidence_url": "https://www.ianxmason.com/100style/",
+        "commercial_project_use": "permitted_with_attribution",
+        "raw_redistribution": "permitted_under_cc_by_4_0",
+        "notes": "Credit the 100STYLE Dataset and Ian Mason; indicate changes."
+      },
+      "rigify_route": "blender_import_retarget_bake_capture",
+      "recommended_role": "first_bvh_import_and_transition_source"
+    },
+    {
+      "id": "cmu",
+      "name": "CMU Graphics Lab Motion Capture Database",
+      "source_url": "https://mocap.cs.cmu.edu/",
+      "motion_family": "human_general_and_dance",
+      "formats": [
+        "ASF",
+        "AMC",
+        "C3D"
+      ],
+      "additional_formats_note": "Official resources page links third-party BVH/FBX conversions; do not conflate conversion additions with original data.",
+      "format_sources": [
+        "https://mocap.cs.cmu.edu/resources.php",
+        "https://mocap.cs.cmu.edu/info.php"
+      ],
+      "access": {
+        "method": "public_source_files_or_documented_conversion",
+        "account": "not_required_for_original_site"
+      },
+      "timing": {
+        "fps": null,
+        "musical_beats": "not_documented",
+        "annotations": [],
+        "notes": "Preserve each source recording's rate; supply beat anchors or BPM and phase."
+      },
+      "license": {
+        "name": "CMU motion capture database terms",
+        "url": "https://mocap.cs.cmu.edu/",
+        "evidence_url": "https://mocap.cs.cmu.edu/",
+        "commercial_project_use": "permitted_as_part_of_products",
+        "raw_redistribution": "general_permission_not_verified_no_resale_of_motion_data_even_converted",
+        "notes": "Homepage permits inclusion in commercially sold products and prohibits selling the motion data itself, even converted. General raw-file redistribution permission was not independently verified. Credit requested. Check conversion-specific additions and terms separately."
+      },
+      "rigify_route": "convert_to_supported_interchange_then_blender_retarget_bake_capture",
+      "recommended_role": "broad_motion_catalogue"
+    },
+    {
+      "id": "mixamo",
+      "name": "Adobe Mixamo",
+      "source_url": "https://www.mixamo.com/",
+      "motion_family": "bipedal_humanoid",
+      "formats": [
+        "FBX"
+      ],
+      "format_sources": [
+        "https://community.adobe.com/questions-696/additional-fbx-export-option-now-available-589945"
+      ],
+      "access": {
+        "method": "user_download_from_service",
+        "account": "adobe_id_required"
+      },
+      "timing": {
+        "fps": null,
+        "musical_beats": "not_documented",
+        "annotations": [],
+        "notes": "Keep the downloaded file's rate; supply beat anchors or BPM and phase."
+      },
+      "license": {
+        "name": "Adobe Mixamo terms and FAQ",
+        "url": "https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html",
+        "evidence_url": "https://helpx.adobe.com/creative-cloud/faq/mixamo-faq.html",
+        "commercial_project_use": "royalty_free_project_use",
+        "raw_redistribution": "not_established_by_faq",
+        "notes": "Not an open-data licence. Keep raw motions user-supplied; inspect applicable asset/service terms before redistribution."
+      },
+      "rigify_route": "blender_import_retarget_bake_capture",
+      "recommended_role": "user_supplied_dance_clips"
+    },
+    {
+      "id": "rokoko_free_assets",
+      "name": "Rokoko 263 free motion capture assets",
+      "source_url": "https://www.rokoko.com/resources/download-263-rokoko-motion-capture-assets",
+      "motion_family": "human_general",
+      "formats": [
+        "FBX"
+      ],
+      "skeleton_variants": [
+        "Mixamo",
+        "Unreal Engine 4",
+        "Unreal Engine 5",
+        "HumanIK"
+      ],
+      "access": {
+        "method": "official_download_page",
+        "account": "follow_current_download_requirements"
+      },
+      "timing": {
+        "fps": 30,
+        "musical_beats": "not_documented",
+        "annotations": [],
+        "notes": "Supply beat anchors or BPM and phase."
+      },
+      "license": {
+        "name": "Rokoko asset pack terms",
+        "url": "https://www.rokoko.com/resources/download-263-rokoko-motion-capture-assets",
+        "evidence_url": "https://www.rokoko.com/resources/download-263-rokoko-motion-capture-assets",
+        "commercial_project_use": "explicitly_permitted_on_source_page",
+        "raw_redistribution": "not_established_on_source_page",
+        "notes": "Preserve terms included with the downloaded pack; keep clips user-supplied."
+      },
+      "rigify_route": "blender_import_retarget_bake_capture",
+      "recommended_role": "user_supplied_motion_clips"
+    },
+    {
+      "id": "aistplusplus",
+      "name": "AIST++ Dance Motion Dataset",
+      "source_url": "https://google.github.io/aistplusplus_dataset/",
+      "motion_family": "human_dance",
+      "formats": [
+        "SMPL_parameter_pickle",
+        "keypoint_pickle"
+      ],
+      "format_sources": [
+        "https://google.github.io/aistplusplus_dataset/download.html"
+      ],
+      "access": {
+        "method": "annotation_download_and_optional_separately_authorized_media",
+        "account": "aist_application_required_for_original_media"
+      },
+      "timing": {
+        "fps": 60,
+        "musical_beats": "paired_music_and_source_bpm_metadata_not_clip_phase",
+        "annotations": [
+          "music_identifier",
+          "genre",
+          "source_bpm_table"
+        ],
+        "notes": "1,408 sequences in 10 genres. Exact 60 fps annotations. BPM metadata still needs a clip-specific first-beat offset."
+      },
+      "license": {
+        "name": "CC-BY-4.0 annotations; separate AIST media and SMPL model terms",
+        "url": "https://google.github.io/aistplusplus_dataset/factsfigures.html",
+        "evidence_url": "https://google.github.io/aistplusplus_dataset/factsfigures.html",
+        "commercial_project_use": "annotations_cc_by_4_0_original_media_requires_permission",
+        "raw_redistribution": "annotations_cc_by_4_0_original_media_prohibits_unauthorized_redistribution",
+        "notes": "Do not assign the annotation licence to music, videos or SMPL model files.",
+        "additional_terms": [
+          {
+            "asset": "original_music_and_video",
+            "url": "https://aistdancedb.ongaaccel.jp/terms_of_use/",
+            "restriction": "academic_research_only_unless_permission_no_unauthorized_redistribution"
+          },
+          {
+            "asset": "SMPL_model",
+            "url": "https://smpl.is.tue.mpg.de/",
+            "restriction": "separately_licensed_model_files"
+          }
+        ]
+      },
+      "rigify_route": "trusted_annotation_conversion_then_explicit_skeleton_retarget_bake_capture",
+      "recommended_role": "future_music_linked_dance_adapter",
+      "adapter_notes": [
+        "Do not unpickle arbitrary untrusted files automatically.",
+        "Source translation, scaling, skeleton/rest basis and phase must be preserved."
+      ],
+      "bpm_metadata": {
+        "source_url": "https://aistdancedb.ongaaccel.jp/database_structure/",
+        "suffixes": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "non_house_prefixes": [
+          "mBR",
+          "mPO",
+          "mLO",
+          "mMH",
+          "mLH",
+          "mWA",
+          "mKR",
+          "mJS",
+          "mJB"
+        ],
+        "non_house_bpm": [
+          80,
+          90,
+          100,
+          110,
+          120,
+          130
+        ],
+        "house_prefix": "mHO",
+        "house_bpm": [
+          110,
+          115,
+          120,
+          125,
+          130,
+          135
+        ],
+        "phase": "not_supplied_by_bpm_table"
+      }
+    },
+    {
+      "id": "amass",
+      "name": "AMASS",
+      "source_url": "https://amass.is.tue.mpg.de/",
+      "motion_family": "human_general",
+      "formats": [
+        "SMPL_family_body_model_parameters"
+      ],
+      "access": {
+        "method": "registration_and_per_dataset_download",
+        "account": "registration_required"
+      },
+      "timing": {
+        "fps": null,
+        "musical_beats": "not_documented",
+        "annotations": [],
+        "notes": "Source rate and body-model variant depend on the selected dataset; supply beat annotations."
+      },
+      "license": {
+        "name": "AMASS noncommercial dataset licence",
+        "url": "https://amass.is.tue.mpg.de/license.html",
+        "evidence_url": "https://amass.is.tue.mpg.de/license.html",
+        "commercial_project_use": "requires_separate_permission",
+        "raw_redistribution": "prohibited_without_permission",
+        "notes": "Noncommercial research, education and artistic projects only under default terms; body-model and component dataset terms also apply."
+      },
+      "rigify_route": "authorized_parameter_adapter_then_explicit_retarget_bake_capture",
+      "recommended_role": "optional_private_research"
+    },
+    {
+      "id": "lafan1",
+      "name": "Ubisoft La Forge Animation Dataset (LaFAN1)",
+      "source_url": "https://github.com/ubisoft/ubisoft-laforge-animation-dataset",
+      "motion_family": "human_general_and_dance",
+      "formats": [
+        "BVH"
+      ],
+      "access": {
+        "method": "git_lfs_archive",
+        "account": "not_required_for_public_repository"
+      },
+      "timing": {
+        "fps": 30,
+        "musical_beats": "not_documented",
+        "annotations": [
+          "theme",
+          "subject",
+          "take"
+        ],
+        "notes": "77 sequences including eight dance sequences; provide beat anchors or BPM and phase."
+      },
+      "license": {
+        "name": "CC-BY-NC-ND-4.0",
+        "url": "https://github.com/ubisoft/ubisoft-laforge-animation-dataset/blob/master/license.txt",
+        "evidence_url": "https://github.com/ubisoft/ubisoft-laforge-animation-dataset/blob/master/license.txt",
+        "commercial_project_use": "not_permitted_under_default_licence",
+        "raw_redistribution": "noncommercial_unadapted_material_with_attribution_only",
+        "notes": "No sharing of adapted material under the default licence; do not bundle retimed or retargeted derivatives as unrestricted examples."
+      },
+      "rigify_route": "blender_import_retarget_bake_capture_subject_to_use_rights",
+      "recommended_role": "optional_private_transition_research"
+    },
+    {
+      "id": "motorica_dance",
+      "name": "Motorica Dance Dataset",
+      "source_url": "https://github.com/simonalexanderson/MotoricaDanceDataset",
+      "motion_family": "human_dance",
+      "formats": [
+        "BVH",
+        "audio_feature_pickle"
+      ],
+      "access": {
+        "method": "author_linked_download",
+        "account": "follow_current_host_requirements"
+      },
+      "timing": {
+        "fps": null,
+        "musical_beats": "associated_music_or_features_not_verified_beat_map",
+        "annotations": [
+          "genre",
+          "dancer",
+          "music_identifier"
+        ],
+        "notes": "Check per-clip rate and audio alignment; author notes possible capture and synchronization errors. Finger coverage varies by session."
+      },
+      "license": {
+        "name": "Motorica Dance Dataset research terms",
+        "url": "https://github.com/simonalexanderson/MotoricaDanceDataset/blob/main/LICENSE.txt",
+        "evidence_url": "https://github.com/simonalexanderson/MotoricaDanceDataset",
+        "commercial_project_use": "requires_prior_written_permission",
+        "raw_redistribution": "requires_written_permission",
+        "notes": "Research use only by default. All music retains its own copyright and terms."
+      },
+      "rigify_route": "blender_import_retarget_bake_capture_subject_to_use_rights",
+      "recommended_role": "optional_private_dance_research"
+    },
+    {
+      "id": "ai4animation_quadruped",
+      "name": "AI4Animation quadruped motion",
+      "source_url": "https://github.com/sebastianstarke/AI4Animation",
+      "motion_family": "dog_quadruped",
+      "formats": [
+        "inspect_selected_project_asset"
+      ],
+      "format_sources": [
+        "https://github.com/sebastianstarke/AI4Animation/blob/master/AI4Animation/SIGGRAPH_2018/ReadMe.md"
+      ],
+      "access": {
+        "method": "author_repository_and_project_downloads",
+        "account": "follow_current_host_requirements"
+      },
+      "timing": {
+        "fps": null,
+        "musical_beats": "not_documented",
+        "annotations": [],
+        "notes": "Gait motion; inspect selected source format, rate and skeleton. No claim of musical beat annotations."
+      },
+      "license": {
+        "name": "CC-BY-NC-4.0 mocap plus project and asset terms",
+        "url": "https://github.com/sebastianstarke/AI4Animation#copyright-information",
+        "evidence_url": "https://github.com/sebastianstarke/AI4Animation",
+        "commercial_project_use": "not_permitted_under_default_terms",
+        "raw_redistribution": "subject_to_noncommercial_licence_and_selected_asset_terms",
+        "notes": "Repository identifies research/education scope; do not assume every downloaded component has identical terms."
+      },
+      "rigify_route": "quadruped_specific_retarget_then_bake_capture",
+      "recommended_role": "optional_animal_motion_research"
+    }
+  ]
+}

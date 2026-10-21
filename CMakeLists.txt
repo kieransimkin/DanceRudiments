@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.3.0
+project(DanceRudiments VERSION 0.4.0
   DESCRIPTION "Deterministic rhythmic position functions for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
   HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
   LANGUAGES CXX)
@@ -120,6 +120,8 @@ install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
   FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "*.svg" PATTERN "capture.json")
 install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
   PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
+install(DIRECTORY examples/rig-motion/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/rig-motion"
+  PATTERN "__pycache__" EXCLUDE)
 
 
 # .NET is built by dotnet, not by CMake. Only the optional native bridge is built here.

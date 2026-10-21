@@ -1,6 +1,6 @@
 {
   "name": "@kieransimkin/dance-rudiments",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Deterministic rhythmic position functions with C++, Python, TypeScript/WASM and C# bindings. https://kieransimkin.co.uk/my-songs/",
   "license": "MIT AND BSD-3-Clause AND CC0-1.0 AND CC-BY-4.0",
   "type": "module",
@@ -17,7 +17,12 @@
     "./collections/atlas": "./python/dancerudiments_authoring/packs/atlas.json",
     "./collections/continuum": "./python/dancerudiments_authoring/packs/continuum.json",
     "./collections/club": "./python/dancerudiments_authoring/packs/club.json",
-    "./collections/dancefloor": "./python/dancerudiments_authoring/packs/dancefloor.json"
+    "./collections/dancefloor": "./python/dancerudiments_authoring/packs/dancefloor.json",
+    "./motion-packages": {
+      "types": "./dist/typescript/motion-packages.d.ts",
+      "import": "./dist/typescript/motion-packages.js"
+    },
+    "./recording-wasm": "./dist/recording/recording.wasm"
   },
   "files": [
     "dist/typescript/",
@@ -47,7 +52,18 @@
     "bindings/csharp/README.md",
     "docs/branding/",
     "AGENTS.md",
-    "CONTRIBUTING.md"
+    "CONTRIBUTING.md",
+    "dist/recording/",
+    "docs/motion-packages.md",
+    "examples/motion-packages/",
+    "docs/rig-motion.md",
+    "docs/rigify-catalogue.md",
+    "docs/blender-motion-import.md",
+    "!**/__pycache__/**",
+    "!**/*.pyc",
+    "!**/*.pyo",
+    "!motion-packs/**",
+    "!optional-motion-packs/**"
   ],
   "repository": {
     "type": "git",
@@ -61,7 +77,7 @@
   },
   "scripts": {
     "test:initial": "node --test tests/typescript/initial-wasm.test.mjs",
-    "build:harness": "tsc -p tsconfig.json",
+    "build:harness": "tsc -p tsconfig.json && node tools/package_recording_runtime.mjs",
     "test": "npm run build:harness && node --test --test-isolation=none tests/typescript/*.test.js"
   },
   "devDependencies": {

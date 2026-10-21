@@ -21,7 +21,7 @@ People and agents should consider the full ecosystem, use all capabilities that 
 
 ## Find your route
 
-[▶ Try the pattern visualizer](#-try-the-pattern-visualizer) · [Which package should I use?](#which-package-should-i-use) · [Included rudiments](#included-rudiments) · [Default collections](#default-collections) · [Dancefloor 06](#dancefloor-06) · [BPM-synchronised N-dimensional recordings and comparison harness](#bpm-synchronised-n-dimensional-recordings-and-comparison-harness) · [Curve and event authoring](#curve-and-event-authoring) · [Language bindings](#language-bindings) · [Harness](#harness)
+[▶ Try the pattern visualizer](#-try-the-pattern-visualizer) · [Which package should I use?](#which-package-should-i-use) · [Included rudiments](#included-rudiments) · [Default collections](#default-collections) · [Dancefloor 06](#dancefloor-06) · [BPM-synchronised N-dimensional recordings and comparison harness](#bpm-synchronised-n-dimensional-recordings-and-comparison-harness) · [Rigify character motion](#rigify-character-motion) · [Curve and event authoring](#curve-and-event-authoring) · [Language bindings](#language-bindings) · [Harness](#harness)
 
 ## ▶ Try the pattern visualizer
 
@@ -138,6 +138,97 @@ API without copying it. Music is not bundled unless explicitly requested.
 
 See **[recording format, harness, native API and compatibility](docs/recordings.md)**.
 Build the updated source to use this unreleased API; earlier releases lack it.
+
+## Rigify character motion
+
+Typed rig motions now bind the native N-dimensional recording sampler to **Blender
+Rigify character controls**. The pinned Blender **5.2.2 LTS** catalogue covers all
+**eight built-in metarig presets** and **28 rig component types**, with numbered
+channel manifests generated from actual rigs. Each channel identifies its bone,
+property, component, physical units, range, neutral value and interpolation.
+The [catalogue guide](docs/rigify-catalogue.md) records exact counts and any
+component context; custom/generated characters can export their own profiles.
+
+Model types use a hierarchy such as
+`syn://type/danceflow/motion/rigify/metarig/human` and
+`syn://type/danceflow/motion/rigify/component/limbs/arm`.
+`synny://` is an equivalent spelling, not another type. Channel numbers persist
+across explicit profile extensions; profile hashes prevent applying a recording
+to an incompatible skeleton, rest basis or control layout.
+
+```sh
+python tools/rig_motion.py catalogue
+python tools/rig_motion.py profile human --output generated/human.profile.json
+python tools/rig_motion.py channels generated/human.profile.json --output generated/human.channels.csv
+python examples/rig-motion/quickstart.py --output generated/rig-motion --native
+```
+
+The installed CLI is `dancerudiments-rig`. The optional Blender bridge imports
+local **BVH, FBX and glTF/GLB**, captures animation already retargeted/baked onto
+Rigify controls, and applies or bakes motion using the actual native sampler.
+`dancerudiments.rig-motion` combines an exact profile with the unchanged normalized
+Recording format: float64 `[-1,1]`, 64 pips/beat, explicit bounds and non-looping
+playback. Scalar controls interpolate linearly during authoring, quaternion
+groups use shortest-path SLERP, and discrete switches hold their values.
+
+Source BPM/phase or measured beat anchors control compilation. A separate target
+beat map permits variable-tempo playback, absolute seeking and explicit
+half/double-time without accumulating frame-clock drift. The existing XYZ
+catalogue and C++ playback engine remain the movement authority.
+
+Read the **[complete rig-motion guide](docs/rig-motion.md)** for capture, compile,
+native playback, Blender baking, actual model mappings and compatibility. The
+**[motion-source research](docs/motion-sources.md)** records motion libraries and
+their format/licence/access constraints. The
+**[Blender import guide](docs/blender-motion-import.md)** covers multiple Actions,
+source-skeleton reconstruction and explicit Rigify FK mappings. Musical beat
+detection and foot-contact/transition repair remain separate authoring steps.
+The dedicated **Rigify motion** CI checks native playback and an
+actual skinned mesh using the pinned Blender runtime. These APIs require this
+development revision until a new stable package is released.
+
+### Optional model-specific motion packages
+
+Large character recordings are **independent optional packages**. They are not
+added to the 1,731 default rudiments, fetched at startup or loaded site-wide.
+Each package shares one exact numbered rig profile and stores individual
+compressed recordings with hashes, timing, source attribution and licence.
+Only the selected page or scene loads its requested clips.
+
+The new TypeScript `./motion-packages` subpath provides a lazy, scene-owned loader
+and the existing native C++/WASM recording accessor. The
+[page lifecycle example](examples/motion-packages/page-motion.mjs) follows the
+host's integer beat clock, keeps one recording chunk loaded, handles seeking and
+releases requests/memory on route exit. Rig application remains the consuming
+scene's responsibility; the existing XYZ visualizer does not become a mesh renderer.
+
+Python provides `MotionPackage`, `MotionPackageBuilder` and the explicit
+`dancerudiments-motion-pack` install/inspect/export CLI. Offline BVH import uses
+the optional `motion-import` extra; the base package does not acquire NumPy or
+Blender dependencies. Public source plans and reproducible import tools produce
+external data under ignored `motion-packs/`; the base npm/Python/native packages
+exclude those assets.
+
+Reproducible source recipes cover ACCAD human actions, 100STYLE locomotion,
+Lifelike Agility dog captures, Space-XR dance/movement recordings, a deduplicated
+CMU dance subset and all 14
+Actions of Quaternius' CC0 robot. The [source plan index](motion-packages/README.md)
+records separate data terms and acquisition commands. A collection can be large
+without increasing the base package or its startup work.
+
+```sh
+python -m pip install '.[motion-import]'
+python tools/import_motion_collection.py download --sources accad
+python tools/import_motion_collection.py build --sources accad
+python tools/motion_package.py list --root ./motion-packs
+```
+
+Complete source actions can span contiguous bounded chunks. Unknown musical
+timing is labelled **time-only**: a 60 BPM seconds coordinate is not an observed
+music tempo. Supply source tempo and beat phase or measured beat anchors before
+claiming musical alignment. The [optional-package guide](docs/motion-packages.md)
+describes formats, hosting, exact profile compatibility, source conventions,
+native playback and separate package licences.
 
 ## Curve and event authoring
 

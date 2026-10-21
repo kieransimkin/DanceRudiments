@@ -148,9 +148,21 @@ def write_document(path, document, *, overwrite=False):
         document = Recording.from_dict(document).to_dict()
     else:
         document = CompiledPack.from_dict(document).to_dict()
+    _write_json_document(path, document, overwrite=overwrite)
+
+
+def _write_json_document(path, document, *, overwrite=False):
+    """Atomically write a caller-validated, finite JSON document without clobbering."""
     payload = canonical_json(document).encode('ascii') + b'\n'
     if len(payload) > MAX_JSON_BYTES:
         raise ScoreError('JSON exceeds 64 MiB; export a shorter excerpt')
+    _write_bytes_document(path, payload, overwrite=overwrite)
+
+
+def _write_bytes_document(path, payload, *, overwrite=False):
+    """Shared atomic output for validated JSON and its CSV channel reference."""
+    if not isinstance(payload, bytes) or len(payload) > MAX_JSON_BYTES:
+        raise ScoreError('Output must be bytes within the 64 MiB document limit')
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix='.recording-')
