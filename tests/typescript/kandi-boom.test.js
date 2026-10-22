@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import * as THREE from 'three';
 import {
-  KANDI_RETARGET_MAP, calibrationRelativeQuaternion, copyFbxTextureTransform,
+  KANDI_RETARGET_AIM_CHILD, KANDI_RETARGET_MAP, calibrationRelativeQuaternion,
+  copyFbxTextureTransform, retargetAimCorrection,
 } from '../../tools/mesh_demo_assets/kandi-boom.js';
 
 test('Kandi Boom production retarget map covers the deforming target chains', () => {
@@ -17,6 +18,22 @@ test('Kandi Boom production retarget map covers the deforming target chains', ()
   assert.equal(KANDI_RETARGET_MAP.Spine02, 'LowerBack');
   assert.equal(KANDI_RETARGET_MAP.Spine, 'Spine1');
   assert.equal(KANDI_RETARGET_MAP.neck, 'Neck');
+});
+
+test('per-control retarget reference aligns Kandi A-pose aims to CMU calibration aims', () => {
+  assert.equal(KANDI_RETARGET_AIM_CHILD.LeftShoulder, 'LeftArm');
+  assert.equal(KANDI_RETARGET_AIM_CHILD.LeftArm, 'LeftForeArm');
+  assert.equal(KANDI_RETARGET_AIM_CHILD.RightArm, 'RightForeArm');
+  assert.equal(KANDI_RETARGET_AIM_CHILD.LeftUpLeg, 'LeftLeg');
+
+  const kandiLeftUpperArm = new THREE.Vector3(
+    11.505179405212402, -17.811187744140625, -1.8974318504333496,
+  );
+  const cmuCalibrationAim = new THREE.Vector3(1, -.0875, 0).normalize();
+  const correction = retargetAimCorrection(kandiLeftUpperArm, cmuCalibrationAim);
+  const aligned = kandiLeftUpperArm.clone().normalize().applyQuaternion(correction);
+  assert.ok(aligned.angleTo(cmuCalibrationAim) < 1e-7);
+  assert.ok(new THREE.Quaternion().angleTo(correction) > .5);
 });
 
 test('replacement PBR maps inherit the FBX texture coordinate contract without copying color space', () => {

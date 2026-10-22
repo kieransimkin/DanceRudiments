@@ -38,9 +38,12 @@ evidence and exact hashes.
   target-rig JSON, albedo, normal, roughness and metallic maps.
 - The source-motion packages remain lazy, independently hashed optional data.
 - A dedicated runtime target adapter composes the selected source skeleton in
-  source space. The retained converter T-pose is captured explicitly and
-  world-space rotations are retargeted to Kandi as deltas from that calibration,
-  so source setup rotations are not added a second time to Kandi's FBX rest pose.
+  source space. The retained converter T-pose is captured explicitly and used
+  to construct per-control target reference orientations from corresponding
+  parent-to-child bone directions. Kandi's FBX local joint offsets remain intact;
+  world-space motion is applied as deltas from the calibrated source reference
+  to the anatomically aligned Kandi reference rather than directly from her
+  authored A-pose bind orientation.
 - Source Z-up motion is converted to Kandi's Y-up target basis without changing
   the canonical recordings.
 - Root motion is scaled by source/target skeleton height and measured from the

@@ -40,19 +40,24 @@ only colour-space semantics remain map-specific.
 The CMU packages retain their own exact source skeletons and source profiles.
 Runtime retargeting is explicit rather than pretending those profiles are Kandi's
 rig. Each sampled source pose is first composed in source space. The retained
-converter-added calibration T-pose is captured as the source neutral pose; source
-world rotations are measured relative to that calibration, converted from the
-source Z-up basis into the Kandi Y-up basis, then applied to the corresponding
-Kandi rest-world bone orientation. Target local quaternions are solved from the
-desired target-world hierarchy. This prevents the converter calibration offsets
-from being applied on top of Kandi's already-authored FBX rest pose.
+converter-added calibration T-pose is captured as the source neutral pose, but it
+is not equated to Kandi's authored bind pose. Kandi's audited bind vectors put
+the left/right upper arms about 57/59 degrees below horizontal, whereas the CMU
+converter reference is near-T. For each unambiguous continuation chain, the
+adapter derives a minimal world-space correction that aligns Kandi's bind
+direction with the source calibration direction while preserving Kandi's own
+joint positions and bone lengths. Source world rotations are then measured
+relative to calibration, converted from source Z-up into Kandi Y-up, and applied
+from that per-control reference pose.
 
 The mapping covers hips, both leg chains, the three Kandi spine bones, neck,
 head, shoulders, arms, forearms and hands. CMU convenience joints that do not
 exist in Kandi's rig are folded into mapped descendant world transforms instead
-of creating fake Kandi controls. Global source translation drives a separate
-motion root scaled by source/target skeleton height, leaving Kandi's FBX rest
-bone offsets intact.
+of creating fake Kandi controls. Per-control orientation offsets are derived only
+from non-zero, unambiguous parent-to-child directions; zero-length CMU helper
+links are excluded. Global source translation drives a separate motion root
+scaled by source/target skeleton height, while Kandi's FBX local joint offsets
+and proportions remain unchanged.
 
 This is a custom Kandi Boom rig adapter. It is **not** labelled as Blender
 Rigify, and the source motions are not rewritten as Kandi-native recordings.
@@ -82,7 +87,7 @@ the Kandi source audit and Chromium gallery checks. Browser QA verifies that:
 - native sampled values match independent Python-native reference poses;
 - source-space joint matrices remain numerically consistent with the independent reference evaluator;
 - the rendered object is the Kandi Boom target, contains real skinned geometry and visibly deforms across captured poses;
-- the PBR maps retain the FBX diffuse texture-coordinate transform and the retained calibration frame resolves exactly to Kandi's FBX rest pose;
+- the PBR maps retain the FBX diffuse texture-coordinate transform, Kandi's local joint offsets remain unchanged, and calibration builds a verified non-trivial per-control retarget reference pose;
 - pausing, seeking, speed changes, switching performances and unloading preserve the native transport/resource contract;
 - desktop and mobile layouts retain a usable WebGL canvas and use only bundled same-origin assets.
 
