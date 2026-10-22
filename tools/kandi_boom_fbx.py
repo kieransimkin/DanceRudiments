@@ -186,7 +186,9 @@ def _matmul_error(a, b):
     # FBX row-major arrays use translation in entries 12..14. Identity check
     # works identically with row- or column-vector conventions, as long as both
     # operands follow the same convention.
-    return max(abs(sum(a[4 * i + k] * b[4 * k + j] for k in range(4)) -
+    # math.fsum keeps this serialized diagnostic identical on Python 3.9+
+    # (Python 3.12 changed the accuracy of the built-in float sum()).
+    return max(abs(math.fsum(a[4 * i + k] * b[4 * k + j] for k in range(4)) -
                    (1 if i == j else 0)) for i in range(4) for j in range(4))
 
 
