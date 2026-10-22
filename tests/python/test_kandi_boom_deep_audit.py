@@ -57,6 +57,15 @@ class KandiBoomDeepAuditTests(unittest.TestCase):
         for bone in self.pose['bones']:
             self.assertLess(_matmul_error(bone['inverse_bind_matrix'], bone['world_bind_matrix']), 0.0002)
 
+    def test_matrix_residual_is_stable_across_supported_python_versions(self):
+        # Python 3.12 changed float sum() accuracy. The audit must not depend on
+        # which supported interpreter evaluates the same four matrix products.
+        bone = next(b for b in self.pose['bones'] if b['name'] == 'head_end')
+        self.assertEqual(
+            _matmul_error(bone['inverse_bind_matrix'], bone['world_bind_matrix']),
+            self.audit['deep_validation']['bind_pose']['max_inverse_bind_identity_error'],
+        )
+
     def test_source_has_no_recorded_motion_and_is_not_rigify(self):
         animation = self.audit['deep_validation']['animation']
         self.assertEqual(animation['stack_count'], 1)
