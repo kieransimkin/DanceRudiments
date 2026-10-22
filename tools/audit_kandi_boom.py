@@ -1,4 +1,4 @@
-"""Dependency-free, read-only FBX skeleton and asset audit for Kandi Boom.
+"""Dependency-free FBX, bind-pose, geometry, skin and PNG audit for Kandi Boom.
 
 Usage: python tools/audit_kandi_boom.py --assets harness/kandi-boom/assets \
          --output harness/kandi-boom/rig-audit.json
@@ -9,6 +9,13 @@ import json
 import pathlib
 import struct
 import sys
+import zlib
+
+# Keep direct script execution and importlib test loading working from any cwd.
+_TOOLS_DIR = str(pathlib.Path(__file__).resolve().parent)
+if _TOOLS_DIR not in sys.path:
+    sys.path.insert(0, _TOOLS_DIR)
+from kandi_boom_fbx import inspect_fbx
 
 FILES = ('kandi-boom.fbx', 'albedo.png', 'normal.png', 'metallic.png', 'roughness.png')
 MAGIC = b'Kaydara FBX Binary  \x00\x1a\x00'
@@ -90,7 +97,48 @@ def _nodes(data):
     return version, objects, connections
 
 
-def inspect(assets):
+def _inspect_png(path):
+    """Validate PNG chunk boundaries and CRCs without Pillow or decompression."""
+    blob = path.read_bytes()
+    if not blob.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ValueError(f'not a PNG: {path.name}')
+    pos = 8
+    width = height = bit_depth = colour_type = None
+    found_data = False
+    found_end = False
+    while pos + 12 <= len(blob):
+        length = struct.unpack_from('>I', blob, pos)[0]
+        kind = blob[pos + 4:pos + 8]
+        start = pos + 8
+        end = start + length
+        if end + 4 > len(blob):
+            raise ValueError(f'truncated PNG chunk in {path.name}')
+        stored_crc = struct.unpack_from('>I', blob, end)[0]
+        crc = zlib.crc32(blob[pos + 4:end]) & 0xffffffff
+        if crc != stored_crc:
+            raise ValueError(f'invalid PNG CRC in {path.name}')
+        if pos == 8:
+            if kind != b'IHDR' or length != 13:
+                raise ValueError(f'invalid PNG IHDR in {path.name}')
+            width, height, bit_depth, colour_type = struct.unpack_from('>IIBB', blob, start)
+            if not width or not height or width > 8192 or height > 8192:
+                raise ValueError(f'unsupported PNG dimensions in {path.name}')
+        if kind == b'IDAT':
+            found_data = True
+        if kind == b'IEND':
+            if length != 0 or end + 4 != len(blob):
+                raise ValueError(f'malformed PNG trailer in {path.name}')
+            found_end = True
+            break
+        pos = end + 4
+    if not (found_data and found_end and bit_depth == 8 and colour_type == 6):
+        raise ValueError(f'PNG must be complete 8-bit RGBA: {path.name}')
+    return {'width': width, 'height': height, 'bit_depth': bit_depth,
+            'channels': 'RGBA', 'png_chunk_crcs_valid': True}
+
+
+def inspect_all(assets):
+    """Audit source assets and return (validated report, immutable source pose)."""
     assets = pathlib.Path(assets)
     records = {}
     for filename in FILES:
@@ -102,11 +150,16 @@ def inspect(assets):
             for block in iter(lambda: handle.read(1024 * 1024), b''):
                 digest.update(block)
         records[filename] = {'bytes': path.stat().st_size, 'sha256': digest.hexdigest()}
+    dimensions = set()
     for filename in FILES[1:]:
-        with (assets / filename).open('rb') as handle:
-            if handle.read(8) != b'\x89PNG\r\n\x1a\n':
-                raise ValueError(f'not a PNG: {filename}')
-    version, objects, connections = _nodes((assets / FILES[0]).read_bytes())
+        png = _inspect_png(assets / filename)
+        records[filename]['png'] = png
+        dimensions.add((png['width'], png['height']))
+    if dimensions != {(2048, 2048)}:
+        raise ValueError('unexpected PBR texture dimensions; expected four 2048x2048 maps')
+
+    binary = (assets / FILES[0]).read_bytes()
+    version, objects, connections = _nodes(binary)
     models = [o for o in objects if o['kind'] == 'Model']
     skeleton = [o for o in models if o['subtype'] in ('LimbNode', 'Root')]
     model_ids = {o['id']: o for o in models}
@@ -119,7 +172,11 @@ def inspect(assets):
               'parent_name': model_ids[parent_of[o['id']]]['name'] if o['id'] in parent_of else None}
              for o in skeleton]
     skins = [o for o in objects if o['kind'] == 'Deformer' and o['subtype'] in ('Skin', 'Cluster')]
-    report = {'schema': 'dancerudiments.kandi-boom.rig-audit/v1',
+
+    deep, source_rig = inspect_fbx(binary, records[FILES[0]]['sha256'])
+    if deep['bind_pose']['bone_count'] != len(bones):
+        raise ValueError('FBX hierarchy and bind pose report disagree on bone count')
+    report = {'schema': 'dancerudiments.kandi-boom.rig-audit/v2',
               'character': 'Kandi Boom', 'series': 'Bass Ben & Friends',
               'fbx_version': version, 'assets': records,
               'mesh_count': sum(o['kind'] == 'Geometry' and o['subtype'] == 'Mesh' for o in objects),
@@ -130,26 +187,45 @@ def inspect(assets):
               'bones': bones,
               'rigify_compatible': None,
               'rigify_note': 'Not inferred from FBX names; verify control semantics and rest transforms explicitly.',
-              'motion_mapping_status': 'unmapped'}
-    return report
+              'motion_mapping_status': 'unmapped',
+              'deep_validation': deep}
+    return report, source_rig
+
+
+def inspect(assets):
+    """Backwards-compatible audit API for existing callers."""
+    return inspect_all(assets)[0]
+
+
+def _write_or_verify(destination, content, verify):
+    if verify:
+        if not destination.is_file() or destination.read_text(encoding='utf-8') != content:
+            raise ValueError(f'generated audit differs from committed file: {destination}')
+    else:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(content, encoding='utf-8')
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--assets', type=pathlib.Path, default=pathlib.Path('harness/kandi-boom/assets'))
     parser.add_argument('--output', type=pathlib.Path)
+    parser.add_argument('--source-rig-output', type=pathlib.Path)
+    parser.add_argument('--check', action='store_true', help='verify output bytes instead of replacing files')
     args = parser.parse_args()
     try:
-        result = inspect(args.assets)
-        payload = json.dumps(result, indent=2, ensure_ascii=False) + '\n'
+        report, source_rig = inspect_all(args.assets)
+        payload = json.dumps(report, indent=2, ensure_ascii=False) + '\n'
+        pose = json.dumps(source_rig, indent=2, ensure_ascii=False) + '\n'
+        if args.check and (not args.output or not args.source_rig_output):
+            raise ValueError('--check requires --output and --source-rig-output')
         if args.output:
-            args.output.parent.mkdir(parents=True, exist_ok=True)
-            args.output.write_text(payload, encoding='utf-8')
+            _write_or_verify(args.output, payload, args.check)
         else:
             print(payload, end='')
-        if not result['bones']:
-            print('WARNING: no FBX LimbNode/Root objects found; rig mapping must be blocked', file=sys.stderr)
-    except (ValueError, OSError, struct.error) as exc:
+        if args.source_rig_output:
+            _write_or_verify(args.source_rig_output, pose, args.check)
+    except (ValueError, OSError, struct.error, zlib.error) as exc:
         parser.exit(1, f'Kandi Boom asset audit failed: {exc}\n')
 
 

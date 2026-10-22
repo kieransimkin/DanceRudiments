@@ -1,8 +1,8 @@
 # Kandi Boom: character integration and release plan
 
 **Series:** Bass Ben & Friends. **Character:** Kandi Boom.
-**Baseline:** DanceRudiments `f8e7a9831d5f93d5e6e8f1160f395e23d976f370` (`adding kandi`).
-**Status:** Phase 1 started. Do not call the standalone procedural FBX viewer a native
+**Baseline:** DanceRudiments `13ad1c4a77ca6c985d72de9e39bad6fbd6207b4b` (`boom`).
+**Status:** Phase 1 implementation complete; browser CI acceptance pending a run. Do not call the standalone procedural FBX viewer a native
 recording-player implementation. Do not claim that the character is a Rigify rig.
 
 ## Existing architecture to reuse
@@ -21,7 +21,7 @@ The committed `harness/kandi-boom/` assets are **not yet wired into this pipelin
 whose JavaScript maintains its own clock. Preserve it until the production
 mesh-gallery route has equivalent or better functionality.
 
-## Phase A1 — Source-asset audit (this patch)
+## Phase A1 — Source-asset audit (implemented)
 
 - [x] Add a reproducible, read-only FBX and PNG integrity audit at
   `tools/audit_kandi_boom.py`.
@@ -29,11 +29,22 @@ mesh-gallery route has equivalent or better functionality.
   asset sizes, source FBX version, mesh count, skeleton hierarchy and
   skin-cluster count.
 - [x] Add source audit regression tests and missing-asset checks.
-- [ ] Add Blender/Assimp-based deep checks for bind-pose matrices, weight sums,
-  bone index ranges, UVs, texture orientation, transform handedness and
-  normals. A dependency-free FBX hierarchy scan cannot validate these.
-- [ ] Capture browser screenshot(s) of the actual rendered, textured character;
-  confirm front view, floor position and deformation under controlled poses.
+- [x] Add bounded, dependency-free FBX deep parsing and verify vertex/polygon
+  topology, per-corner UV/normal indices, 26 bind-pose matrices, 24 clusters,
+  skin-weight sums and inverse-bind transform consistency.
+- [x] Add `harness/kandi-boom/source-rig.json` with the exact rest pose,
+  source bone hierarchy, inverse binds and fingerprint for future adapters.
+- [x] Identify the original clip as static only (225 curves, one key each),
+  and detect the 1,071 vertices with more than four bone influences.
+- [x] Add structural/corruption tests, deterministically pinned source hashes
+  and a dedicated browser-smoke GitHub Actions workflow.
+- [x] Capture an independent albedo-textured rest-pose and 25-degree controlled
+  arm-pose reference using source skin matrices; see
+  [audit evidence and reference images](kandi-boom-source-audit.md).
+- [ ] Obtain the first successful Chromium smoke-test result after the patch is
+  pushed. Browser and full PBR acceptance must not be asserted before then.
+
+**Detailed evidence:** [Kandi Boom source audit](kandi-boom-source-audit.md).
 
 The scanned source has a **24-bone humanoid skeleton with 24 skin clusters**.
 Its limb naming follows common exported humanoid conventions, not Rigify's
@@ -44,8 +55,9 @@ Run from the repository root:
 
 ```sh
 python tools/audit_kandi_boom.py --assets harness/kandi-boom/assets \
-  --output harness/kandi-boom/rig-audit.json
-python -m unittest discover -s tests/python -p test_kandi_boom_audit.py -v
+  --output harness/kandi-boom/rig-audit.json \
+  --source-rig-output harness/kandi-boom/source-rig.json --check
+python -m unittest discover -s tests/python -p 'test_kandi_boom_*.py' -v
 ```
 
 Before accepting the regenerated report, diff it with the checked-in version.
@@ -53,8 +65,9 @@ Unexpected hashes, missing maps, or skeleton changes require review.
 
 ## Phase A2 — Rig profile and retargeter
 
-1. Export the source rest matrices, bind matrices and parent hierarchy through
-   a real scene importer (FBX SDK or Blender in an optional offline tool).
+1. Cross-check the extracted source rest/bind matrices and parent hierarchy
+   against a full importer (Blender/FBX SDK). Do not skip this external
+   compatibility gate merely because the dependency-free audit is consistent.
 2. Define a distinct semantic type for the exact **Kandi Boom source skeleton**,
    such as `syn://type/danceflow/motion/rig/custom/kandi-boom`.
 3. Generate stable one-based channel IDs (translation for the root, complete
@@ -138,7 +151,7 @@ clips, survives mobile/desktop browser QA, and publishes reproducible checksums.
 
 ## Patch strategy
 
-1. **A1 (this patch):** source audit, documented execution plan, regression tests.
+1. **A1 (this patch):** deep source audit, reproducible rig profile, controlled-posed preview, regression and browser CI tests.
 2. **A2–A4:** deep FBX importer, semantic profile, retargeting and gallery.
 3. **B:** reliable browser validation, lazy loading and packaged assets.
 4. **C:** release workflow, Pages deployment and ecosystem documentation.

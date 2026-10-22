@@ -1,5 +1,5 @@
 {
-  "schema": "dancerudiments.kandi-boom.rig-audit/v1",
+  "schema": "dancerudiments.kandi-boom.rig-audit/v2",
   "character": "Kandi Boom",
   "series": "Bass Ben & Friends",
   "fbx_version": 7400,
@@ -10,19 +10,47 @@
     },
     "albedo.png": {
       "bytes": 7047031,
-      "sha256": "e78fbab017f04c013a9b95e29f92818ed6da545b00d96c10cbeee537ead5f59d"
+      "sha256": "e78fbab017f04c013a9b95e29f92818ed6da545b00d96c10cbeee537ead5f59d",
+      "png": {
+        "width": 2048,
+        "height": 2048,
+        "bit_depth": 8,
+        "channels": "RGBA",
+        "png_chunk_crcs_valid": true
+      }
     },
     "normal.png": {
       "bytes": 7440971,
-      "sha256": "bdb2a23ffdd3ef741a37477eb68d1faff124da5fc57d5b43c05e8e330ca86e74"
+      "sha256": "bdb2a23ffdd3ef741a37477eb68d1faff124da5fc57d5b43c05e8e330ca86e74",
+      "png": {
+        "width": 2048,
+        "height": 2048,
+        "bit_depth": 8,
+        "channels": "RGBA",
+        "png_chunk_crcs_valid": true
+      }
     },
     "metallic.png": {
       "bytes": 3219499,
-      "sha256": "f091c0995d180a48a31ade8e6a026e8484454029c563b3965527f6de0fca7bd5"
+      "sha256": "f091c0995d180a48a31ade8e6a026e8484454029c563b3965527f6de0fca7bd5",
+      "png": {
+        "width": 2048,
+        "height": 2048,
+        "bit_depth": 8,
+        "channels": "RGBA",
+        "png_chunk_crcs_valid": true
+      }
     },
     "roughness.png": {
       "bytes": 2842354,
-      "sha256": "7fff95bf6274d7214bc83ee4bbd05d11a6efbc8143961ddb5337d75b3acd2ffd"
+      "sha256": "7fff95bf6274d7214bc83ee4bbd05d11a6efbc8143961ddb5337d75b3acd2ffd",
+      "png": {
+        "width": 2048,
+        "height": 2048,
+        "bit_depth": 8,
+        "channels": "RGBA",
+        "png_chunk_crcs_valid": true
+      }
     }
   },
   "mesh_count": 1,
@@ -203,5 +231,109 @@
   ],
   "rigify_compatible": null,
   "rigify_note": "Not inferred from FBX names; verify control semantics and rest transforms explicitly.",
-  "motion_mapping_status": "unmapped"
+  "motion_mapping_status": "unmapped",
+  "deep_validation": {
+    "schema": "dancerudiments.kandi-boom.deep-audit/v1",
+    "fbx_version": 7400,
+    "mesh": {
+      "name": "char1",
+      "control_point_count": 14950,
+      "polygon_count": 29965,
+      "triangle_count": 29965,
+      "triangle_only": true,
+      "polygon_corner_count": 89895,
+      "bounds_xyz_in_fbx_units": [
+        [
+          -50.82457733154297,
+          50.82457733154297
+        ],
+        [
+          0.0,
+          172.0
+        ],
+        [
+          -29.60553741455078,
+          29.60553741455078
+        ]
+      ],
+      "normal_count": 89895,
+      "max_normal_length_deviation": 1.979851043110159e-07,
+      "uv_count": 26817,
+      "uv_index_count": 89895,
+      "uv_range": [
+        0.0,
+        1.0
+      ],
+      "uv_mapping": "ByPolygonVertex",
+      "uv_reference": "IndexToDirect",
+      "material_slot_count": 1
+    },
+    "skin": {
+      "deformer_count": 1,
+      "cluster_count": 24,
+      "influenced_cluster_count": 22,
+      "zero_influence_bones": [
+        "head_end",
+        "headfront"
+      ],
+      "vertex_count": 14950,
+      "unweighted_vertex_count": 0,
+      "max_influences_per_vertex": 10,
+      "influence_count_histogram": {
+        "1": 2286,
+        "2": 9395,
+        "3": 1555,
+        "4": 643,
+        "5": 428,
+        "6": 332,
+        "7": 177,
+        "8": 92,
+        "9": 15,
+        "10": 27
+      },
+      "vertices_with_over_four_influences": 1071,
+      "vertices_discarding_over_one_percent_at_four": 577,
+      "max_discarded_weight_if_four_influences": 0.25086908927187324,
+      "mean_discarded_weight_on_over_four_vertices": 0.024979559569507245,
+      "maximum_weight_sum_error": 1.6798730939626694e-07
+    },
+    "bind_pose": {
+      "pose_object_count": 1,
+      "pose_matrix_count": 26,
+      "bone_count": 24,
+      "max_cluster_link_pose_error": 0.0,
+      "max_inverse_bind_identity_error": 2.6891070092210922e-05
+    },
+    "animation": {
+      "stack_count": 1,
+      "curve_count": 225,
+      "curve_key_count_histogram": {
+        "1": 225
+      },
+      "unique_animation_ticks": [
+        0
+      ],
+      "time_varying_curve_count": 0,
+      "contains_recorded_motion": false
+    },
+    "coordinate_system": {
+      "up_axis": 1,
+      "front_axis": 2,
+      "coord_axis": 0,
+      "up_sign": 1,
+      "front_sign": 1,
+      "coord_sign": 1,
+      "unit_scale_factor": 1.0
+    },
+    "source_rig_fingerprint_sha256": "2a4e9bcfe46d3132665aad3bc431b09aedf6bcbc845fa1a3f3563ed4a61046f6",
+    "source_integrity_valid": true,
+    "production_four_influence_ready": false,
+    "motion_retargeting_complete": false,
+    "browser_render_validated": false,
+    "notes": [
+      "Skin cluster Transform is inverse of TransformLink for this source; do not generalize to all FBX exporters.",
+      "The supplied PBR maps are external; original FBX material primarily refers to embedded base colour.",
+      "More than four influences require an 8+ influence skinning path or controlled weight reduction before export."
+    ]
+  }
 }
