@@ -1,0 +1,37 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -4,4 +4,5 @@ project(DanceRudiments VERSION 0.4.6
+   HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
+   LANGUAGES CXX)
+ 
++option(DANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES "Install large optional rig-motion demo assets" ON)
+ option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
+@@ -99,6 +100,8 @@ install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
+   PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
+-install(DIRECTORY examples/rig-motion/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/rig-motion"
+-  PATTERN "__pycache__" EXCLUDE)
++if(DANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES)
++  install(DIRECTORY examples/rig-motion/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/rig-motion"
++    PATTERN "__pycache__" EXCLUDE)
++endif()
+ 
+ 
+ # .NET is built by dotnet, not by CMake. Only the optional native bridge is built here.
+diff --git a/pyproject.toml b/pyproject.toml
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -28,3 +28,3 @@ Issues = "https://github.com/kieransimkin/DanceRudiments/issues"
+ [tool.scikit-build]
+-cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF"]
++cmake.args = ["-DDANCERUDIMENTS_BUILD_PYTHON=ON", "-DDANCERUDIMENTS_BUILD_TESTS=OFF", "-DDANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES=OFF"]
+ wheel.packages = ["python/dancerudiments_authoring"]
+@@ -36,6 +36,6 @@ wheel.packages = ["python/dancerudiments_authoring"]
+ # inside ignored environments, caches and optional motion packages. Explicit
+ # includes override excludes, so negate caches and optional payloads here too.
+-sdist.include = ["/AGENTS.md", "/CONTRIBUTING.md", "/CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", "/.gitattributes", "examples/patterns/**", "examples/rig-motion/**", "examples/motion-packages/**", "docs/motion-packages.md", "docs/blender-motion-import.md", "motion-packages/**", "docs/rig-motion.md", "docs/rigify-catalogue.md", "docs/motion-sources.md", "docs/authoring.md", "docs/recordings.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "docs/mesh-demos.md", "docs/midi-harness.md", "cmake/**", "tests/**", "/README.md", "/AUTHORS.md", "packaging/**", "docs/images/**", "docs/branding/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md", "!/motion-packs/**", "!/optional-motion-packs/**", "!/.cache/**", "!**/__pycache__/**", "!**/*.pyc", "!**/*.pyo"]
++sdist.include = ["/AGENTS.md", "/CONTRIBUTING.md", "/CMakeLists.txt", "include/**", "src/**", "bindings/python/**", "python/**", "tools/**", "collections/**", "harness/initial/**", "harness/initial-collection.html", "/.gitattributes", "examples/patterns/**", "examples/motion-packages/**", "docs/motion-packages.md", "docs/blender-motion-import.md", "motion-packages/**", "docs/rig-motion.md", "docs/rigify-catalogue.md", "docs/motion-sources.md", "docs/authoring.md", "docs/recordings.md", "docs/default-library.md", "docs/dancefloor.md", "docs/release-demo.md", "docs/mesh-demos.md", "docs/midi-harness.md", "cmake/**", "tests/**", "/README.md", "/AUTHORS.md", "packaging/**", "docs/images/**", "docs/branding/**", "docs/bindings.md", "docs/troubleshooting.md", "examples/bindings/**", "bindings/csharp/**", "docs/csharp.md", "!/motion-packs/**", "!/optional-motion-packs/**", "!/.cache/**", "!**/__pycache__/**", "!**/*.pyc", "!**/*.pyo"]
+ 
+ # Do not ship hand-off patches, credentials, interpreter caches, or local example output in sdists.
+-sdist.exclude = ["motion-packs/**", "optional-motion-packs/**", ".cache/**", "*.patch", "npm_recovery_codes.txt", "**/__pycache__/**", "**/*.pyc", "**/*.pyo", "examples/bindings/typescript/dist/**", "bindings/csharp/**/bin/**", "bindings/csharp/**/obj/**", "tests/csharp/**/bin/**", "tests/csharp/**/obj/**", "examples/bindings/csharp/bin/**", "examples/bindings/csharp/obj/**"]
++sdist.exclude = ["examples/rig-motion/**", "motion-packs/**", "optional-motion-packs/**", ".cache/**", "*.patch", "npm_recovery_codes.txt", "**/__pycache__/**", "**/*.pyc", "**/*.pyo", "examples/bindings/typescript/dist/**", "bindings/csharp/**/bin/**", "bindings/csharp/**/obj/**", "tests/csharp/**/bin/**", "tests/csharp/**/obj/**", "examples/bindings/csharp/bin/**", "examples/bindings/csharp/obj/**"]
