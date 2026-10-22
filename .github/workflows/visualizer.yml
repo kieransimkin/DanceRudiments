@@ -44,24 +44,5 @@ jobs:
           name: standalone-pattern-visualizer
           path: dist/visualizer/
           if-no-files-found: error
-      - uses: actions/upload-pages-artifact@v4
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
-        with:
-          path: dist/visualizer
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Deploy visualizer only
-        id: deployment
-        uses: actions/deploy-pages@v4
+      # Main/PR previews remain artifacts. Only demo-release.yml publishes the
+      # complete tagged site, so this preview cannot erase its /meshes/ gallery.

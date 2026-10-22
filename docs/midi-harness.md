@@ -153,13 +153,24 @@ copy at `https://kieransimkin.github.io/DanceRudiments/`:
 
 1. Set Repository **Settings → Pages → Source → GitHub Actions**.
 2. Add the repository Actions variable `DANCERUDIMENTS_PAGES_ENABLED` with value
-   `true`, then run **Pattern visualizer**, or push another commit to `main`.
+   `true`.
+3. Publish a fresh release tag containing the demo builders, or manually run
+   **Release demo** for an existing compatible release tag. The environment's
+   normal deployment approvals still apply.
 
-The workflow builds and tests on pushes and pull requests. Pages deployment is
-opt-in and main-only; it cannot deploy untrusted pull-request content. It uploads
-**only `dist/visualizer`**, never the repository root, so unrelated source files
-or credentials cannot leak into the site. No public site or release has been
-published by supplying this patch.
+**Pattern visualizer** builds and tests artifacts on pushes and pull requests.
+It no longer deploys Pages: a visualizer-only deployment would erase the optional
+mesh gallery. **Release demo** is the sole Pages publisher and uses the exact
+validated release tag. It publishes **only `dist/pages`**, containing this
+visualizer at the root and the [3D dance examples](mesh-demos.md) at `meshes/`.
+Source files, caches and the bulk optional motion collections are outside that
+site. A gallery recording loads only after **Load & play** is clicked for that
+character.
+Applying or pushing the code alone does not publish a new release or website.
+
+See [the release demo guide](release-demo.md) for build, attachment verification,
+Pages deployment and post-deployment checks. The existing root URL and offline
+visualizer download remain available through the same interfaces.
 
 ## Protocol and hosting references
 

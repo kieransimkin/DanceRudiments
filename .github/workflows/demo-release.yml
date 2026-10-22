@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Existing tag containing the demo-rendering tools'
+        description: 'Published release tag containing the complete demo tools (vMAJOR.MINOR.PATCH)'
         required: true
         type: string
 permissions:
@@ -17,21 +17,84 @@ concurrency:
 jobs:
   render:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      version: ${{ steps.identity.outputs.version }}
+      commit: ${{ steps.identity.outputs.commit }}
+      tag: ${{ steps.identity.outputs.tag }}
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/release-demo/browsers
+      PYTHONUNBUFFERED: '1'
     steps:
       - uses: actions/checkout@v6
         with:
           ref: refs/tags/${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
       - name: Validate the tag and source version
+        id: identity
         env:
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          python - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', tag):
+              raise SystemExit('release_tag must be vMAJOR.MINOR.PATCH')
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          commit = git('rev-parse', 'HEAD')
+          if commit != git('rev-parse', '--verify', f'refs/tags/{tag}^{{commit}}'):
+              raise SystemExit('Checkout differs from the requested tag commit')
+          if os.environ['GITHUB_EVENT_NAME'] == 'push':
+              if commit != git('rev-parse', '--verify', os.environ['GITHUB_SHA'] + '^{commit}'):
+                  raise SystemExit('Tag changed after the triggering push')
+          else:
+              release = json.loads(subprocess.check_output([
+                  'gh', 'release', 'view', tag, '--repo', os.environ['GITHUB_REPOSITORY'],
+                  '--json', 'tagName,isDraft'], text=True))
+              if release['tagName'] != tag or release['isDraft']:
+                  raise SystemExit('Manual builds require an existing published release')
+          with Path(os.environ['GITHUB_ENV']).open('a') as stream:
+              stream.write(f'DEMO_VERSION={tag[1:]}\nDEMO_COMMIT={commit}\n')
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as stream:
+              stream.write(f'version={tag[1:]}\ncommit={commit}\ntag={tag}\n')
+          PY
           python tools/release_version.py verify-tag "$RELEASE_TAG"
-          echo "DEMO_VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
-          echo "DEMO_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Preflight project-local temporary and output directories
+        run: |
+          python - <<'PY'
+          import os, tempfile
+          from pathlib import Path
+          temporary_root = Path('.cache/release-demo/tmp').resolve()
+          for parent in (temporary_root, Path('dist/demo'), Path('dist/pages')):
+              parent.mkdir(parents=True, exist_ok=True)
+              with tempfile.TemporaryDirectory(prefix='preflight-', dir=parent) as name:
+                  p = Path(name) / 'probe'
+                  p.write_bytes(b'ready')
+                  assert p.read_bytes() == b'ready'
+                  p.rename(p.with_name('renamed'))
+                  p.with_name('renamed').unlink()
+          with Path(os.environ['GITHUB_ENV']).open('a') as stream:
+              stream.write(f'TMPDIR={temporary_root}\n')
+          PY
+          node --input-type=module - <<'JS'
+          import {mkdtemp, writeFile, readFile, rename, rm} from 'node:fs/promises';
+          const dir = await mkdtemp('.cache/release-demo/tmp/node-preflight-');
+          await writeFile(dir + '/probe', 'ready');
+          if (await readFile(dir + '/probe', 'utf8') !== 'ready') throw Error('Temporary readback failed');
+          await rename(dir + '/probe', dir + '/renamed');
+          await rm(dir, {recursive: true});
+          JS
       - name: Verify generated packs and default registration
         run: |
           python tools/build_initial_collection.py --check
@@ -45,8 +108,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes clang lld
-          python -m pip install . playwright
+          python -m pip install '.[motion-import]' playwright==1.64.0
           python -m playwright install --with-deps chromium
+          npm ci
+      - name: Test the package loader, mesh assets and site packaging
+        run: |
+          npm test
+          python -m unittest discover -s tests/python -p test_mesh_demo_assets.py -v
+          python -m unittest discover -s tests/python -p test_release_pages.py -v
       - name: Generate the exact tagged native catalogue
         run: python tools/release_demo.py --version "$DEMO_VERSION" --commit "$DEMO_COMMIT" --output-dir dist/demo
       - name: Verify the full visualizer's MIDI transport
@@ -66,14 +135,43 @@ jobs:
           cp "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html" dist/demo/DanceRudiments-visualizer.html
           cp "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.json" dist/demo/DanceRudiments-visualizer.json
           (cd dist/demo && sha256sum DanceRudiments-visualizer.html DanceRudiments-visualizer.json > DanceRudiments-visualizer.sha256)
+      - name: Build two pinned, independently loaded mesh dances
+        run: |
+          python tools/build_mesh_demo_assets.py --output-dir generated/mesh-demo-assets --cache-root .cache/motion-sources/cmu-dance --download
+          node tools/build_mesh_demo.mjs --assets-dir generated/mesh-demo-assets --output-dir dist/pages/meshes --version "$DEMO_VERSION" --commit "$DEMO_COMMIT"
+          python tools/package_release_pages.py prepare --pages-dir dist/pages --visualizer "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html" --version "$DEMO_VERSION" --commit "$DEMO_COMMIT"
+      - name: Verify actual skinned mesh playback in desktop and mobile Chromium
+        run: |
+          python tools/test_mesh_demo_browser.py --site-dir dist/pages --output-dir dist/demo --prefix "DanceRudiments-mesh-demos-v$DEMO_VERSION"
+      - name: Seal the complete tested site and distinct release downloads
+        run: |
+          python tools/package_release_pages.py seal --pages-dir dist/pages --output-dir dist/demo --qa-report "dist/demo/DanceRudiments-mesh-demos-v$DEMO_VERSION-browser.json" --version "$DEMO_VERSION" --commit "$DEMO_COMMIT"
+          (cd dist/demo && sha256sum --check ./*.sha256)
       - uses: actions/upload-artifact@v6
         with:
           name: release-demo
           path: dist/demo/*
           if-no-files-found: error
+      - uses: actions/upload-artifact@v6
+        if: vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
+        with:
+          name: release-pages-manifest
+          path: dist/pages/site-manifest.json
+          if-no-files-found: error
+      - uses: actions/upload-pages-artifact@v4
+        if: vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
+        with:
+          path: dist/pages
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: release-demo-failure-evidence
+          path: dist/demo/*
+          if-no-files-found: warn
   attach:
     needs: render
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -84,7 +182,8 @@ jobs:
       - name: Attach to the existing release and verify uploaded bytes
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.release_tag }}
+          RELEASE_TAG: ${{ needs.render.outputs.tag }}
+          DEMO_COMMIT: ${{ needs.render.outputs.commit }}
         shell: bash
         run: |
           set -euo pipefail
@@ -97,8 +196,124 @@ jobs:
             sleep 2
           done
           (cd demo && sha256sum --check ./*.sha256)
-          gh release upload "$RELEASE_TAG" demo/* --repo "$GITHUB_REPOSITORY" --clobber
-          mkdir verified
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'DanceRudiments-demo-*' --dir verified
-          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern 'DanceRudiments-visualizer*' --dir verified
+          python - <<'PY'
+          import json, os, re, subprocess
+          from pathlib import Path
+          repo, tag = os.environ['GITHUB_REPOSITORY'], os.environ['RELEASE_TAG']
+          def gh(*args):
+              return subprocess.check_output(['gh', *args], text=True)
+          release = json.loads(gh('release', 'view', tag, '--repo', repo, '--json', 'tagName,isDraft,assets'))
+          if release['tagName'] != tag or release['isDraft']:
+              raise SystemExit('Expected the published release for the validated tag')
+          obj = json.loads(gh('api', f'repos/{repo}/git/ref/tags/{tag}'))['object']
+          for _ in range(8):
+              if obj['type'] != 'tag':
+                  break
+              obj = json.loads(gh('api', f'repos/{repo}/git/tags/{obj["sha"]}'))['object']
+          if obj['type'] != 'commit' or obj['sha'] != os.environ['DEMO_COMMIT']:
+              raise SystemExit('Remote tag no longer matches the tested commit')
+          existing = {asset['name'] for asset in release['assets']}
+          files = sorted(Path('demo').iterdir())
+          verified = Path('verified'); verified.mkdir()
+          for path in files:
+              if not path.is_file() or not re.fullmatch(r'DanceRudiments-[A-Za-z0-9_.-]+', path.name):
+                  raise SystemExit(f'Unexpected release attachment: {path.name}')
+              if path.name in existing:
+                  gh('release', 'download', tag, '--repo', repo, '--pattern', path.name, '--dir', str(verified))
+                  if (verified / path.name).read_bytes() != path.read_bytes():
+                      raise SystemExit(f'Existing release asset differs; refusing to overwrite {path.name}')
+          # Check every collision before uploading any missing attachment.
+          for path in files:
+              if path.name not in existing:
+                  gh('release', 'upload', tag, str(path), '--repo', repo)
+                  gh('release', 'download', tag, '--repo', repo, '--pattern', path.name, '--dir', str(verified))
+              if (verified / path.name).read_bytes() != path.read_bytes():
+                  raise SystemExit(f'Uploaded release asset differs: {path.name}')
+          PY
           (cd verified && sha256sum --check ./*.sha256)
+  pages-target:
+    if: vars.DANCERUDIMENTS_PAGES_ENABLED == 'true'
+    needs: [render, attach]
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.latest.outputs.deploy }}
+    steps:
+      - name: Publish Pages only for the latest stable release
+        id: latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.render.outputs.tag }}
+        run: |
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
+          if [ "$latest_tag" = "$RELEASE_TAG" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            echo "::notice::Release downloads verified; Pages skipped because $RELEASE_TAG is not the latest stable release ($latest_tag)."
+            echo "Pages was not deployed: $RELEASE_TAG is not the latest stable release ($latest_tag)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+  deploy:
+    if: vars.DANCERUDIMENTS_PAGES_ENABLED == 'true' && needs.pages-target.outputs.deploy == 'true'
+    needs: [render, attach, pages-target]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    concurrency:
+      group: dancerudiments-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Recheck the latest release after waiting for deployment concurrency
+        id: current
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.render.outputs.tag }}
+        run: |
+          latest_tag=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')
+          if [ "$latest_tag" = "$RELEASE_TAG" ]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'deploy=false' >> "$GITHUB_OUTPUT"
+            echo "::notice::Pages skipped: $latest_tag became the latest stable release while $RELEASE_TAG waited."
+            echo "Pages was not deployed: a newer stable release is now current ($latest_tag)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@v6
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          ref: ${{ needs.render.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v6
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          name: release-pages-manifest
+          path: expected-pages
+      - name: Read existing Pages configuration
+        if: steps.current.outputs.deploy == 'true'
+        uses: actions/configure-pages@v5
+        with:
+          enablement: false
+      - name: Deploy the complete tagged visualizer and mesh gallery
+        id: deployment
+        if: steps.current.outputs.deploy == 'true'
+        uses: actions/deploy-pages@v4
+      - name: Verify the live routes and every public asset against the tested artifact
+        if: steps.current.outputs.deploy == 'true'
+        env:
+          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          python tools/package_release_pages.py verify --url "$PAGE_URL" --manifest expected-pages/site-manifest.json --report deployed-pages-verification.json --attempts 12 --retry-seconds 5
+      - uses: actions/upload-artifact@v6
+        if: steps.current.outputs.deploy == 'true'
+        with:
+          name: deployed-pages-verification
+          path: deployed-pages-verification.json
+          if-no-files-found: error

@@ -59,6 +59,9 @@
     "docs/rig-motion.md",
     "docs/rigify-catalogue.md",
     "docs/blender-motion-import.md",
+    "docs/mesh-demos.md",
+    "docs/release-demo.md",
+    "docs/midi-harness.md",
     "!**/__pycache__/**",
     "!**/*.pyc",
     "!**/*.pyo",
@@ -81,6 +84,8 @@
     "test": "npm run build:harness && node --test --test-isolation=none tests/typescript/*.test.js"
   },
   "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.186.1",
     "typescript": "^5.9.0"
   },
   "author": {

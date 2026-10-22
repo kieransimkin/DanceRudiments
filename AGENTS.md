@@ -28,6 +28,16 @@
 
 Before every new workflow run, check the latest stable official release and observe the actual runtime used by the job. Follow [the shared preflight](https://github.com/kieransimkin/DanceFlow/blob/main/docs/workflows/release-preflight.md) and this project's [people-and-agent guide](docs/ECOSYSTEM.md). Review the complete relevant capability inventory rather than only a familiar command. Consider every DanceFlow component against the actual task; use and compose all applicable supported capabilities, and improve a concrete reusable gap in its canonical repository. Record why existing capabilities suffice when no change is justified. No catalogue checklist expands the task, authorises model downloads/training, or proves integration. Preserve exact source/package identity, clocks, model-local storage, privacy, costs, immutable releases and separate deployment gates.
 
+## Release mesh demos and Pages
+
+- Read `docs/release-demo.md` and `docs/mesh-demos.md` before changing demo builds or deployment. Keep the root native visualizer and `meshes/` gallery together in `dist/pages`. `demo-release.yml` is the sole Pages publisher; main/PR `visualizer.yml` runs remain artifact-only and must not erase a released mesh route.
+- Build from the exact validated tag and commit. Use tag pushes or manual dispatch for an existing compatible published tag; do not depend on a `release.published` event created with `GITHUB_TOKEN`. Old tags without the gallery cannot be retrofitted, moved or overwritten.
+- Retain the `DANCERUDIMENTS_PAGES_ENABLED == 'true'` guard, `github-pages` environment, approvals and protections. Read Pages configuration without enabling or changing it. Only the latest stable official release may deploy, with a second latest-release check after waiting for the shared deployment concurrency slot. Older-tag attachment builds must report a Pages skip accurately.
+- Keep original mesh geometry separate from captured source motion. The selected two-source builder may download only its explicitly requested, pinned files and must retain CMU/converter terms, hashes, units, axes and unverified musical timing. Optional motion files must remain outside the default catalogue and base package artifacts.
+- Run `npm test`, `test_mesh_demo_assets.py`, `test_release_pages.py`, the existing native visualizer/MIDI browser gates, and `tools/test_mesh_demo_browser.py` for the complete site before sealing release assets. Preserve the shared native 64-pip sampler, exact profile bindings, lazy scene loading and resource disposal. A `--gallery-only` receipt is local evidence and cannot seal a complete release site.
+- Bind browser evidence to every packaged site file and the exact release identity. Keep archives outside the Pages tree. Existing release assets are immutable: compare every collision before upload, retain identical bytes and refuse changed assets; never use `--clobber` for demo releases.
+- Distinguish source tests, browser QA, sealed artifacts, attachment verification, actual Pages deployment and live route/asset verification. Check hosted precompressed motion bytes without HTTP content decoding. Do not report a successful main preview or older-commit deployment as a verified mesh release.
+
 ## Rigify motion validation
 
 For rig-motion changes, read `docs/rig-motion.md`, `docs/rigify-catalogue.md` and

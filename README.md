@@ -21,7 +21,7 @@ People and agents should consider the full ecosystem, use all capabilities that 
 
 ## Find your route
 
-[▶ Try the pattern visualizer](#-try-the-pattern-visualizer) · [Which package should I use?](#which-package-should-i-use) · [Included rudiments](#included-rudiments) · [Default collections](#default-collections) · [Dancefloor 06](#dancefloor-06) · [BPM-synchronised N-dimensional recordings and comparison harness](#bpm-synchronised-n-dimensional-recordings-and-comparison-harness) · [Rigify character motion](#rigify-character-motion) · [Curve and event authoring](#curve-and-event-authoring) · [Language bindings](#language-bindings) · [Harness](#harness)
+[▶ Try the pattern visualizer](#-try-the-pattern-visualizer) · [3D dance examples](#3d-dance-examples) · [Which package should I use?](#which-package-should-i-use) · [Included rudiments](#included-rudiments) · [Default collections](#default-collections) · [Dancefloor 06](#dancefloor-06) · [BPM-synchronised N-dimensional recordings and comparison harness](#bpm-synchronised-n-dimensional-recordings-and-comparison-harness) · [Rigify character motion](#rigify-character-motion) · [Curve and event authoring](#curve-and-event-authoring) · [Language bindings](#language-bindings) · [Harness](#harness)
 
 ## ▶ Try the pattern visualizer
 
@@ -41,12 +41,48 @@ together. Compare any movements, or use **Only matching movements** and
 Sound is synthesised from note events, not the original Amen recording.
 
 The downloadable file is the checked-in snapshot; the **Pattern visualizer**
-workflow also rebuilds a fresh version from every pushed native catalogue.
+workflow also rebuilds and tests a fresh artifact from every pushed native catalogue.
+The **Release demo** workflow publishes the complete tagged site, including the
+3D examples below, when Pages is enabled. Main-branch visualizer builds do not
+replace that released site.
 [Beat player, rebuilding, release downloads and optional live hosting](docs/midi-harness.md).
 
 [![Four Amen-based movements compared in the real self-contained visualizer](https://raw.githubusercontent.com/kieransimkin/DanceRudiments/main/docs/images/visualizer-amen-desktop.png)](https://kieransimkin.github.io/DanceRudiments/)
 
 *Captured from the running C++/WebAssembly visualizer at beat 2.75. Audio was not started during this screenshot.*
+
+## 3D dance examples
+
+The release build adds a separate **`meshes/` gallery** beside the pattern
+visualizer. It contains two original low-poly skinned characters with different
+captured dances:
+
+| Character | Movement | Source recording |
+| --- | --- | --- |
+| Boxbot | Salsa | CMU 60_01, with the documented 60 fps source timing restored |
+| Prism | Ballet: attitude, arabesque, turning jump and back bend | CMU 05_18 |
+
+Each character has its own optional motion package and independently bound rig
+profile. Loading a scene fetches only its own rig, profile and selected recording
+chunk. Play, pause, seek, restart and playback-rate controls use the existing
+native C++/WASM sampler. Unloading releases that scene's requests, recordings and
+GPU resources. The gallery uses actual weighted triangle meshes; no model or
+motion data is added to the base package or the site's pattern page.
+
+These are complete source recordings with **original timing**, including their
+calibration frame. They have no verified musical beat/downbeat annotations and
+are not presented as beat-matched to a song. The CMU source terms, attribution,
+source hashes and conversion details accompany the examples.
+
+The release workflow builds and browser-tests both characters, attaches a
+separate gallery ZIP and a complete-site ZIP, and deploys the existing visualizer
+and gallery together. Pages must already use GitHub Actions with
+`DANCERUDIMENTS_PAGES_ENABLED=true`; environment approvals remain in effect.
+The gallery becomes live at
+[`https://kieransimkin.github.io/DanceRudiments/meshes/`](https://kieransimkin.github.io/DanceRudiments/meshes/)
+after the first successful release containing these tools. Applying source
+changes alone does not deploy the website. See [building and validating the
+mesh demos](docs/mesh-demos.md) and the [release workflow guide](docs/release-demo.md).
 
 
 
