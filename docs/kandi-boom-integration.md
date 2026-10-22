@@ -38,12 +38,16 @@ evidence and exact hashes.
   target-rig JSON, albedo, normal, roughness and metallic maps.
 - The source-motion packages remain lazy, independently hashed optional data.
 - A dedicated runtime target adapter composes the selected source skeleton in
-  source space and retargets world-space rotation deltas to Kandi's 24-bone rig.
+  source space. The retained converter T-pose is captured explicitly and
+  world-space rotations are retargeted to Kandi as deltas from that calibration,
+  so source setup rotations are not added a second time to Kandi's FBX rest pose.
 - Source Z-up motion is converted to Kandi's Y-up target basis without changing
   the canonical recordings.
-- Root motion is scaled by source/target skeleton height and applied outside the
-  FBX rest hierarchy.
-- The renderer applies Kandi's external PBR maps with the albedo in sRGB space.
+- Root motion is scaled by source/target skeleton height and measured from the
+  same retained calibration frame outside the FBX rest hierarchy.
+- The renderer applies Kandi's external PBR maps with the albedo in sRGB space
+  while preserving the FBX diffuse map's image-Y orientation, UV channel,
+  wrapping, repeat, offset, centre and rotation contract.
 - Runtime four-weight skinning is explicit and validated; the canonical FBX is
   never rewritten or substituted.
 - The UI presents Kandi Boom for both performances and no longer presents
