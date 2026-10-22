@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Kandi Boom — Bass Ben & Friends | DanceRudiments</title>
+<style>body{margin:0;background:#0c0717;color:#f7e9ff;font-family:system-ui,sans-serif}#stage{width:100%;height:calc(100vh - 135px);min-height:360px}header{display:flex;gap:1rem;align-items:center;flex-wrap:wrap;padding:14px 20px;background:#1d1230}h1{font-size:20px;margin:0}label{font-size:14px}input{accent-color:#ff63c4}select,button{background:#422252;color:white;border:1px solid #a66fc3;padding:7px;border-radius:5px}#status{font-size:13px;color:#e1c5ed}footer{padding:9px 20px;font-size:12px;color:#c6a8db}</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"}}</script></head>
+<body><header><h1>Kandi Boom <small>· Bass Ben & Friends</small></h1><label>BPM <input id="bpm" type="number" min="40" max="240" value="128" step="1" style="width:64px"></label><label>Motion <select id="motion"><option value="bounce">Bounce</option><option value="sway">Sway</option><option value="groove">Groove</option><option value="idle">Idle</option></select></label><button id="play">Pause</button><output id="phase">Beat 1 · 0%</output><span id="status">Loading rig…</span></header><div id="stage"></div><footer>DanceRudiments character-rig example · Source artwork and FBX supplied for Kandi Boom · Beat-phase driven demonstration (not source motion capture).</footer>
+<script type="module">
+import * as THREE from 'three';
+import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
+const stage=document.getElementById('stage'), status=document.getElementById('status');
+const scene=new THREE.Scene();scene.background=new THREE.Color('#0c0717');
+const camera=new THREE.PerspectiveCamera(42,1,.01,500);camera.position.set(0,1.6,5.5);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;stage.appendChild(renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xeacaff,0x251037,2.2));const light=new THREE.DirectionalLight(0xffffff,3);light.position.set(3,6,4);scene.add(light);
+const ground=new THREE.Mesh(new THREE.CircleGeometry(2.2,64),new THREE.MeshStandardMaterial({color:'#341b48',roughness:.9}));ground.rotation.x=-Math.PI/2;ground.position.y=-.015;scene.add(ground);
+const loader=new FBXLoader(), texLoader=new THREE.TextureLoader();let rig=null, bones=[], rest=new Map(), baseY=0, baseRot=0;
+let playing=true, clock=0, prev=performance.now();
+const textures={};
+async function loadTexture(key,file,srgb=false){try{let t=await texLoader.loadAsync(`assets/${file}`);t.flipY=false;if(srgb)t.colorSpace=THREE.SRGBColorSpace;return t}catch{return null}}
+Promise.all([loadTexture('albedo','albedo.png',true),loadTexture('normal','normal.png'),loadTexture('roughness','roughness.png'),loadTexture('metallic','metallic.png')]).then(([map,normalMap,roughnessMap,metalnessMap])=>{
+ Object.assign(textures,{map,normalMap,roughnessMap,metalnessMap});
+ loader.load('assets/kandi-boom.fbx',obj=>{
+  rig=obj;const bounds=new THREE.Box3().setFromObject(obj),size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3());
+  const scale=2.8/Math.max(size.y,0.001);obj.scale.multiplyScalar(scale);obj.position.set(-center.x*scale,-bounds.min.y*scale,-center.z*scale);baseY=obj.position.y;
+  obj.traverse(n=>{if(n.isSkinnedMesh||n.isMesh){n.frustumCulled=false;const mats=Array.isArray(n.material)?n.material:[n.material];for(const m of mats){if(!m)continue;for(const [name,t] of Object.entries(textures)){if(t && (!m[name]||name!=='map'))m[name]=t}m.needsUpdate=true}}
+   if(n.isBone){bones.push(n);rest.set(n,{x:n.rotation.x,y:n.rotation.y,z:n.rotation.z})}});
+  scene.add(obj);ground.position.y=-.025;camera.position.set(0,1.6,5.7);camera.lookAt(0,1.4,0);status.textContent=`Loaded · ${bones.length} bones · ${obj.animations.length} clips`;
+ },undefined,e=>{status.textContent='Failed to load FBX: '+e.message;console.error(e)});
+});
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}new ResizeObserver(resize).observe(stage);resize();
+document.getElementById('play').onclick=()=>{playing=!playing;document.getElementById('play').textContent=playing?'Pause':'Play'};
+function frame(now){requestAnimationFrame(frame);const dt=Math.min((now-prev)/1000,.1);prev=now;if(playing)clock+=dt;const bpm=Math.max(1,Number(document.getElementById('bpm').value)||128),beat=clock*bpm/60,phase=beat%1,barBeat=Math.floor(beat)%4+1;
+ document.getElementById('phase').textContent=`Beat ${barBeat} · ${Math.round(phase*100)}%`;
+ if(rig){const motion=document.getElementById('motion').value,angle=2*Math.PI*phase,half=2*Math.PI*beat/2;
+  rig.position.y=baseY+(motion==='bounce'?.065*(1-Math.cos(angle)):motion==='groove'?.045*(1-Math.cos(angle)):0);
+  rig.rotation.y=baseRot+(motion==='sway'?.16*Math.sin(half):motion==='groove'?.11*Math.sin(half):0);
+  for(const bone of bones){const r=rest.get(bone),name=bone.name.toLowerCase();bone.rotation.set(r.x,r.y,r.z);if(motion==='idle')continue;
+   if(/spine|hips|pelvis|chest/.test(name)){bone.rotation.z+=.045*Math.sin(half);bone.rotation.x+=.025*Math.sin(angle)}
+   if(/arm|shoulder|hand/.test(name)){bone.rotation.z+=(name.includes('left')||name.endsWith('_l')?1:-1)*.09*Math.sin(half)}
+   if(/thigh|upleg/.test(name)&&motion==='groove'){bone.rotation.x+=.05*Math.sin(half)}
+  }
+ }
+ renderer.render(scene,camera)}requestAnimationFrame(frame);
+</script></body></html>
