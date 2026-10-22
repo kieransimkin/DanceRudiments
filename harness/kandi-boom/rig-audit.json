@@ -1,0 +1,207 @@
+{
+  "schema": "dancerudiments.kandi-boom.rig-audit/v1",
+  "character": "Kandi Boom",
+  "series": "Bass Ben & Friends",
+  "fbx_version": 7400,
+  "assets": {
+    "kandi-boom.fbx": {
+      "bytes": 8563852,
+      "sha256": "714b6a182f2a5684487cd0227b6c9175da604d9c1f98416d44ee23f465ca488e"
+    },
+    "albedo.png": {
+      "bytes": 7047031,
+      "sha256": "e78fbab017f04c013a9b95e29f92818ed6da545b00d96c10cbeee537ead5f59d"
+    },
+    "normal.png": {
+      "bytes": 7440971,
+      "sha256": "bdb2a23ffdd3ef741a37477eb68d1faff124da5fc57d5b43c05e8e330ca86e74"
+    },
+    "metallic.png": {
+      "bytes": 3219499,
+      "sha256": "f091c0995d180a48a31ade8e6a026e8484454029c563b3965527f6de0fca7bd5"
+    },
+    "roughness.png": {
+      "bytes": 2842354,
+      "sha256": "7fff95bf6274d7214bc83ee4bbd05d11a6efbc8143961ddb5337d75b3acd2ffd"
+    }
+  },
+  "mesh_count": 1,
+  "model_count": 26,
+  "bone_count": 24,
+  "skin_deformer_count": 1,
+  "cluster_count": 24,
+  "animation_stack_count": 1,
+  "bones": [
+    {
+      "fbx_id": 35158942,
+      "name": "Hips",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 64240933,
+      "parent_name": "Armature"
+    },
+    {
+      "fbx_id": 947289134,
+      "name": "LeftUpLeg",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 35158942,
+      "parent_name": "Hips"
+    },
+    {
+      "fbx_id": 590800374,
+      "name": "LeftLeg",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 947289134,
+      "parent_name": "LeftUpLeg"
+    },
+    {
+      "fbx_id": 843237703,
+      "name": "LeftFoot",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 590800374,
+      "parent_name": "LeftLeg"
+    },
+    {
+      "fbx_id": 399136785,
+      "name": "LeftToeBase",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 843237703,
+      "parent_name": "LeftFoot"
+    },
+    {
+      "fbx_id": 960640258,
+      "name": "RightUpLeg",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 35158942,
+      "parent_name": "Hips"
+    },
+    {
+      "fbx_id": 824816541,
+      "name": "RightLeg",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 960640258,
+      "parent_name": "RightUpLeg"
+    },
+    {
+      "fbx_id": 174821366,
+      "name": "RightFoot",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 824816541,
+      "parent_name": "RightLeg"
+    },
+    {
+      "fbx_id": 812193799,
+      "name": "RightToeBase",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 174821366,
+      "parent_name": "RightFoot"
+    },
+    {
+      "fbx_id": 492044090,
+      "name": "Spine02",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 35158942,
+      "parent_name": "Hips"
+    },
+    {
+      "fbx_id": 956787152,
+      "name": "Spine01",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 492044090,
+      "parent_name": "Spine02"
+    },
+    {
+      "fbx_id": 220172740,
+      "name": "Spine",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 956787152,
+      "parent_name": "Spine01"
+    },
+    {
+      "fbx_id": 670487630,
+      "name": "LeftShoulder",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 220172740,
+      "parent_name": "Spine"
+    },
+    {
+      "fbx_id": 956314281,
+      "name": "LeftArm",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 670487630,
+      "parent_name": "LeftShoulder"
+    },
+    {
+      "fbx_id": 235021943,
+      "name": "LeftForeArm",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 956314281,
+      "parent_name": "LeftArm"
+    },
+    {
+      "fbx_id": 912135408,
+      "name": "LeftHand",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 235021943,
+      "parent_name": "LeftForeArm"
+    },
+    {
+      "fbx_id": 334966094,
+      "name": "RightShoulder",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 220172740,
+      "parent_name": "Spine"
+    },
+    {
+      "fbx_id": 974658030,
+      "name": "RightArm",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 334966094,
+      "parent_name": "RightShoulder"
+    },
+    {
+      "fbx_id": 724444517,
+      "name": "RightForeArm",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 974658030,
+      "parent_name": "RightArm"
+    },
+    {
+      "fbx_id": 90778747,
+      "name": "RightHand",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 724444517,
+      "parent_name": "RightForeArm"
+    },
+    {
+      "fbx_id": 998591459,
+      "name": "neck",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 220172740,
+      "parent_name": "Spine"
+    },
+    {
+      "fbx_id": 224037294,
+      "name": "Head",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 998591459,
+      "parent_name": "neck"
+    },
+    {
+      "fbx_id": 403851968,
+      "name": "head_end",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 224037294,
+      "parent_name": "Head"
+    },
+    {
+      "fbx_id": 808713647,
+      "name": "headfront",
+      "subtype": "LimbNode",
+      "parent_fbx_id": 224037294,
+      "parent_name": "Head"
+    }
+  ],
+  "rigify_compatible": null,
+  "rigify_note": "Not inferred from FBX names; verify control semantics and rest transforms explicitly.",
+  "motion_mapping_status": "unmapped"
+}
