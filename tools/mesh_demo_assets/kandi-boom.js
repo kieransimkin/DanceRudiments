@@ -18,6 +18,20 @@ export const KANDI_RETARGET_MAP = Object.freeze({
   RightShoulder: 'RightShoulder', RightArm: 'RightArm', RightForeArm: 'RightForeArm', RightHand: 'RightHand',
 });
 
+// Name matching is not enough: Kandi is bound in a steep A-pose while the
+// retained CMU converter calibration is near-T. These unambiguous continuation
+// chains define the semantic aim axis used to derive each control's retarget
+// reference orientation. Zero-length CMU helper links are deliberately omitted.
+export const KANDI_RETARGET_AIM_CHILD = Object.freeze({
+  Spine02: 'Spine01',
+  Spine01: 'Spine',
+  neck: 'Head',
+  LeftShoulder: 'LeftArm', LeftArm: 'LeftForeArm', LeftForeArm: 'LeftHand',
+  RightShoulder: 'RightArm', RightArm: 'RightForeArm', RightForeArm: 'RightHand',
+  LeftUpLeg: 'LeftLeg', LeftLeg: 'LeftFoot', LeftFoot: 'LeftToeBase',
+  RightUpLeg: 'RightLeg', RightLeg: 'RightFoot', RightFoot: 'RightToeBase',
+});
+
 function arrayBuffer(bytes) {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
@@ -54,6 +68,18 @@ function textureTransformMatches(a, b) {
 
 export function calibrationRelativeQuaternion(current, calibrationInverse, target = new THREE.Quaternion()) {
   return target.copy(current).multiply(calibrationInverse).normalize();
+}
+
+export function retargetAimCorrection(targetRestAim, sourceCalibrationAim, target = new THREE.Quaternion()) {
+  const from = targetRestAim.clone(), to = sourceCalibrationAim.clone();
+  const fromLength = from.length(), toLength = to.length();
+  if (!(fromLength > 1e-8) || !(toLength > 1e-8) ||
+      !Number.isFinite(fromLength) || !Number.isFinite(toLength))
+    throw Error('Retarget reference requires finite, non-zero bone directions');
+  return target.setFromUnitVectors(
+    from.multiplyScalar(1 / fromLength),
+    to.multiplyScalar(1 / toLength),
+  ).normalize();
 }
 
 async function textureFromBytes(bytes, {srgb = false} = {}) {
@@ -228,12 +254,13 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
   motionRoot.add(root); group.add(motionRoot); group.scale.setScalar(2.4 / modelSize.y);
   group.updateMatrixWorld(true);
 
-  const rest = new Map(), restWorld = new Map(), parentRestWorld = new Map();
+  const rest = new Map(), restWorld = new Map(), restWorldPosition = new Map(), parentRestWorld = new Map();
   const rootWorldInverse = root.matrixWorld.clone().invert();
   for (const bone of targetBoneList) {
     rest.set(bone.name, {position: bone.position.clone(), quaternion: bone.quaternion.clone(), scale: bone.scale.clone()});
     const localWorld = new THREE.Matrix4().multiplyMatrices(rootWorldInverse, bone.matrixWorld);
     restWorld.set(bone.name, new THREE.Quaternion().setFromRotationMatrix(localWorld));
+    restWorldPosition.set(bone.name, new THREE.Vector3().setFromMatrixPosition(localWorld));
     const parentWorld = bone.parent
       ? new THREE.Matrix4().multiplyMatrices(rootWorldInverse, bone.parent.matrixWorld)
       : new THREE.Matrix4();
@@ -246,10 +273,15 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
   const sourceHeight = Number(sourceRig.restBounds?.size?.[2]);
   if (!(sourceHeight > 0)) throw Error('Source motion rig height is invalid');
   const sourceToTargetUnits = modelSize.y / sourceHeight;
-  const desiredWorld = new Map(), sourceCalibrationInverse = new Map();
+  const desiredWorld = new Map(), sourceCalibrationInverse = new Map(), retargetReferenceWorld = new Map();
+  const retargetReferenceOffsetsDegrees = {};
   const sourceQ = new THREE.Quaternion(), sourceDeltaQ = new THREE.Quaternion(), deltaQ = new THREE.Quaternion();
-  const parentQ = new THREE.Quaternion(), localQ = new THREE.Quaternion(), sourcePosition = new THREE.Vector3();
+  const correctionQ = new THREE.Quaternion(), parentQ = new THREE.Quaternion(), localQ = new THREE.Quaternion();
+  const sourcePosition = new THREE.Vector3(), sourceChildPosition = new THREE.Vector3();
+  const sourceAim = new THREE.Vector3(), targetAim = new THREE.Vector3(), alignedAim = new THREE.Vector3();
+  const identityQ = new THREE.Quaternion();
   let profileChecked = false, calibrationCaptured = false, rootReference = null, closed = false;
+  let retargetReferenceMaxAimError = null, retargetReferenceMaxOffsetDegrees = null;
 
   function ensureProfile(profile) {
     if (profileChecked) return;
@@ -262,10 +294,51 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
     if (calibrationCaptured) throw Error('Kandi Boom source calibration has already been established');
     ensureProfile(profile);
     const matrices = source.evaluate(values);
+
     for (const sourceName of new Set(Object.values(KANDI_RETARGET_MAP))) {
       sourceQ.setFromRotationMatrix(matrices[sourceIndex.get(sourceName)]);
       sourceCalibrationInverse.set(sourceName, sourceQ.clone().invert());
     }
+
+    // Preserve Kandi's own positions and bone lengths, but do not pretend her
+    // authored A-pose is the same semantic reference as CMU's near-T pose.
+    retargetReferenceWorld.clear();
+    for (const [targetName, quaternion] of restWorld)
+      retargetReferenceWorld.set(targetName, quaternion.clone());
+
+    retargetReferenceMaxAimError = 0;
+    retargetReferenceMaxOffsetDegrees = 0;
+    for (const key of Object.keys(retargetReferenceOffsetsDegrees))
+      delete retargetReferenceOffsetsDegrees[key];
+
+    for (const [targetName, targetChildName] of Object.entries(KANDI_RETARGET_AIM_CHILD)) {
+      const sourceName = KANDI_RETARGET_MAP[targetName];
+      const sourceChildName = KANDI_RETARGET_MAP[targetChildName];
+      const sourceMatrix = matrices[sourceIndex.get(sourceName)];
+      const sourceChildMatrix = matrices[sourceIndex.get(sourceChildName)];
+      if (!sourceMatrix || !sourceChildMatrix)
+        throw Error(`Source calibration is missing ${sourceName} -> ${sourceChildName}`);
+
+      sourcePosition.setFromMatrixPosition(sourceMatrix);
+      sourceChildPosition.setFromMatrixPosition(sourceChildMatrix);
+      sourceAim.copy(sourceChildPosition).sub(sourcePosition).applyQuaternion(SOURCE_TO_TARGET);
+      targetAim.copy(restWorldPosition.get(targetChildName)).sub(restWorldPosition.get(targetName));
+
+      retargetAimCorrection(targetAim, sourceAim, correctionQ);
+      retargetReferenceWorld.set(
+        targetName,
+        correctionQ.clone().multiply(restWorld.get(targetName)).normalize(),
+      );
+
+      alignedAim.copy(targetAim).applyQuaternion(correctionQ).normalize();
+      sourceAim.normalize();
+      const aimError = alignedAim.angleTo(sourceAim);
+      const offsetDegrees = identityQ.angleTo(correctionQ) * 180 / Math.PI;
+      retargetReferenceMaxAimError = Math.max(retargetReferenceMaxAimError, aimError);
+      retargetReferenceMaxOffsetDegrees = Math.max(retargetReferenceMaxOffsetDegrees, offsetDegrees);
+      retargetReferenceOffsetsDegrees[targetName] = offsetDegrees;
+    }
+
     sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get('Hips')]);
     sourcePosition.applyQuaternion(SOURCE_TO_TARGET).multiplyScalar(sourceToTargetUnits);
     rootReference = sourcePosition.clone();
@@ -292,7 +365,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
       sourceQ.setFromRotationMatrix(matrices[sourceIndex.get(sourceName)]);
       calibrationRelativeQuaternion(sourceQ, sourceCalibrationInverse.get(sourceName), sourceDeltaQ);
       deltaQ.copy(SOURCE_TO_TARGET).multiply(sourceDeltaQ).multiply(SOURCE_TO_TARGET_INV).normalize();
-      const worldQ = deltaQ.multiply(restWorld.get(record.name)).normalize();
+      const referenceQ = retargetReferenceWorld.get(record.name) || restWorld.get(record.name);
+      const worldQ = deltaQ.multiply(referenceQ).normalize();
       desiredWorld.set(record.name, worldQ.clone());
       const parentName = bone.parent?.isBone ? bone.parent.name : null;
       if (parentName && desiredWorld.has(parentName)) parentQ.copy(desiredWorld.get(parentName));
@@ -355,6 +429,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
       fbxTextureFlipY: sourceMap.flipY,
       pbrTextureFlipY: albedo.flipY,
       restMaxPositionError, restMaxAngularError, restMaxScaleError,
+      retargetReferenceMaxAimError, retargetReferenceMaxOffsetDegrees,
+      retargetReferenceOffsetsDegrees: {...retargetReferenceOffsetsDegrees},
     };
   }
 

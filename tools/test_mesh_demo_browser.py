@@ -222,10 +222,15 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                       and diagnostics.get('textureTransformMatched') is True
                       and diagnostics.get('fbxTextureFlipY') == diagnostics.get('pbrTextureFlipY'),
                       f'{sid}: PBR maps preserve the FBX texture-coordinate contract and source calibration is established')
+                offsets = diagnostics.get('retargetReferenceOffsetsDegrees') or {}
                 check(diagnostics.get('restMaxPositionError', 1) < 1e-6
-                      and diagnostics.get('restMaxAngularError', 1) < 2e-5
                       and diagnostics.get('restMaxScaleError', 1) < 1e-6,
-                      f'{sid}: retained converter calibration maps exactly to the Kandi FBX rest pose')
+                      f'{sid}: retargeting preserves Kandi FBX local joint offsets and scale')
+                check(diagnostics.get('retargetReferenceMaxAimError', 1) < 1e-5
+                      and diagnostics.get('retargetReferenceMaxOffsetDegrees', 0) > 20
+                      and offsets.get('LeftArm', 0) > 20
+                      and offsets.get('RightArm', 0) > 20,
+                      f'{sid}: CMU calibration builds a non-trivial per-control Kandi reference pose')
                 check(any('/characters/kandi-boom/kandi-boom.fbx' in value for value in requests[request_start:]),
                       f'{sid}: explicit load fetches the canonical Kandi Boom FBX')
                 other = {item['id'] for item in catalogue['scenes']} - {sid}

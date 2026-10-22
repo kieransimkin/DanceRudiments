@@ -65,11 +65,14 @@ retarget adapter:
 | Kandi Boom | Ballet sequence: attitude, arabesque, turning jump and back bend | CMU 05_18 |
 
 The source recordings preserve their own skeleton profiles, original timing and
-calibration frames. The retained converter calibration T-pose is explicitly
-mapped to Kandi's FBX rest pose, so captured rotations are retargeted as deltas
-rather than applying the converter's calibration offsets twice. Kandi's external
-PBR maps also inherit the FBX diffuse map's image-Y orientation, UV channel,
-wrapping, scale and translation instead of assuming glTF texture coordinates.
+calibration frames. The retained converter calibration T-pose establishes a
+per-control retarget reference pose: Kandi keeps her FBX joint positions and
+proportions, while each mapped continuation bone is oriented to the corresponding
+CMU calibration direction before captured rotation deltas are applied. This is
+especially important for the arms because Kandi's authored bind pose is a steep
+A-pose while the CMU converter frame is near-T. Kandi's external PBR maps also
+inherit the FBX diffuse map's image-Y orientation, UV channel, wrapping, scale
+and translation instead of assuming glTF texture coordinates.
 The captures have no verified musical beat/downbeat annotations and are not
 presented as beat-matched to a song. Loading a performance fetches only its
 optional motion package plus the hash-pinned Kandi target assets; switching
