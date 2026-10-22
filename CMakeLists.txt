@@ -4,6 +4,7 @@ project(DanceRudiments VERSION 0.4.6
   HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
   LANGUAGES CXX)
 
+option(DANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES "Install large optional rig-motion demo assets" ON)
 option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
@@ -120,8 +121,10 @@ install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
   FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "*.svg" PATTERN "capture.json")
 install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
   PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
-install(DIRECTORY examples/rig-motion/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/rig-motion"
-  PATTERN "__pycache__" EXCLUDE)
+if(DANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES)
+  install(DIRECTORY examples/rig-motion/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/rig-motion"
+    PATTERN "__pycache__" EXCLUDE)
+endif()
 
 
 # .NET is built by dotnet, not by CMake. Only the optional native bridge is built here.
