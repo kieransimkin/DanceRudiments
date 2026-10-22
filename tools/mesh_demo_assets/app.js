@@ -160,6 +160,11 @@ function applyPose(owner) {
   const pip = owner.desiredPip, motion = owner.active.motion;
   if (pip < motion.startPip || pip >= motion.startPip + motion.sampleCount || owner.lastPip === pip) return;
   const physical = motion.sample(pip); // Native C++/WASM sampling, then channel-unit decoding.
+  if (!owner.character.isCalibrated()) {
+    if (pip !== owner.scene.startPip || owner.scene.calibrationFrameCount !== 1)
+      throw Error('Kandi Boom must be calibrated from the retained converter T-pose');
+    owner.character.calibrateChannels(motion.profile, physical);
+  }
   owner.character.applyChannels(motion.profile, physical); owner.physicalSample = Array.from(physical);
   owner.lastPip = pip;
   if (owner.followPosition) {
@@ -329,6 +334,7 @@ document.addEventListener('visibilitychange', () => {
 window.meshDemo = Object.freeze({
   debugSnapshot() {
     const owner = session, character = owner?.character;
+    const characterDiagnostics = character?.diagnostics() ?? null;
     return {
       ready: Boolean(owner?.ready), sceneId: owner?.scene.id ?? null, selectedSceneId: selected.id,
       loadedChunkId: owner?.active?.id ?? null, currentPip: owner?.nativePip ?? null,
@@ -342,7 +348,7 @@ window.meshDemo = Object.freeze({
       jointWorldMatrices: character?.sourceJointWorldMatrices() ?? [],
       rigTransforms: character?.targetBones.map(bone => ({name: bone.name, position: bone.position.toArray(), quaternion: bone.quaternion.toArray(), matrixWorld: bone.matrixWorld.toArray()})) ?? [],
       characterName: character ? config.character.name : null, targetRigFingerprint: character ? config.character.rigFingerprint : null,
-      runtimeInfluenceLimit: character?.stats.runtimeInfluenceLimit ?? null,
+      runtimeInfluenceLimit: character?.stats.runtimeInfluenceLimit ?? null, characterDiagnostics,
       activeNativeHandles: stats.activeNativeHandles, disposedNativeHandles: stats.disposedNativeHandles,
       disposedGeometries: stats.disposedGeometries, pendingRequests: stats.pendingRequests + (owner?.pending ? 1 : 0),
       nativeSampleCalls: stats.nativeSampleCalls, loadedCacheIds: owner?.active ? [owner.active.id] : [],

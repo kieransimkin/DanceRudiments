@@ -217,6 +217,15 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                 check(state['characterName'] == 'Kandi Boom' and state['targetRigFingerprint'] == target['rigFingerprint']
                       and state['runtimeInfluenceLimit'] == 4,
                       f'{sid}: the rendered target is the verified Kandi Boom rig')
+                diagnostics = state.get('characterDiagnostics') or {}
+                check(diagnostics.get('calibrated') is True
+                      and diagnostics.get('textureTransformMatched') is True
+                      and diagnostics.get('fbxTextureFlipY') == diagnostics.get('pbrTextureFlipY'),
+                      f'{sid}: PBR maps preserve the FBX texture-coordinate contract and source calibration is established')
+                check(diagnostics.get('restMaxPositionError', 1) < 1e-6
+                      and diagnostics.get('restMaxAngularError', 1) < 2e-5
+                      and diagnostics.get('restMaxScaleError', 1) < 1e-6,
+                      f'{sid}: retained converter calibration maps exactly to the Kandi FBX rest pose')
                 check(any('/characters/kandi-boom/kandi-boom.fbx' in value for value in requests[request_start:]),
                       f'{sid}: explicit load fetches the canonical Kandi Boom FBX')
                 other = {item['id'] for item in catalogue['scenes']} - {sid}

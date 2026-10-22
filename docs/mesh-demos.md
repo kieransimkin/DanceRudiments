@@ -31,15 +31,21 @@ more than four influences. The canonical FBX remains untouched; Three.js/WebGL's
 standard four-weight GPU path is treated as an explicit runtime approximation.
 The browser integration normalises every runtime weight set and fails if a vertex
 loses all influence. The exact source influence statistics remain in the audit.
+When the external albedo/normal/roughness/metallic maps replace the FBX material
+maps, they inherit FBXLoader's texture image orientation and UV/sampler transform;
+only colour-space semantics remain map-specific.
 
 ## Retargeting contract
 
 The CMU packages retain their own exact source skeletons and source profiles.
 Runtime retargeting is explicit rather than pretending those profiles are Kandi's
-rig. Each sampled source pose is first composed in source space. Source world
-rotation deltas are converted from the source Z-up basis into the Kandi Y-up
-basis, then applied to the corresponding Kandi rest-world bone orientation.
-Target local quaternions are solved from the desired target-world hierarchy.
+rig. Each sampled source pose is first composed in source space. The retained
+converter-added calibration T-pose is captured as the source neutral pose; source
+world rotations are measured relative to that calibration, converted from the
+source Z-up basis into the Kandi Y-up basis, then applied to the corresponding
+Kandi rest-world bone orientation. Target local quaternions are solved from the
+desired target-world hierarchy. This prevents the converter calibration offsets
+from being applied on top of Kandi's already-authored FBX rest pose.
 
 The mapping covers hips, both leg chains, the three Kandi spine bones, neck,
 head, shoulders, arms, forearms and hands. CMU convenience joints that do not
@@ -76,6 +82,7 @@ the Kandi source audit and Chromium gallery checks. Browser QA verifies that:
 - native sampled values match independent Python-native reference poses;
 - source-space joint matrices remain numerically consistent with the independent reference evaluator;
 - the rendered object is the Kandi Boom target, contains real skinned geometry and visibly deforms across captured poses;
+- the PBR maps retain the FBX diffuse texture-coordinate transform and the retained calibration frame resolves exactly to Kandi's FBX rest pose;
 - pausing, seeking, speed changes, switching performances and unloading preserve the native transport/resource contract;
 - desktop and mobile layouts retain a usable WebGL canvas and use only bundled same-origin assets.
 

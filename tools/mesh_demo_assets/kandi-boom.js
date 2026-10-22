@@ -22,11 +22,44 @@ function arrayBuffer(bytes) {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 }
 
+export function copyFbxTextureTransform(source, target) {
+  if (!source?.isTexture || !target?.isTexture) throw Error('FBX texture transform requires two Three.js textures');
+  // FBXLoader uses the normal Three.js image convention (flipY=true unless
+  // the FBX says otherwise) and then applies FBX wrap/scale/translation.
+  // Preserve those coordinates when swapping in the audited external PBR maps.
+  target.flipY = source.flipY;
+  target.mapping = source.mapping;
+  target.channel = source.channel;
+  target.wrapS = source.wrapS; target.wrapT = source.wrapT;
+  target.magFilter = source.magFilter; target.minFilter = source.minFilter;
+  target.anisotropy = source.anisotropy;
+  target.generateMipmaps = source.generateMipmaps;
+  target.premultiplyAlpha = source.premultiplyAlpha;
+  target.unpackAlignment = source.unpackAlignment;
+  target.offset.copy(source.offset); target.repeat.copy(source.repeat); target.center.copy(source.center);
+  target.rotation = source.rotation; target.matrixAutoUpdate = source.matrixAutoUpdate;
+  if (source.matrixAutoUpdate) target.updateMatrix(); else target.matrix.copy(source.matrix);
+  // Deliberately do not copy colorSpace: albedo is sRGB; normal/roughness/
+  // metalness remain data textures.
+  target.needsUpdate = true;
+  return target;
+}
+
+function textureTransformMatches(a, b) {
+  return a.flipY === b.flipY && a.mapping === b.mapping && a.channel === b.channel &&
+    a.wrapS === b.wrapS && a.wrapT === b.wrapT &&
+    a.offset.equals(b.offset) && a.repeat.equals(b.repeat) && a.center.equals(b.center) &&
+    a.rotation === b.rotation && a.matrixAutoUpdate === b.matrixAutoUpdate;
+}
+
+export function calibrationRelativeQuaternion(current, calibrationInverse, target = new THREE.Quaternion()) {
+  return target.copy(current).multiply(calibrationInverse).normalize();
+}
+
 async function textureFromBytes(bytes, {srgb = false} = {}) {
   const url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'}));
   try {
     const texture = await new THREE.TextureLoader().loadAsync(url);
-    texture.flipY = false;
     if (srgb) texture.colorSpace = THREE.SRGBColorSpace;
     texture.needsUpdate = true;
     return texture;
@@ -135,7 +168,27 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
   root.updateMatrixWorld(true);
   const targetBones = validateTargetRig(targetRig, root);
   const targetBoneList = targetRig.bones.map(record => targetBones.get(record.name));
-  const meshes = [];
+  const meshes = [], sourceMaps = [];
+  // Read the FBX material's own texture coordinate contract before replacing
+  // its embedded colour map with the separately hash-pinned PBR maps.
+  root.traverse(object => {
+    if (!(object.isMesh || object.isSkinnedMesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    for (const material of materials) if (material?.map?.isTexture) sourceMaps.push(material.map);
+  });
+  if (!sourceMaps.length) {
+    textures.forEach(texture => texture.dispose());
+    throw Error('Kandi Boom FBX has no diffuse texture transform to bind the external PBR maps');
+  }
+  const sourceMap = sourceMaps[0];
+  if (sourceMaps.some(texture => !textureTransformMatches(sourceMap, texture))) {
+    textures.forEach(texture => texture.dispose());
+    throw Error('Kandi Boom FBX uses incompatible diffuse texture transforms');
+  }
+  textures.forEach(texture => copyFbxTextureTransform(sourceMap, texture));
+  const textureTransformMatched = textures.every(texture => textureTransformMatches(sourceMap, texture));
+  if (!textureTransformMatched) throw Error('Kandi Boom PBR texture transforms do not match the FBX UV contract');
+
   root.traverse(object => {
     if (!(object.isMesh || object.isSkinnedMesh)) return;
     if (object.isSkinnedMesh) meshes.push(object);
@@ -193,9 +246,31 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
   const sourceHeight = Number(sourceRig.restBounds?.size?.[2]);
   if (!(sourceHeight > 0)) throw Error('Source motion rig height is invalid');
   const sourceToTargetUnits = modelSize.y / sourceHeight;
-  const desiredWorld = new Map(), sourceQ = new THREE.Quaternion(), deltaQ = new THREE.Quaternion();
+  const desiredWorld = new Map(), sourceCalibrationInverse = new Map();
+  const sourceQ = new THREE.Quaternion(), sourceDeltaQ = new THREE.Quaternion(), deltaQ = new THREE.Quaternion();
   const parentQ = new THREE.Quaternion(), localQ = new THREE.Quaternion(), sourcePosition = new THREE.Vector3();
-  let profileChecked = false, rootReference = null, closed = false;
+  let profileChecked = false, calibrationCaptured = false, rootReference = null, closed = false;
+
+  function ensureProfile(profile) {
+    if (profileChecked) return;
+    if (!profileMatches(sourceRig, profile)) throw Error('Source motion bindings do not match the selected package profile');
+    profileChecked = true;
+  }
+
+  function calibrateChannels(profile, values) {
+    if (closed) throw Error('Kandi Boom character was disposed');
+    if (calibrationCaptured) throw Error('Kandi Boom source calibration has already been established');
+    ensureProfile(profile);
+    const matrices = source.evaluate(values);
+    for (const sourceName of new Set(Object.values(KANDI_RETARGET_MAP))) {
+      sourceQ.setFromRotationMatrix(matrices[sourceIndex.get(sourceName)]);
+      sourceCalibrationInverse.set(sourceName, sourceQ.clone().invert());
+    }
+    sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get('Hips')]);
+    sourcePosition.applyQuaternion(SOURCE_TO_TARGET).multiplyScalar(sourceToTargetUnits);
+    rootReference = sourcePosition.clone();
+    calibrationCaptured = true;
+  }
 
   function resetTarget() {
     for (const bone of targetBoneList) {
@@ -206,10 +281,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
 
   function applyChannels(profile, values) {
     if (closed) throw Error('Kandi Boom character was disposed');
-    if (!profileChecked) {
-      if (!profileMatches(sourceRig, profile)) throw Error('Source motion bindings do not match the selected package profile');
-      profileChecked = true;
-    }
+    ensureProfile(profile);
+    if (!calibrationCaptured) throw Error('Kandi Boom source calibration must be established before retargeting');
     const matrices = source.evaluate(values);
     resetTarget(); desiredWorld.clear();
     root.updateMatrixWorld(true);
@@ -217,7 +290,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
       const bone = targetBones.get(record.name), sourceName = KANDI_RETARGET_MAP[record.name];
       if (!sourceName) continue;
       sourceQ.setFromRotationMatrix(matrices[sourceIndex.get(sourceName)]);
-      deltaQ.copy(SOURCE_TO_TARGET).multiply(sourceQ).multiply(SOURCE_TO_TARGET_INV).normalize();
+      calibrationRelativeQuaternion(sourceQ, sourceCalibrationInverse.get(sourceName), sourceDeltaQ);
+      deltaQ.copy(SOURCE_TO_TARGET).multiply(sourceDeltaQ).multiply(SOURCE_TO_TARGET_INV).normalize();
       const worldQ = deltaQ.multiply(restWorld.get(record.name)).normalize();
       desiredWorld.set(record.name, worldQ.clone());
       const parentName = bone.parent?.isBone ? bone.parent.name : null;
@@ -227,10 +301,10 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
       bone.quaternion.copy(localQ);
     }
     // Preserve target rest offsets. Global source translation drives an outer
-    // motion root, scaled by the ratio of source and Kandi skeleton heights.
+    // motion root relative to the retained converter calibration frame, scaled
+    // by the ratio of source and Kandi skeleton heights.
     sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get('Hips')]);
     sourcePosition.applyQuaternion(SOURCE_TO_TARGET).multiplyScalar(sourceToTargetUnits);
-    if (!rootReference) rootReference = sourcePosition.clone();
     motionRoot.position.copy(sourcePosition).sub(rootReference);
     root.updateMatrixWorld(true); group.updateMatrixWorld(true);
     for (const mesh of meshes) mesh.skeleton?.update();
@@ -267,11 +341,28 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
     group.updateMatrixWorld(true);
   }
 
-
+  function diagnostics() {
+    let restMaxPositionError = 0, restMaxAngularError = 0, restMaxScaleError = 0;
+    for (const bone of targetBoneList) {
+      const value = rest.get(bone.name);
+      restMaxPositionError = Math.max(restMaxPositionError, bone.position.distanceTo(value.position));
+      restMaxAngularError = Math.max(restMaxAngularError, bone.quaternion.angleTo(value.quaternion));
+      restMaxScaleError = Math.max(restMaxScaleError, bone.scale.distanceTo(value.scale));
+    }
+    return {
+      calibrated: calibrationCaptured,
+      textureTransformMatched,
+      fbxTextureFlipY: sourceMap.flipY,
+      pbrTextureFlipY: albedo.flipY,
+      restMaxPositionError, restMaxAngularError, restMaxScaleError,
+    };
+  }
 
   return Object.freeze({
     group, rootBone: targetBones.get('Hips'), targetBones: targetBoneList,
-    sourceJointNames: source.names.slice(), stats: Object.freeze(stats), applyChannels, frameOnFloor, representativeVertices,
+    sourceJointNames: source.names.slice(), stats: Object.freeze(stats),
+    calibrateChannels, isCalibrated: () => calibrationCaptured, applyChannels, diagnostics,
+    frameOnFloor, representativeVertices,
     sourceJointWorldMatrices: () => (source.lastMatrices || []).map(matrix => matrix.clone().transpose().toArray()),
     dispose() {
       if (closed) return; closed = true; group.removeFromParent();
