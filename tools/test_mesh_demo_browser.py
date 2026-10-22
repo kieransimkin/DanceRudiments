@@ -80,6 +80,13 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
             or catalogue.get('schema_version') != 1 or len(catalogue.get('scenes', [])) != 2
             or {scene.get('id') for scene in catalogue['scenes']} != {'boxbot', 'prism'}):
         raise ValueError('Expected the built two-scene mesh gallery')
+    target = build.get('targetCharacter', {})
+    if (target.get('id') != 'kandi-boom' or target.get('name') != 'Kandi Boom'
+            or target.get('runtimeInfluenceLimit') != 4 or not re.fullmatch(r'[0-9a-f]{64}', target.get('rigFingerprint', ''))):
+        raise ValueError('Expected the hash-pinned Kandi Boom production target')
+    gallery_html = (mesh / 'index.html').read_text(encoding='utf-8')
+    if 'Kandi Boom' not in gallery_html or '>Boxbot<' in gallery_html or '>Prism<' in gallery_html:
+        raise ValueError('Gallery still exposes a procedural fixture as a character')
     prefix = prefix or f'DanceRudiments-mesh-demos-v{build["version"]}'
     if not re.fullmatch(r'[A-Za-z0-9_.-]+', prefix):
         raise ValueError('Browser artifact prefix must be a safe filename')
@@ -91,6 +98,9 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                   status='FAIL', scope='mesh-gallery-only' if gallery_only else 'complete-site',
                   version=build['version'], source_commit=build['commit'], tested_assets=inputs,
                   scenes=scenes, checks=checks, screenshots=[],
+                  target_character=dict(id=target['id'], name=target['name'],
+                      rig_fingerprint=target['rigFingerprint'], fbx_asset_sha256=target['fbxAssetSha256'],
+                      runtime_influence_limit=target['runtimeInfluenceLimit']),
                   source_timing='time-only; musical BPM and phase unverified',
                   rendering='Chromium WebGL 2; ANGLE SwiftShader software renderer')
 
@@ -170,8 +180,8 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                   'The actual renderer owns a WebGL 2 context')
             check(initial['activeNativeHandles'] == 0 and initial['skinnedMeshCount'] == 0,
                   'Initial navigation allocates no character or native motion handle')
-            check(not any('/motions/' in value or value.endswith('.wasm') for value in requests),
-                  'Initial navigation fetches no rig, profile, recording or WASM payload')
+            check(not any('/motions/' in value or '/characters/' in value or value.endswith('.wasm') for value in requests),
+                  'Initial navigation fetches no Kandi target, rig, profile, recording or WASM payload')
             check(not initial['playing'], 'Motion does not play before the user loads a character')
 
             def seek(pip):
@@ -190,7 +200,7 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                     unloaded = snapshot()
                     check(unloaded['disposedNativeHandles'] > before['disposedNativeHandles']
                           and unloaded['disposedGeometries'] > before['disposedGeometries'],
-                          'Switching characters disposes the previous native handle and skin geometry')
+                          'Switching performances disposes the previous native handle and Kandi skin geometry')
                     scenes[-1]['unloaded_by_scene_switch'] = True
                 check(not any(f'/motions/{sid}/' in value for value in requests[selection_start:]),
                       f'{sid}: selecting the card does not load its motion')
@@ -204,6 +214,11 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                 check(state['skinnedMeshCount'] >= 1 and state['vertexCount'] > 0
                       and state['weightedVertexCount'] == state['vertexCount'] and state['blendedVertexCount'] > 0,
                       f'{sid}: actual skinned geometry contains vertices with multiple bone weights')
+                check(state['characterName'] == 'Kandi Boom' and state['targetRigFingerprint'] == target['rigFingerprint']
+                      and state['runtimeInfluenceLimit'] == 4,
+                      f'{sid}: the rendered target is the verified Kandi Boom rig')
+                check(any('/characters/kandi-boom/kandi-boom.fbx' in value for value in requests[request_start:]),
+                      f'{sid}: explicit load fetches the canonical Kandi Boom FBX')
                 other = {item['id'] for item in catalogue['scenes']} - {sid}
                 check(not any(f'/motions/{name}/' in request for name in other for request in requests[request_start:]),
                       f'{sid}: load fetches only the selected character package')

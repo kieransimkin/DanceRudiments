@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="Two original low-poly skinned characters perform real captured dances, played by DanceRudiments native motion recordings.">
+  <meta name="description" content="Kandi Boom performs two real captured dances through DanceRudiments native motion recordings and explicit rig retargeting.">
   <meta name="color-scheme" content="light">
   <title>Motion Studio · DanceRudiments</title>
   <link rel="stylesheet" href="./style.css">
@@ -15,17 +15,17 @@
   </header>
   <main>
     <section class="intro" aria-labelledby="page-title">
-      <div><p class="eyebrow"><span></span> CAPTURED MOVEMENT. NEW CHARACTERS.</p><h1 id="page-title">A little character.<br>A lot of <em>motion.</em></h1></div>
-      <p class="intro-copy">Meet two original low-poly dancers, brought to life by real motion capture. Choose a character, load a performance, and explore every step.</p>
+      <div><p class="eyebrow"><span></span> CAPTURED MOVEMENT. KANDI BOOM.</p><h1 id="page-title">One real character.<br>Two captured <em>performances.</em></h1></div>
+      <p class="intro-copy">Meet Kandi Boom from Bass Ben &amp; Friends, driven by two real motion-capture performances. Choose a performance and explore every step.</p>
     </section>
     <div class="workspace">
       <section class="stage-section" aria-label="Interactive character performance">
         <div class="viewport" id="viewport">
           <canvas id="stage" aria-label="3D skinned character dance. Drag to orbit, scroll to zoom." tabindex="0"></canvas>
           <div class="stage-top"><span class="stage-badge"><span class="status-dot" id="status-dot"></span><span id="status">Ready when you are</span></span><button class="icon-button camera-reset" id="reset-view" title="Reset camera" aria-label="Reset camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 8h4l2-3h4l2 3h4v12H4z"/><circle cx="12" cy="14" r="3.5"/></svg></button></div>
-          <div class="empty-state" id="empty-state"><span class="empty-overline">YOUR STAGE IS READY</span><h2>Let’s see the steps.</h2><p>One character. One performance.<br>Loaded only when you ask.</p><button class="button primary" id="load-scene">Load &amp; play Boxbot <span aria-hidden="true">↗</span></button><span class="load-footnote" id="load-size">Local renderer · no external services</span></div>
+          <div class="empty-state" id="empty-state"><span class="empty-overline">YOUR STAGE IS READY</span><h2>Let’s see the steps.</h2><p>One character. One performance.<br>Loaded only when you ask.</p><button class="button primary" id="load-scene">Load &amp; play Kandi Boom <span aria-hidden="true">↗</span></button><span class="load-footnote" id="load-size">Local renderer · no external services</span></div>
           <div class="loading-state" id="loading-state" hidden><span class="spinner" aria-hidden="true"></span><p id="loading-message">Loading the performance…</p><button class="text-button" id="cancel-load">Cancel</button></div>
-          <div class="stage-bottom"><span id="stage-caption">01 / BOXBOT</span><span class="orbit-hint">DRAG TO ORBIT <span>·</span> SCROLL TO ZOOM</span></div>
+          <div class="stage-bottom"><span id="stage-caption">01 / KANDI BOOM / SALSA</span><span class="orbit-hint">DRAG TO ORBIT <span>·</span> SCROLL TO ZOOM</span></div>
           <div class="error-panel" id="error" role="alert" hidden></div>
         </div>
         <div class="transport" aria-label="Playback controls">
@@ -34,21 +34,21 @@
         </div>
       </section>
       <aside class="sidebar" aria-label="Character and source information">
-        <div class="section-label">CHOOSE YOUR CHARACTER <span>02</span></div>
+        <div class="section-label">CHOOSE A PERFORMANCE <span>02</span></div>
         <div class="scene-cards" id="scene-cards">
-          <button class="scene-card active" data-scene="boxbot" aria-pressed="true"><span class="character-icon robot-icon" aria-hidden="true"><svg viewBox="0 0 80 80"><path d="M39 12V6" stroke="#254f51" stroke-width="3"/><rect x="21" y="13" width="37" height="29" rx="4" fill="#e8bc4e"/><rect x="26" y="23" width="27" height="10" rx="2" fill="#254f51"/><path d="M32 27v3m15-3v3" stroke="#bcffee" stroke-width="3"/><rect x="20" y="46" width="40" height="26" rx="4" fill="#254f51"/><rect x="28" y="51" width="24" height="7" rx="2" fill="#e8bc4e"/><path d="M13 49v18m54-18v18" stroke="#e8bc4e" stroke-width="8" stroke-linecap="square"/></svg></span><span class="scene-card-text"><strong>Boxbot</strong><span>Salsa / CMU 60_01</span></span><span class="choice-dot" aria-hidden="true"></span></button>
-          <button class="scene-card" data-scene="prism" aria-pressed="false"><span class="character-icon prism-icon" aria-hidden="true"><svg viewBox="0 0 80 80"><path d="m40 6 7 11-7 9-8-9z" fill="#d96c58"/><path d="m40 18 17 12-6 22H30l-7-22z" fill="#f1b594"/><path d="m40 18 1 34H30l-7-22z" fill="#dc7c67"/><path d="m29 32 22-1-4 7H32z" fill="#382d49"/><path d="m30 52-12 15 22 10 24-10-13-15z" fill="#d96c58"/><path d="m40 55 8 9-8 8-8-8z" fill="#f8d8b4"/></svg></span><span class="scene-card-text"><strong>Prism</strong><span>Ballet / CMU 05_18</span></span><span class="choice-dot" aria-hidden="true"></span></button>
+          <button class="scene-card active" data-scene="boxbot" aria-pressed="true"><span class="character-icon kandi-icon" aria-hidden="true"><strong>KB</strong></span><span class="scene-card-text"><strong>Kandi Boom</strong><span>Salsa / CMU 60_01</span></span><span class="choice-dot" aria-hidden="true"></span></button>
+          <button class="scene-card" data-scene="prism" aria-pressed="false"><span class="character-icon kandi-icon" aria-hidden="true"><strong>KB</strong></span><span class="scene-card-text"><strong>Kandi Boom</strong><span>Ballet / CMU 05_18</span></span><span class="choice-dot" aria-hidden="true"></span></button>
         </div>
-        <label class="sr-only" for="scene-select">Character</label><select id="scene-select" class="sr-only"><option value="boxbot">Boxbot · salsa</option><option value="prism">Prism · ballet</option></select>
-        <div class="performance-info"><div class="section-label">THE PERFORMANCE</div><h2 id="performance-title">A salsa, with circuits.</h2><p id="performance-description">An angular little robot with a surprisingly human sense of movement.</p><div class="facts"><div><span>CAPTURE</span><strong id="source-code">CMU 60_01</strong></div><div><span>DURATION</span><strong id="source-duration">—</strong></div><div><span>CHARACTER</span><strong id="mesh-label">Weighted mesh</strong></div><div><span>PLAYBACK</span><strong>Native WASM</strong></div></div></div>
+        <label class="sr-only" for="scene-select">Character</label><select id="scene-select" class="sr-only"><option value="boxbot">Kandi Boom · salsa</option><option value="prism">Kandi Boom · ballet</option></select>
+        <div class="performance-info"><div class="section-label">THE PERFORMANCE</div><h2 id="performance-title">Kandi Boom takes the salsa floor.</h2><p id="performance-description">The real Kandi Boom FBX retargets the complete captured salsa performance.</p><div class="facts"><div><span>CAPTURE</span><strong id="source-code">CMU 60_01</strong></div><div><span>DURATION</span><strong id="source-duration">—</strong></div><div><span>CHARACTER</span><strong id="mesh-label">Weighted mesh</strong></div><div><span>PLAYBACK</span><strong>Native WASM</strong></div></div></div>
         <div class="source-note"><span class="source-note-icon" aria-hidden="true">↗</span><div><strong>Real capture. Original timing.</strong><p id="timing-label">Source-time playback. Musical tempo and beat alignment have not been inferred.</p><a id="source-link" href="https://mocap.cs.cmu.edu/" target="_blank" rel="noopener noreferrer">View the motion source <span aria-hidden="true">↗</span></a></div></div>
         <button class="button unload-button" id="unload-scene" disabled>Unload character <span aria-hidden="true">×</span></button>
         <p class="resource-note" id="resource-note">Motion data stays unloaded until you choose a performance.</p>
       </aside>
     </div>
-    <section class="about-strip" aria-label="About this example"><p><strong>Small meshes. Full performances.</strong> Original geometry is skinned to each capture’s exact source rig. The numbered channels come from DanceRudiments recordings.</p><p>Time-only playback · no audio · no inferred BPM<br><a id="licence-link" href="https://mocap.cs.cmu.edu/" target="_blank" rel="noopener noreferrer">CMU motion capture credits &amp; terms ↗</a></p></section>
+    <section class="about-strip" aria-label="About this example"><p><strong>Kandi Boom. Full performances.</strong> Kandi Boom’s real FBX is retargeted from each capture’s exact source rig. The numbered channels still come from DanceRudiments recordings.</p><p>Time-only playback · no audio · no inferred BPM<br><a id="licence-link" href="https://mocap.cs.cmu.edu/" target="_blank" rel="noopener noreferrer">CMU motion capture credits &amp; terms ↗</a></p></section>
   </main>
-  <footer><span id="attribution">Motion data: Carnegie Mellon University · NSF EIA-0196217. BVH conversion: Bruce Hahne / cgspeed.</span><span id="build-version">DanceRudiments</span></footer>
+  <footer><span id="attribution">Kandi Boom · Bass Ben &amp; Friends. Motion data: Carnegie Mellon University · NSF EIA-0196217. BVH conversion: Bruce Hahne / cgspeed.</span><span id="build-version">DanceRudiments</span></footer>
   <noscript>This interactive example needs JavaScript and WebGL 2. No motion files are loaded without a character selection.</noscript>
   <script type="module" src="./app.js"></script>
 </body>

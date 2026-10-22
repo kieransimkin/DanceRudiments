@@ -53,38 +53,33 @@ replace that released site.
 
 ## 3D dance examples
 
-The release build adds a separate **`meshes/` gallery** beside the pattern
-visualizer. It contains two original low-poly skinned characters with different
-captured dances:
+The release build includes a separate **`meshes/` gallery** beside the pattern
+visualizer. The production character is **Kandi Boom** from *Bass Ben & Friends*,
+using the real checked-in FBX, 24-bone rig and PBR textures. Two pinned optional
+source-motion packages can drive her through an explicit source-rig → Kandi
+retarget adapter:
 
 | Character | Movement | Source recording |
 | --- | --- | --- |
-| Boxbot | Salsa | CMU 60_01, with the documented 60 fps source timing restored |
-| Prism | Ballet: attitude, arabesque, turning jump and back bend | CMU 05_18 |
+| Kandi Boom | Salsa | CMU 60_01, with the reviewed 60 fps source timing restored |
+| Kandi Boom | Ballet sequence: attitude, arabesque, turning jump and back bend | CMU 05_18 |
 
-Each character has its own optional motion package and independently bound rig
-profile. Loading a scene fetches only its own rig, profile and selected recording
-chunk. Play, pause, seek, restart and playback-rate controls use the existing
-native C++/WASM sampler. Unloading releases that scene's requests, recordings and
-GPU resources. The gallery uses actual weighted triangle meshes; no model or
-motion data is added to the base package or the site's pattern page.
+The source recordings preserve their own skeleton profiles, original timing and
+calibration frames. They have no verified musical beat/downbeat annotations and
+are not presented as beat-matched to a song. Loading a performance fetches only
+its optional motion package plus the hash-pinned Kandi target assets; switching
+performances unloads the previous recording and target scene. Play, pause, seek,
+restart and preview speed continue to use the existing native C++/WASM sampler.
 
-These are complete source recordings with **original timing**, including their
-calibration frame. They have no verified musical beat/downbeat annotations and
-are not presented as beat-matched to a song. The CMU source terms, attribution,
-source hashes and conversion details accompany the examples.
+Kandi's canonical FBX contains vertices with more than four source influences.
+The source remains untouched and fully audited; the WebGL renderer uses an
+explicit, normalised four-weight runtime approximation and records that limit in
+the build/browser evidence. The target is a custom Kandi rig, not a Rigify rig.
 
-The release workflow builds and browser-tests both characters, attaches a
-separate gallery ZIP and a complete-site ZIP, and deploys the existing visualizer
-and gallery together. Pages must already use GitHub Actions with
-`DANCERUDIMENTS_PAGES_ENABLED=true`; environment approvals remain in effect.
-The gallery becomes live at
-[`https://kieransimkin.github.io/DanceRudiments/meshes/`](https://kieransimkin.github.io/DanceRudiments/meshes/)
-after the first successful release containing these tools. Applying source
-changes alone does not deploy the website. See [building and validating the
-mesh demos](docs/mesh-demos.md) and the [release workflow guide](docs/release-demo.md).
-
-
+The release workflow browser-tests both performances on the real Kandi mesh,
+attaches gallery/complete-site archives and deploys the existing visualizer and
+gallery together when Pages is enabled. See [building and validating the Kandi
+Boom motion demo](docs/mesh-demos.md) and the [release workflow guide](docs/release-demo.md).
 
 DanceRudiments is a C++17 library of deterministic rhythmic position functions. One integer pip is `1/64` of a beat. Built-in and custom patterns each keep their own loop period. Every legacy pattern sampler wraps positive or negative input into its own loop before sampling.
 

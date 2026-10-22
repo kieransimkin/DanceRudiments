@@ -10,10 +10,11 @@ separate gates.
 ## What changes on the website
 
 The root remains the existing native pattern visualizer. A link in its header
-opens `meshes/`, where two original low-poly skinned characters perform different
-recorded dances. The standalone HTML download remains self-contained; the mesh
-gallery is a separate HTTP-served bundle with locally bundled JavaScript, WASM,
-rig profiles and selectively loaded motion files.
+opens `meshes/`, where **Kandi Boom** from *Bass Ben & Friends* performs either
+of two pinned source-motion recordings. The standalone HTML download remains
+self-contained; the gallery is a separate HTTP-served bundle with locally
+bundled JavaScript, WASM, the hash-pinned Kandi FBX/PBR target, source rig
+profiles and selectively loaded motion files.
 
 Earlier skeletal-motion changes added APIs, Rigify profiles, import tools and
 optional packages. Those changes did not turn the XYZ pattern visualizer into a
@@ -68,10 +69,13 @@ Dancefloor audition pages keep their separate existing browser gates.
 
 The mesh stage then builds only the two pinned dance sources selected in
 `tools/mesh_demo_sources.json`. This is an explicit workflow download, bounded
-to those two hashed files. It uses the optional package loader and the existing
-native recording WASM sampler. Browser QA checks:
+to those two hashed files. It independently verifies Kandi Boom's canonical FBX,
+target-rig fingerprint and PBR maps, then uses the optional package loader and
+the existing native recording WASM sampler. The legacy `boxbot` and `prism`
+scene IDs are source-package slot identities only; both render the same verified
+Kandi target. Browser QA checks:
 
-- Both weighted triangle skins and their changing deformed vertices.
+- Kandi Boom's real weighted triangle skin and changing deformed vertices under both source performances.
 - Every normalized and physical channel at four reference pips per dance, plus
   all source-space joint matrices against independently composed references.
 - Play, pause, integer-pip seeking, preview speed, restart and complete-action
@@ -84,9 +88,10 @@ native recording WASM sampler. Browser QA checks:
 it preserves the original standalone HTML and its script/data bytes. The
 complete-site browser report binds the resulting root and mesh files to their
 SHA-256 hashes. `seal` accepts only the exact report schema, matching version
-and commit, `scope: complete-site`, and successful coverage of both `boxbot`
-and `prism`. Changed, missing, unchecked or symlinked assets fail sealing. A
-local `--gallery-only` receipt cannot seal a release site.
+and commit, `scope: complete-site`, the exact Kandi target fingerprint/FBX
+hash, and successful coverage of both internal source-motion slots (`boxbot` and
+`prism`). Changed, missing, unchecked or symlinked assets fail sealing. A local
+`--gallery-only` receipt cannot seal a release site.
 
 ## Release downloads and reruns
 

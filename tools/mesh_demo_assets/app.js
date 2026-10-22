@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {createSkinnedCharacter} from './character.js';
+import {createKandiBoomCharacter} from './kandi-boom.js';
 import {PipTransport} from './transport.js';
 
 // The builder checks these targets against the reviewed source-rig pins. They
@@ -12,10 +12,10 @@ const stats = {pendingRequests: 0, activeNativeHandles: 0, disposedNativeHandles
   disposedGeometries: 0, nativeSampleCalls: 0};
 let selected = config.scenes[0], session, generation = 0, renderer, controls, camera, world;
 let animationFrame, pageClosed = false, initError;
-const sceneName = scene => scene.id === 'boxbot' ? 'Boxbot' : 'Prism';
+const sceneName = () => config.character.name;
 const copy = {
-  boxbot: {title: 'A salsa, with circuits.', description: 'An angular little robot with a surprisingly human sense of movement.', code: 'CMU 60_01', caption: '01 / BOXBOT'},
-  prism: {title: 'A study in turning.', description: 'A faceted dancer explores arabesques, turning jumps and deep back bends.', code: 'CMU 05_18', caption: '02 / PRISM'},
+  boxbot: {title: 'Kandi Boom takes the salsa floor.', description: 'Kandi Boom retargets a complete captured salsa performance while keeping the original source timing.', code: 'CMU 60_01', caption: '01 / KANDI BOOM / SALSA'},
+  prism: {title: 'Kandi Boom turns through ballet.', description: 'Kandi Boom retargets a captured sequence of arabesques, turning jumps and deep back bends.', code: 'CMU 05_18', caption: '02 / KANDI BOOM / BALLET'},
 };
 function timeLabel(seconds) {
   const minutes = Math.floor(seconds / 60), remaining = Math.max(0, seconds - minutes * 60);
@@ -43,10 +43,11 @@ function metadata() {
   $('timing-label').textContent = `Original ${selected.sourceFps.toFixed(2).replace(/\.00$/, '')} fps capture. Musical tempo and beat alignment are unverified. The calibration first frame is retained.`;
   $('source-link').href = selected.sourceUrl; $('source-link').title = selected.sourceTitle;
   $('licence-link').href = selected.noticePath;
-  $('attribution').textContent = `${selected.attribution} BVH conversion: Bruce Hahne / cgspeed. Original character geometry: DanceRudiments.`;
+  $('attribution').textContent = `${config.character.name} · ${config.character.series}. ${selected.attribution} BVH conversion: Bruce Hahne / cgspeed.`;
   $('load-scene').replaceChildren(document.createTextNode(`Load & play ${sceneName(selected)} `));
   const arrow = document.createElement('span'); arrow.setAttribute('aria-hidden', 'true'); arrow.textContent = '↗'; $('load-scene').append(arrow);
-  $('load-size').textContent = `${(selected.compressedClipBytes / 1024 / 1024).toFixed(2)} MiB motion · loaded on request`;
+  const characterBytes = Object.values(config.character.assets).reduce((total, item) => total + item.byte_length, 0);
+  $('load-size').textContent = `${(selected.compressedClipBytes / 1024 / 1024).toFixed(2)} MiB motion · ${(characterBytes / 1024 / 1024).toFixed(1)} MiB Kandi target · loaded on request`;
   $('duration').textContent = timeLabel((selected.endPip - selected.startPip) / 64);
   $('seek').min = String(selected.startPip); $('seek').max = String(selected.endPip);
   $('seek').value = String(selected.startPip); $('seek').style.setProperty('--progress', '0%');
@@ -150,8 +151,8 @@ function unload({clearError = true} = {}) {
   $('empty-state').hidden = false; $('loading-state').hidden = true;
   $('elapsed').textContent = '0:00.00'; $('pip-readout').textContent = '64 integer pips / second';
   $('timing-status').textContent = 'Source-time preview'; $('mesh-label').textContent = 'Weighted mesh';
-  $('resource-note').textContent = previous ? 'Character geometry, motion cache and native handles released.' : 'Motion data stays unloaded until you choose a performance.';
-  metadata(); updateTransport(); status(previous ? 'Character unloaded' : 'Ready when you are'); resetCamera();
+  $('resource-note').textContent = previous ? 'Kandi geometry, textures, motion cache and native handles released.' : 'Kandi and motion data stay unloaded until you choose a performance.';
+  metadata(); updateTransport(); status(previous ? 'Kandi Boom unloaded' : 'Ready when you are'); resetCamera();
 }
 function current(owner) { return !owner.closed && session === owner && !owner.controller.signal.aborted; }
 function applyPose(owner) {
@@ -162,7 +163,7 @@ function applyPose(owner) {
   owner.character.applyChannels(motion.profile, physical); owner.physicalSample = Array.from(physical);
   owner.lastPip = pip;
   if (owner.followPosition) {
-    const root = owner.character.bones[0].getWorldPosition(new THREE.Vector3());
+    const root = owner.character.rootBone.getWorldPosition(new THREE.Vector3());
     const delta = new THREE.Vector3(root.x - owner.followPosition.x, 0, root.z - owner.followPosition.z);
     camera.position.add(delta); controls.target.add(delta); owner.followPosition.copy(root);
   }
@@ -203,17 +204,27 @@ async function loadSelected() {
   $('loading-message').textContent = `Loading ${sceneName(selected)}’s performance…`;
   status('Loading selected scene…'); updateTransport();
   try {
-    const [runtime, wasm, rigBytes] = await Promise.all([
+    const target = config.character.assets;
+    const [runtime, wasm, rigBytes, targetRigBytes, fbx, albedo, normal, roughness, metallic] = await Promise.all([
       import('../../bindings/typescript/motion-packages.ts'),
       verifiedAsset('recording.wasm', config.recordingWasm.sha256, config.recordingWasm.byte_length, signal),
       verifiedAsset(owner.scene.rigPath, owner.scene.sceneRigSha256, 1024 * 1024, signal),
+      verifiedAsset(target.rig.path, target.rig.sha256, target.rig.byte_length, signal),
+      verifiedAsset(target.fbx.path, target.fbx.sha256, target.fbx.byte_length, signal),
+      verifiedAsset(target.albedo.path, target.albedo.sha256, target.albedo.byte_length, signal),
+      verifiedAsset(target.normal.path, target.normal.sha256, target.normal.byte_length, signal),
+      verifiedAsset(target.roughness.path, target.roughness.sha256, target.roughness.byte_length, signal),
+      verifiedAsset(target.metallic.path, target.metallic.sha256, target.metallic.byte_length, signal),
     ]);
     if (!current(owner)) return;
     const rig = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(rigBytes));
+    const targetRig = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(targetRigBytes));
     const expected = owner.scene.expectedProfile;
     if (rig.sceneId !== owner.scene.id || rig.quaternionOrder !== 'wxyz' ||
         rig.expectedProfile?.type_uri !== expected.type_uri || rig.expectedProfile?.fingerprint !== expected.fingerprint ||
-        JSON.stringify(rig.expectedProfile?.dimensions) !== JSON.stringify(expected.dimensions)) throw Error('Saved scene rig identity mismatch');
+        JSON.stringify(rig.expectedProfile?.dimensions) !== JSON.stringify(expected.dimensions)) throw Error('Saved source-motion rig identity mismatch');
+    if (targetRig.type_uri !== config.character.typeUri || targetRig.fingerprint_sha256 !== config.character.rigFingerprint ||
+        targetRig.fbx_asset_sha256 !== config.character.fbxAssetSha256) throw Error('Kandi Boom target-rig identity mismatch');
     owner.module = await WebAssembly.compile(wasm);
     if (!current(owner)) return;
     const adapter = runtime.createRecordingWasmAdapter(owner.module);
@@ -244,22 +255,26 @@ async function loadSelected() {
       boundary += chunk.sample_count;
     }
     if (boundary !== owner.scene.endPip + 1) throw Error('Scene performance bounds do not match the saved selection');
-    owner.character = createSkinnedCharacter(rig, owner.scene.characterKind, {onGeometryDisposed: () => stats.disposedGeometries++});
+    owner.character = await createKandiBoomCharacter(rig, targetRig, {fbx, albedo, normal, roughness, metallic},
+      {onGeometryDisposed: () => stats.disposedGeometries++});
+    if (!current(owner)) { owner.character.dispose(); return; }
     world.add(owner.character.group);
     owner.transport = new PipTransport(owner.scene.startPip, owner.scene.endPip);
     owner.transport.setSpeed(Number($('speed').value));
-    // Fix the presentation floor from an actual moving pose, rather than the
-    // converter's calibration T-pose. Keep vertical root motion thereafter.
+    // Establish source root-motion zero at the retained calibration frame, then
+    // frame the real Kandi skin using a moving pose before returning to start.
+    await sampleAt(owner, owner.scene.startPip);
+    if (!current(owner)) return;
     await sampleAt(owner, Math.min(owner.scene.startPip + 64, owner.scene.endPip));
     if (!current(owner)) return;
     owner.character.frameOnFloor();
     await sampleAt(owner, owner.scene.startPip);
     if (!current(owner)) return;
-    owner.followPosition = owner.character.bones[0].getWorldPosition(new THREE.Vector3());
+    owner.followPosition = owner.character.rootBone.getWorldPosition(new THREE.Vector3());
     resetCamera(); owner.ready = true;
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) owner.transport.play();
-    $('loading-state').hidden = true; $('mesh-label').textContent = `${owner.character.stats.vertexCount.toLocaleString()} vertices`;
-    $('resource-note').textContent = 'One selected motion chunk in memory. Switching characters unloads its geometry and recording.';
+    $('loading-state').hidden = true; $('mesh-label').textContent = `${owner.character.stats.vertexCount.toLocaleString()} Kandi vertices`;
+    $('resource-note').textContent = 'One selected motion chunk in memory. Switching performances unloads Kandi and the previous recording.';
     updateTransport();
   } catch (error) {
     if (!current(owner) || error.name === 'AbortError') return;
@@ -314,7 +329,6 @@ document.addEventListener('visibilitychange', () => {
 window.meshDemo = Object.freeze({
   debugSnapshot() {
     const owner = session, character = owner?.character;
-    const presentationInverse = character ? character.group.matrixWorld.clone().invert() : null;
     return {
       ready: Boolean(owner?.ready), sceneId: owner?.scene.id ?? null, selectedSceneId: selected.id,
       loadedChunkId: owner?.active?.id ?? null, currentPip: owner?.nativePip ?? null,
@@ -324,9 +338,11 @@ window.meshDemo = Object.freeze({
       boneCount: character?.stats.boneCount ?? 0, weightedVertexCount: character?.stats.weightedVertexCount ?? 0,
       blendedVertexCount: character?.stats.blendedVertexCount ?? 0,
       representativeDeformedVertices: character?.representativeVertices() ?? [],
-      jointNames: character?.bones.map(bone => bone.name) ?? [],
-      jointWorldMatrices: character?.bones.map(bone => new THREE.Matrix4().multiplyMatrices(presentationInverse, bone.matrixWorld).transpose().toArray()) ?? [],
-      rigTransforms: character?.bones.map(bone => ({name: bone.name, position: bone.position.toArray(), quaternion: bone.quaternion.toArray(), matrixWorld: bone.matrixWorld.toArray()})) ?? [],
+      jointNames: character?.sourceJointNames ?? [],
+      jointWorldMatrices: character?.sourceJointWorldMatrices() ?? [],
+      rigTransforms: character?.targetBones.map(bone => ({name: bone.name, position: bone.position.toArray(), quaternion: bone.quaternion.toArray(), matrixWorld: bone.matrixWorld.toArray()})) ?? [],
+      characterName: character ? config.character.name : null, targetRigFingerprint: character ? config.character.rigFingerprint : null,
+      runtimeInfluenceLimit: character?.stats.runtimeInfluenceLimit ?? null,
       activeNativeHandles: stats.activeNativeHandles, disposedNativeHandles: stats.disposedNativeHandles,
       disposedGeometries: stats.disposedGeometries, pendingRequests: stats.pendingRequests + (owner?.pending ? 1 : 0),
       nativeSampleCalls: stats.nativeSampleCalls, loadedCacheIds: owner?.active ? [owner.active.id] : [],

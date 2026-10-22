@@ -10,6 +10,10 @@ on:
       - 'tools/kandi_boom_fbx.py'
       - 'tools/test_kandi_boom_browser.py'
       - 'tests/python/test_kandi_boom_*'
+      - 'tools/build_mesh_demo.mjs'
+      - 'tools/mesh_demo_assets/**'
+      - 'tools/test_mesh_demo_browser.py'
+      - 'tests/typescript/kandi-boom.test.js'
   pull_request:
     paths:
       - '.github/workflows/kandi-boom-validation.yml'
@@ -18,6 +22,10 @@ on:
       - 'tools/kandi_boom_fbx.py'
       - 'tools/test_kandi_boom_browser.py'
       - 'tests/python/test_kandi_boom_*'
+      - 'tools/build_mesh_demo.mjs'
+      - 'tools/mesh_demo_assets/**'
+      - 'tools/test_mesh_demo_browser.py'
+      - 'tests/typescript/kandi-boom.test.js'
 
 permissions:
   contents: read
@@ -58,6 +66,12 @@ jobs:
           package-manager-cache: false
       - name: Install existing locked Three.js dependency
         run: npm ci --ignore-scripts
+      - name: Verify production Kandi gallery wiring
+        run: |
+          node --check tools/mesh_demo_assets/kandi-boom.js
+          node --check tools/mesh_demo_assets/app.js
+          node --check tools/build_mesh_demo.mjs
+          node --test tests/typescript/kandi-boom.test.js
       - name: Install browser test dependency
         run: |
           python -m pip install playwright==1.64.0
