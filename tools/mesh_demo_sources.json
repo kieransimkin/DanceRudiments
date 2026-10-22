@@ -160,7 +160,7 @@
       },
       "id": "boxbot",
       "packageId": "mesh_demo_boxbot",
-      "sceneRigSha256": "48fe74970bfa858974730c379d4c9c87a2a55ededef96d6cfc6f31f402974e0e",
+      "sceneRigSha256": "dab1790ca9f8e4a4176f3e2c9c249518f576da56874135340545dfe29652114c",
       "source": {
         "actual_motion_first_frame": 1,
         "byte_length": 1708036,
@@ -365,7 +365,7 @@
       },
       "id": "prism",
       "packageId": "mesh_demo_prism",
-      "sceneRigSha256": "77a5e13af9e1409bcd2b30cd47083689a6800bb8c6b813910a15f1d07b93e4f8",
+      "sceneRigSha256": "33d45f045a3a66b83938d931d8df1d410daa80b7849f5873d2c55e4a53b4a172",
       "source": {
         "actual_motion_first_frame": 1,
         "byte_length": 1395493,
