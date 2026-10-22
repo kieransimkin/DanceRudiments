@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {createKandiBoomCharacter} from './kandi-boom.js';
 import {PipTransport} from './transport.js';
+import {createRhythmReview} from './rhythm-review.js';
 
 // The builder checks these targets against the reviewed source-rig pins. They
 // are independent of the package manifest fetched when the user loads a scene.
@@ -64,7 +65,9 @@ function updateTransport() {
     $('seek').style.setProperty('--progress', `${100 * (pip - scene.startPip) / Math.max(1, scene.endPip - scene.startPip)}%`);
     $('elapsed').textContent = timeLabel((pip - scene.startPip) / 64);
     $('pip-readout').textContent = `pip ${pip.toLocaleString()} / ${scene.endPip.toLocaleString()}`;
-    $('timing-status').textContent = session.transport.speed === 1 ? 'Source time · 1×' : `Source time · ${session.transport.speed}× preview`;
+    $('timing-status').textContent = rhythmReview.currentLoop()
+      ? `Unverified loop preview · ${session.transport.speed}×`
+      : session.transport.speed === 1 ? 'Source time · 1×' : `Source time · ${session.transport.speed}× preview`;
     status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === scene.endPip ? 'Performance complete' : 'Paused', playing);
   }
 }
@@ -141,6 +144,7 @@ function releaseChunk(owner) {
 }
 function unload({clearError = true} = {}) {
   generation++;
+  rhythmReview.reset();
   const previous = session; session = null;
   if (previous) {
     previous.closed = true; previous.controller.abort(); previous.transport?.pause();
@@ -277,6 +281,7 @@ async function loadSelected() {
     if (!current(owner)) return;
     owner.followPosition = owner.character.rootBone.getWorldPosition(new THREE.Vector3());
     resetCamera(); owner.ready = true;
+    rhythmReview.attach(owner.scene, owner.chunks);
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) owner.transport.play();
     $('loading-state').hidden = true; $('mesh-label').textContent = `${owner.character.stats.vertexCount.toLocaleString()} Kandi vertices`;
     $('resource-note').textContent = 'One selected motion chunk in memory. Switching performances unloads Kandi and the previous recording.';
@@ -295,7 +300,7 @@ function togglePlay() {
   if (!session?.ready) return;
   const transport = session.transport;
   if (transport.playing) transport.pause();
-  else { if (transport.pip() === transport.last) transport.seek(transport.first); transport.play(); }
+  else { if (transport.pip() === transport.last) transport.seek(rhythmReview.currentLoop()?.first ?? transport.first); transport.play(); }
   updateTransport();
 }
 function seek(pip) {
@@ -303,11 +308,22 @@ function seek(pip) {
   session.transport.seek(pip);
   const owner = session; sampleAt(owner, pip).catch(error => fail(error, owner)); updateTransport();
 }
+const rhythmReview = createRhythmReview({
+  sidebar: document.querySelector('.sidebar'),
+  timeline: document.querySelector('.timeline'),
+  onSeek: seek,
+  onPreview: () => { if (session?.ready) { session.transport.play(); updateTransport(); } },
+});
 function frame() {
   if (pageClosed) return;
   const owner = session;
   if (owner?.ready) {
-    const pip = owner.transport.pip();
+    let pip = owner.transport.pip();
+    const loop = rhythmReview.currentLoop();
+    if (loop && pip >= Math.min(loop.endExclusive, owner.scene.endPip)) {
+      owner.transport.seek(loop.first);
+      pip = loop.first;
+    }
     try { void sampleAt(owner, pip).catch(error => fail(error, owner)); }
     catch (error) { fail(error, owner); }
     updateTransport();
@@ -322,9 +338,9 @@ $('unload-scene').addEventListener('click', () => unload());
 $('cancel-load').addEventListener('click', () => unload());
 $('play-toggle').addEventListener('click', togglePlay);
 $('restart').addEventListener('click', () => {
-  if (!session?.ready) return; seek(session.scene.startPip); session?.transport.play(); updateTransport();
+  if (!session?.ready) return; seek(rhythmReview.currentLoop()?.first ?? session.scene.startPip); session?.transport.play(); updateTransport();
 });
-$('seek').addEventListener('input', event => seek(Number(event.target.value)));
+$('seek').addEventListener('input', event => { rhythmReview.clearLoop(); seek(Number(event.target.value)); });
 $('speed').addEventListener('change', event => { session?.transport?.setSpeed(Number(event.target.value)); updateTransport(); });
 $('reset-view').addEventListener('click', resetCamera);
 $('stage').addEventListener('keydown', event => { if (event.code === 'Space') { event.preventDefault(); togglePlay(); } });
@@ -352,6 +368,7 @@ window.meshDemo = Object.freeze({
       activeNativeHandles: stats.activeNativeHandles, disposedNativeHandles: stats.disposedNativeHandles,
       disposedGeometries: stats.disposedGeometries, pendingRequests: stats.pendingRequests + (owner?.pending ? 1 : 0),
       nativeSampleCalls: stats.nativeSampleCalls, loadedCacheIds: owner?.active ? [owner.active.id] : [],
+      rhythmAnalysis: rhythmReview.diagnostics(),
       disposed: !owner, error: $('error').hidden ? null : $('error').textContent,
       build: config.build,
     };

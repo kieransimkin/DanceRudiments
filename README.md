@@ -79,6 +79,14 @@ optional motion package plus the hash-pinned Kandi target assets; switching
 performances unloads the previous recording and target scene. Play, pause, seek,
 restart and preview speed continue to use the existing native C++/WASM sampler.
 
+The gallery also supports **local StemLab rhythm-analysis review**. After loading
+Kandi, import the corresponding `stemlab.rig-motion-analysis` JSON from the
+complete salsa/ballet package. Source hashes and channel identity are validated
+before estimated motion beats and selectable loop-preview boundaries appear on
+the existing timeline. The analysis file stays in the browser; no musical
+beat/downbeat approval, audio synchronisation or seam/foot-contact repair is
+implied. See [mesh-demo rhythm review](docs/mesh-demos.md#review-motion-rhythm-and-loop-candidates).
+
 Kandi's canonical FBX contains vertices with more than four source influences.
 The source remains untouched and fully audited; the WebGL renderer uses an
 explicit, normalised four-weight runtime approximation and records that limit in
