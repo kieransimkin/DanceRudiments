@@ -202,8 +202,17 @@ def _prepare_clip(document, scene, cache_root):
     if (clip.frame_time_seconds != Fraction(source['effective_frame_time_seconds'])
             or not math.isclose(clip.duration_seconds, source['effective_duration_seconds'], rel_tol=0, abs_tol=1e-10)):
         raise ScoreError('Effective source timing differs from the reviewed recipe')
-    if profile_identity(clip.profile) != scene['expectedProfile']:
-        raise ScoreError('Compiled profile differs from the independently pinned scene identity')
+    actual_profile = profile_identity(clip.profile)
+    if actual_profile != scene['expectedProfile']:
+        expected = scene['expectedProfile']
+        raise ScoreError('Compiled profile differs from the independently pinned scene identity: ' +
+                         canonical_json(dict(scene_id=scene['id'],
+                             expected_fingerprint=expected['fingerprint'],
+                             actual_fingerprint=actual_profile['fingerprint'],
+                             expected_type_uri=expected['type_uri'],
+                             actual_type_uri=actual_profile['type_uri'],
+                             dimensions_match=(expected['dimensions'] ==
+                                               actual_profile['dimensions']))))
     metadata = dict(clip.metadata, source_url=source['source_url'], source_download_url=source['download_url'],
         source_git_blob_sha1=source['git_blob_sha1'], source_mirror_commit=document['mirror_commit'],
         original_motion_id=source['id'], source_title=source['title'],

@@ -241,7 +241,11 @@ def _profile_and_frames(joints, raw, *, source_id, unit_scale, axis_forward, axi
             raise ScoreError('Converted BVH rest offsets are not finite')
         heads.append(head)
         offsets = [child.offset for child in joints if child.parent == index] or list(joint.end_sites)
-        length = next((float(np.linalg.norm(o)) * unit_scale for o in offsets if any(o)), 0.1)
+        # Bone length is structural profile metadata and therefore participates
+        # in both the source type URI and profile SHA-256. BLAS/libm-backed
+        # linalg implementations may differ in the final few binary digits, so
+        # canonicalise the derived value before it enters either identity.
+        length = round(next((float(np.linalg.norm(o)) * unit_scale for o in offsets if any(o)), 0.1), 12)
         if not math.isfinite(length):
             raise ScoreError('BVH bone length is not finite')
         matrix = np.eye(4, dtype=np.float64)

@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 try:
     import numpy as np
@@ -134,6 +135,28 @@ class BVHImportTests(unittest.TestCase):
         self.assertNotEqual(a.source_sha256, b.source_sha256)
         self.assertEqual(a.profile.source['transform_bounds']['location_range'], 10000.)
         self.assertNotIn('source_fps', a.profile.source)
+
+    def test_profile_identity_canonicalises_linalg_roundoff(self):
+        # The root display length is sqrt(14), so its raw binary result is not
+        # exactly representable. Profile identity must not depend on tiny
+        # BLAS/libm differences between otherwise identical CI runners.
+        text = fixture(((0, 0, 0, 0, 0, 0),)).replace(
+            'OFFSET 0 1 0', 'OFFSET 1 2 3')
+        baseline = parse(text)
+        original_norm = np.linalg.norm
+
+        def perturbed_norm(value, *args, **kwargs):
+            result = original_norm(value, *args, **kwargs)
+            if np.asarray(value).ndim == 1 and np.isscalar(result):
+                return float(result) + 1e-14
+            return result
+
+        with mock.patch.object(np.linalg, 'norm', side_effect=perturbed_norm):
+            perturbed = parse(text)
+        self.assertEqual(baseline.profile.type_uri, perturbed.profile.type_uri)
+        self.assertEqual(baseline.profile.fingerprint, perturbed.profile.fingerprint)
+        self.assertEqual(baseline.profile.source['skeleton'][0]['length'],
+                         round(math.sqrt(14), 12))
 
     def test_absolute_position_convention_is_explicit_and_changes_profile(self):
         text = fixture(((1, 2, 3, 0, 0, 0, 0, 2, 0, 0, 0, 0),), child=True)

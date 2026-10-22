@@ -155,12 +155,12 @@
           "c000126_rthumb_rotation_quaternion_2",
           "c000127_rthumb_rotation_quaternion_3"
         ],
-        "fingerprint": "ea1f37a73284f47d3493871e13752f1fbf8d6c1784fb24658efeab2ccde12248",
-        "type_uri": "syn://type/danceflow/motion/skeletal/source/cmu_dance/skeleton_ed4111b24ebb55dc"
+        "fingerprint": "40623012e88ea25e46100b45641a91028dc011e93214b384ee9668edc4e6d7c6",
+        "type_uri": "syn://type/danceflow/motion/skeletal/source/cmu_dance/skeleton_68cee84226ea5f80"
       },
       "id": "boxbot",
       "packageId": "mesh_demo_boxbot",
-      "sceneRigSha256": "ba293de862f4303afc9fb7e7b2af25a576f1efe00208f7d543ddb5f0795371fa",
+      "sceneRigSha256": "48fe74970bfa858974730c379d4c9c87a2a55ededef96d6cfc6f31f402974e0e",
       "source": {
         "actual_motion_first_frame": 1,
         "byte_length": 1708036,
@@ -360,12 +360,12 @@
           "c000126_rthumb_rotation_quaternion_2",
           "c000127_rthumb_rotation_quaternion_3"
         ],
-        "fingerprint": "516399e4c6d74aafccf2208401288e0fa3d00726ca461af54b99055f6f5b108f",
-        "type_uri": "syn://type/danceflow/motion/skeletal/source/cmu_dance/skeleton_accc0441eb5b7595"
+        "fingerprint": "e5119fb96cd1fbc52db98af5475b0772718836bc7a92fedfdec65cfa7077a9d0",
+        "type_uri": "syn://type/danceflow/motion/skeletal/source/cmu_dance/skeleton_93bd247bb7df957d"
       },
       "id": "prism",
       "packageId": "mesh_demo_prism",
-      "sceneRigSha256": "6ec7d46b5448f81bc6cd9aa96a1bca93be5623720843c43adb53fe6714890214",
+      "sceneRigSha256": "77a5e13af9e1409bcd2b30cd47083689a6800bb8c6b813910a15f1d07b93e4f8",
       "source": {
         "actual_motion_first_frame": 1,
         "byte_length": 1395493,
