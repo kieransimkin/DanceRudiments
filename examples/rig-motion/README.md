@@ -1,5 +1,7 @@
 # Rig-motion authoring and native playback example
 
+By [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+
 This original synthetic example exercises the complete capture → beat-grid
 compile → native playback route without downloaded choreography or Blender.
 It declares a custom seven-channel `root` control. It is an API example, not a

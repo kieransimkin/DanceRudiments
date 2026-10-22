@@ -663,6 +663,19 @@ StemLab. Rebuild old generated pages to include the control. See
 
 ## Continuous integration and releases
 
+Run `python tools/check_package_docs.py` before packaging. Its source preflight
+checks nested first-party `README.md` files in the package input trees, including
+rig-motion examples and optional source-plan documentation, for the canonical
+author music link. Third-party `sources/` documentation retains its original
+attribution. Release jobs also check the actual archives; passing source checks
+does not establish package publication or registry availability.
+
+Tagged Pages deployments require an allowed **Tag** rule in the existing
+`github-pages` environment, in addition to any allowed `main` branch rule.
+A maintainer must explicitly authorize the intended release tags; the workflow
+does not change environment protections. See [release demo recovery](docs/release-demo.md#recovering-a-deployment-rejected-by-environment-rules)
+for retrying an already built site without rebuilding its immutable release assets.
+
 The additional `.github/workflows/csharp.yml` builds the shared C ABI and C# wrapper, tests actual installed NuGet packages, and publishes .NET packages only for release tags. Its NuGet.org setup is documented in [the C# guide](docs/csharp.md).
 
 `.github/workflows/ci.yml` builds and tests the C++ core on Linux, Windows, and macOS; builds and imports the Python package; compiles/tests the TypeScript and browser runtime; and creates a Conan package on every push to `main` and every pull request.

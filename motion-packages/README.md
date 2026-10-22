@@ -1,5 +1,8 @@
 # Optional motion source plans
 
+Source-plan tooling by [Kieran Simkin — My Songs](https://kieransimkin.co.uk/my-songs/).
+The motion data retains the source-specific authorship and terms below.
+
 `sources.json` is reviewed metadata for explicit public source downloads and
 offline imports. It does not load or install any motion data automatically.
 The code and base packages contain no converted clips from these collections.

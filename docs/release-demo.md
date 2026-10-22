@@ -144,6 +144,41 @@ reported as a verified live site. See GitHub's
 [custom Pages workflow guide](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages)
 for the existing environment and artifact requirements.
 
+
+### Recovering a deployment rejected by environment rules
+
+GitHub evaluates the workflow's branch or tag against the `github-pages`
+environment's allowed deployment rules. An allowed **Branch** rule for `main`
+does not allow a run triggered by a `vMAJOR.MINOR.PATCH` tag. A rejected job may
+have no runner or step logs; inspect its check annotations for the exact reason.
+
+If the annotation says the release tag is not allowed, a maintainer must
+explicitly authorize the tag in **Settings → Environments → github-pages →
+Deployment branches and tags**. Retain the existing branch rules and other
+protections. Add a rule with ref type **Tag** for the exact release, or
+`v*.*.*` if the maintainer approves the ongoing versioned-release policy.
+The workflow never changes these rules or bypasses their approvals.
+
+When `render`, `attach`, and `pages-target` already succeeded, use **Re-run
+failed jobs** on that same workflow run after the rule is authorized. With the
+GitHub CLI, substitute the affected numeric run ID below:
+
+```sh
+gh run rerun RUN_ID --failed --repo kieransimkin/DanceRudiments
+```
+
+This preserves the original tested site and release attachments while retrying
+deployment. Confirm the original `github-pages` artifact is still available
+before retrying; its default retention is one day. The latest-stable-release
+check and live route/file checks still apply. A full rebuild can produce changed
+browser reports or toolchain output and must not overwrite immutable release
+attachments. If the original site artifact has expired, prepare a fresh release
+through the normal build and verification process.
+
+The [GitHub environment guide](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+documents separate branch/tag rules. The [GitHub CLI manual](https://cli.github.com/manual/gh_run_rerun)
+documents the failed-job retry command.
+
 ## Local build
 
 Use a checkout with matching package versions and the native build tools,

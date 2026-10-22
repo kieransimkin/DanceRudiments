@@ -3,6 +3,7 @@ from pathlib import Path
 import importlib.util
 import io
 import json
+import re
 import tarfile
 import tempfile
 import unittest
@@ -36,6 +37,72 @@ class PackageDocumentationTests(unittest.TestCase):
             with zipfile.ZipFile(path,'w') as archive:
                 for name, data in files.items(): archive.writestr(name,data)
             check.check_archive(path)
+
+    def write_source_fixture(self, root):
+        files = {name.removeprefix('package/'): data
+                 for name, data in self.fixture().items()}
+        link = check.MUSIC_URL.encode()
+        files.update({name: link for name in (
+            'pyproject.toml', 'package-lock.json', 'CMakeLists.txt',
+            'conanfile.py', 'packaging/CPP_BINARY_README.md')})
+        files['package.json'] = json.dumps({
+            'homepage': check.MUSIC_URL,
+            'author': {'url': check.MUSIC_URL},
+            'description': 'Synthetic package '+check.MUSIC_URL,
+        }).encode()
+        for family in ('atlas', 'continuum', 'club', 'dancefloor'):
+            files['tools/build_'+family+'_collection.py'] = link
+        for name, data in files.items():
+            path = root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+
+    def test_source_preflight_rejects_new_nested_readme_without_credit(self):
+        # A new README must fail before an archive is built, even without a
+        # hand-maintained entry in the metadata list or a Git index.
+        for name in ('examples/rig-motion/README.md', 'motion-packages/README.md',
+                     'tools/new-tool/deep/ReadMe.md', 'bindings/new/README.md'):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                self.write_source_fixture(root)
+                path = root / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('New first-party documentation', encoding='utf-8')
+                with self.assertRaisesRegex(ValueError, re.escape(name)+': missing author music link'):
+                    check.check_source(root)
+                path.write_text('By Kieran Simkin: '+check.MUSIC_URL, encoding='utf-8')
+                check.check_source(root)
+
+    def test_source_preflight_preserves_upstream_attribution(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_source_fixture(root)
+            path = root / 'collections/initial/sources/upstream/README.md'
+            path.parent.mkdir(parents=True)
+            original = b'Original upstream authors and licence'
+            path.write_bytes(original)
+            check.check_source(root)
+            self.assertEqual(path.read_bytes(), original)
+
+    def test_source_exception_is_exact_sources_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.write_source_fixture(root)
+            path = root / 'docs/sources-guide/README.md'
+            path.parent.mkdir(parents=True)
+            path.write_text('First-party source guide', encoding='utf-8')
+            with self.assertRaisesRegex(ValueError, 'missing author music link'):
+                check.check_source(root)
+
+    def test_nested_packaged_readmes_keep_strict_archive_check(self):
+        for name in ('examples/rig-motion/README.md', 'motion-packages/README.md'):
+            with self.subTest(name=name):
+                files = self.fixture()
+                files['package/'+name] = b'Missing author link'
+                with self.assertRaisesRegex(ValueError, re.escape(name)+': missing author music link'):
+                    self.check_zip(files)
+                files['package/'+name] += ('\n'+check.MUSIC_URL).encode()
+                self.check_zip(files)
 
     def test_zip_contract(self):
         self.check_zip(self.fixture())

@@ -7,6 +7,7 @@ Reads archives without extracting or executing them. No network required.
 from __future__ import annotations
 import argparse
 import json
+import os
 from pathlib import Path, PurePosixPath
 import tarfile
 import zipfile
@@ -15,11 +16,33 @@ MUSIC_URL = 'https://kieransimkin.co.uk/my-songs/'
 ROOT = Path(__file__).resolve().parents[1]
 IMAGES = ('visualizer-amen-desktop.png', 'visualizer-midi-score.png', 'visualizer-mobile.png')
 BRANDING = ('logo.svg', 'logo-monochrome.svg', 'logo.png', 'README.md')
+# Source input trees used by CMake, npm and the Python sdist. Keep the source
+# preflight at least as strict as archive validation for nested first-party
+# READMEs; optional payloads and build caches are outside these source trees.
+SOURCE_README_TREES = ('bindings', 'cmake', 'collections', 'docs', 'examples',
+                       'harness', 'include', 'motion-packages', 'packaging',
+                       'python', 'src', 'tests', 'tools')
 
 
 def require_link(text: str, label: str) -> None:
     if MUSIC_URL not in text:
         raise ValueError(f'{label}: missing author music link')
+
+
+def is_first_party_document(name: str) -> bool:
+    # Preserve upstream attribution; do not rebrand third-party source docs.
+    return 'sources' not in PurePosixPath(name).parts
+
+
+def check_source_readmes(root: Path) -> None:
+    for tree in SOURCE_README_TREES:
+        for directory, children, filenames in os.walk(root / tree):
+            children[:] = sorted(child for child in children if child != 'sources')
+            for filename in sorted(filenames):
+                if filename.lower() == 'readme.md':
+                    path = Path(directory) / filename
+                    require_link(path.read_text(encoding='utf-8'),
+                                 path.relative_to(root).as_posix())
 
 
 def check_source(root: Path = ROOT) -> None:
@@ -31,8 +54,7 @@ def check_source(root: Path = ROOT) -> None:
     if package['homepage'] != MUSIC_URL or package['author']['url'] != MUSIC_URL:
         raise ValueError('npm author/homepage differ from the canonical music URL')
     require_link(package['description'], 'npm description')
-    for path in (root / 'collections').glob('*/README.md'):
-        require_link(path.read_text(encoding='utf-8'), str(path))
+    check_source_readmes(root)
     for image in IMAGES:
         if not (root / 'docs/images' / image).is_file():
             raise ValueError(f'Missing README screenshot: {image}')
@@ -71,8 +93,7 @@ def check_archive(path: Path) -> None:
     if not any(n.endswith('examples/bindings/python/quickstart.py') for n in names):
         raise ValueError(f'{path}: missing runnable binding examples')
     for name, data in selected.items():
-        # Do not relabel third-party source documentation as the project's work.
-        if '/sources/' not in name:
+        if is_first_party_document(name):
             require_link(data.decode('utf-8'), str(path)+':'+name)
     if path.suffix == '.whl' and not any(n.endswith('.dist-info/METADATA') for n in names):
         raise ValueError('Wheel is missing distribution metadata')
