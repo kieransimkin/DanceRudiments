@@ -10,6 +10,7 @@ import {parseArgs} from 'node:util';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const ASSETS = join(ROOT, 'tools/mesh_demo_assets');
+const KANDI = join(ROOT, 'harness/kandi-boom');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const jsonBytes = value => JSON.stringify(value, null, 2) + '\n';
 const hashPattern = /^[0-9a-f]{64}$/;
@@ -83,6 +84,48 @@ export async function buildMeshDemo({assetsDir = join(ROOT, '.cache/mesh-demo-as
       catalogue.schema_version !== 1 || !Array.isArray(catalogue.scenes) || catalogue.scenes.length !== 2 ||
       !Array.isArray(pins.scenes) || pins.scenes.length !== 2) throw Error('Expected the reviewed two-scene asset catalogue');
   const sceneIds = new Set(), files = new Map([['catalogue.json', catalogueBytes]]), assetHashes = {};
+  // Kandi Boom is the single production target character. The motion-scene IDs
+  // remain historical source-package keys and are not treated as character identities.
+  const targetRigBytes = await boundedFile(join(KANDI, 'source-rig.json'), 2 * 1024 * 1024);
+  const targetRig = JSON.parse(targetRigBytes.toString('utf8'));
+  const targetAudit = JSON.parse((await boundedFile(join(KANDI, 'rig-audit.json'), 2 * 1024 * 1024)).toString('utf8'));
+  if (targetRig.type_uri !== 'syn://type/danceflow/motion/rig/custom/kandi-boom' ||
+      targetRig.fingerprint_sha256 !== targetAudit.deep_validation?.source_rig_fingerprint_sha256 ||
+      targetRig.fbx_asset_sha256 !== targetAudit.assets?.['kandi-boom.fbx']?.sha256 ||
+      targetAudit.deep_validation?.skin?.unweighted_vertex_count !== 0)
+    throw Error('Kandi Boom target rig/audit identity changed');
+  const characterRoot = 'characters/kandi-boom';
+  const characterSources = {
+    fbx: ['kandi-boom.fbx', 'assets/kandi-boom.fbx'],
+    albedo: ['albedo.png', 'assets/albedo.png'],
+    normal: ['normal.png', 'assets/normal.png'],
+    roughness: ['roughness.png', 'assets/roughness.png'],
+    metallic: ['metallic.png', 'assets/metallic.png'],
+  };
+  const characterAssets = {};
+  for (const [key, [name, source]] of Object.entries(characterSources)) {
+    const audited = targetAudit.assets?.[name];
+    if (!audited || !hashPattern.test(audited.sha256) || !Number.isSafeInteger(audited.bytes))
+      throw Error(`Kandi Boom audit is missing ${name}`);
+    const bytes = await boundedFile(join(KANDI, source));
+    if (bytes.length !== audited.bytes || sha(bytes) !== audited.sha256) throw Error(`Kandi Boom asset drift: ${name}`);
+    const target = `${characterRoot}/${name}`;
+    files.set(target, bytes); assetHashes[target] = {sha256: audited.sha256, byte_length: bytes.length};
+    characterAssets[key] = {path: target, sha256: audited.sha256, byte_length: bytes.length};
+  }
+  const targetRigPath = `${characterRoot}/source-rig.json`;
+  files.set(targetRigPath, targetRigBytes);
+  assetHashes[targetRigPath] = {sha256: sha(targetRigBytes), byte_length: targetRigBytes.length};
+  characterAssets.rig = {path: targetRigPath, ...assetHashes[targetRigPath]};
+  const character = {id: 'kandi-boom', name: 'Kandi Boom', series: 'Bass Ben & Friends',
+    typeUri: targetRig.type_uri, rigFingerprint: targetRig.fingerprint_sha256,
+    fbxAssetSha256: targetRig.fbx_asset_sha256, assets: characterAssets,
+    sourceInfluenceStats: {
+      maxInfluencesPerVertex: targetAudit.deep_validation.skin.max_influences_per_vertex,
+      verticesWithOverFourInfluences: targetAudit.deep_validation.skin.vertices_with_over_four_influences,
+      maxDiscardedWeightAtFour: targetAudit.deep_validation.skin.max_discarded_weight_if_four_influences,
+      runtimeInfluenceLimit: 4,
+    }};
   async function asset(path, expectedHash, byteLength, limit) {
     safePath(path);
     const absolute = join(sourceRoot, path), real = await realpath(absolute);
@@ -145,7 +188,7 @@ export async function buildMeshDemo({assetsDir = join(ROOT, '.cache/mesh-demo-as
   if (sha(wasm) !== runtimeReceipt.wasm_sha256 || !WebAssembly.validate(wasm)) throw Error('Native recording WASM integrity mismatch');
   const buildInfo = {version, commit, renderer: dependencyVersions, sourcePlanSha256: sha(pinBytes),
     preparedCatalogueSha256: sha(catalogueBytes), nativeRuntime: runtimeReceipt};
-  const config = {scenes: catalogue.scenes, recordingWasm: {sha256: sha(wasm), byte_length: wasm.length}, build: buildInfo};
+  const config = {scenes: catalogue.scenes, character, recordingWasm: {sha256: sha(wasm), byte_length: wasm.length}, build: buildInfo};
   const temporary = await mkdtemp(join(dirname(output), '.mesh-demo-build-'));
   const stage = join(temporary, 'meshes'); await mkdir(stage);
   let backup;
@@ -170,7 +213,10 @@ export async function buildMeshDemo({assetsDir = join(ROOT, '.cache/mesh-demo-as
     const receipt = {format: 'dancerudiments.mesh-demo-build', schema_version: 1, ...buildInfo,
       sceneIds: [...sceneIds], assets: assetHashes, files: outputs,
       sourceTiming: 'time-only; 64 integer pips per second; no inferred music BPM/phase',
-      originalCharacters: ['boxbot', 'prism'], eagerMotionLoads: 0};
+      targetCharacter: {id: character.id, name: character.name, series: character.series, typeUri: character.typeUri,
+        rigFingerprint: character.rigFingerprint, fbxAssetSha256: character.fbxAssetSha256,
+        runtimeInfluenceLimit: character.sourceInfluenceStats.runtimeInfluenceLimit},
+      sourceMotionSlots: ['boxbot', 'prism'], eagerMotionLoads: 0};
     await writeFile(join(stage, 'build.json'), jsonBytes(receipt));
     if (existed) { backup = join(temporary, 'previous'); await rename(output, backup); }
     try { await rename(stage, output); }

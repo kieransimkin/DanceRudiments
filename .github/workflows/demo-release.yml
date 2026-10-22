@@ -135,7 +135,7 @@ jobs:
           cp "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.html" dist/demo/DanceRudiments-visualizer.html
           cp "dist/demo/DanceRudiments-demo-v$DEMO_VERSION.json" dist/demo/DanceRudiments-visualizer.json
           (cd dist/demo && sha256sum DanceRudiments-visualizer.html DanceRudiments-visualizer.json > DanceRudiments-visualizer.sha256)
-      - name: Build two pinned, independently loaded mesh dances
+      - name: Build two pinned motions for the Kandi Boom gallery
         run: |
           python tools/build_mesh_demo_assets.py --output-dir generated/mesh-demo-assets --cache-root .cache/motion-sources/cmu-dance --download
           node tools/build_mesh_demo.mjs --assets-dir generated/mesh-demo-assets --output-dir dist/pages/meshes --version "$DEMO_VERSION" --commit "$DEMO_COMMIT"

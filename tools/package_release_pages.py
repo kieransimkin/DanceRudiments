@@ -138,22 +138,32 @@ def seal(pages_dir, output_dir, qa_report, version, commit):
     build = json.loads((pages / 'meshes/build.json').read_text(encoding='utf-8'))
     catalogue = json.loads((pages / 'meshes/catalogue.json').read_text(encoding='utf-8'))
     catalogue_scenes = catalogue.get('scenes')
+    target = build.get('targetCharacter', {})
     if (build.get('format') != 'dancerudiments.mesh-demo-build' or build.get('schema_version') != 1
             or build.get('version') != version or build.get('commit') != commit
             or build.get('sceneIds') != ['boxbot', 'prism']
+            or build.get('sourceMotionSlots') != ['boxbot', 'prism']
+            or target.get('id') != 'kandi-boom' or target.get('name') != 'Kandi Boom'
+            or target.get('runtimeInfluenceLimit') != 4
+            or not re.fullmatch(r'[0-9a-f]{64}', target.get('rigFingerprint', ''))
+            or not re.fullmatch(r'[0-9a-f]{64}', target.get('fbxAssetSha256', ''))
             or catalogue.get('format') != 'dancerudiments.mesh-demo-catalogue'
             or catalogue.get('schema_version') != 1 or not isinstance(catalogue_scenes, list)
             or len(catalogue_scenes) != 2
             or {item.get('id') for item in catalogue_scenes if isinstance(item, dict)} != SCENE_IDS):
-        raise ValueError('Expected both named mesh scenes built for this exact release')
+        raise ValueError('Expected both source-motion slots targeting Kandi Boom for this exact release')
     qa = json.loads(Path(qa_report).read_text(encoding='utf-8'))
     if (qa.get('format') != QA_FORMAT or qa.get('schema_version') != 1
             or qa.get('status') != 'PASS' or qa.get('scope') != 'complete-site'
             or qa.get('version') != version or qa.get('source_commit') != commit):
         raise ValueError('A passing mesh browser report for this exact release is required')
+    expected_target = dict(id=target['id'], name=target['name'], rig_fingerprint=target['rigFingerprint'],
+                           fbx_asset_sha256=target['fbxAssetSha256'], runtime_influence_limit=target['runtimeInfluenceLimit'])
+    if qa.get('target_character') != expected_target:
+        raise ValueError('Browser verification target differs from the sealed Kandi Boom build identity')
     if (not isinstance(qa.get('scenes'), list) or len(qa['scenes']) != 2
             or {item.get('id') for item in qa['scenes'] if isinstance(item, dict)} != SCENE_IDS):
-        raise ValueError('Browser verification must cover the distinct boxbot and prism mesh scenes')
+        raise ValueError('Browser verification must cover the distinct boxbot and prism source-motion slots')
     # The QA report binds all tested mesh bytes. A changed script or recording
     # must be tested again, even when the human-readable version is unchanged.
     checked = qa.get('tested_assets')

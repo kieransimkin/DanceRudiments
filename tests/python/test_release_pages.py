@@ -38,7 +38,9 @@ class ReleasePagesTests(unittest.TestCase):
         for name in ('index.html', 'app.js', 'style.css', 'recording.wasm'):
             (mesh / name).write_bytes(('fixture:' + name).encode('ascii'))
         (mesh / 'build.json').write_text(json.dumps(dict(format='dancerudiments.mesh-demo-build',
-            schema_version=1, version=VERSION, commit=COMMIT, sceneIds=['boxbot', 'prism'])))
+            schema_version=1, version=VERSION, commit=COMMIT, sceneIds=['boxbot', 'prism'],
+            sourceMotionSlots=['boxbot', 'prism'], targetCharacter=dict(id='kandi-boom', name='Kandi Boom',
+                rigFingerprint='1'*64, fbxAssetSha256='2'*64, runtimeInfluenceLimit=4))))
         (mesh / 'catalogue.json').write_text(json.dumps(dict(format='dancerudiments.mesh-demo-catalogue',
             schema_version=1, scenes=[dict(id='boxbot'), dict(id='prism')])))
         self.report = self.root / 'browser.json'
@@ -47,6 +49,8 @@ class ReleasePagesTests(unittest.TestCase):
     def write_report(self):
         self.report.write_text(json.dumps(dict(format=pages.QA_FORMAT, schema_version=1,
             status='PASS', scope='complete-site', version=VERSION, source_commit=COMMIT,
+            target_character=dict(id='kandi-boom', name='Kandi Boom', rig_fingerprint='1'*64,
+                                  fbx_asset_sha256='2'*64, runtime_influence_limit=4),
             scenes=[dict(id='boxbot'), dict(id='prism')], tested_assets=[
                 pages.file_identity(p, p.relative_to(self.site).as_posix())
                 for p in pages.site_files(self.site)
@@ -113,6 +117,14 @@ class ReleasePagesTests(unittest.TestCase):
                 self.report.write_text(json.dumps(report))
                 with self.assertRaisesRegex(ValueError, 'passing mesh browser report'):
                     self.seal()
+        self.assertFalse(self.output.exists())
+
+    def test_browser_target_must_match_the_sealed_kandi_identity(self):
+        report = json.loads(self.report.read_text())
+        report['target_character']['rig_fingerprint'] = '3' * 64
+        self.report.write_text(json.dumps(report))
+        with self.assertRaisesRegex(ValueError, 'target differs'):
+            self.seal()
         self.assertFalse(self.output.exists())
 
     def test_both_actual_scene_ids_must_be_distinct_and_verified(self):
