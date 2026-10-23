@@ -36,6 +36,9 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install cibuildwheel==4.2.0
       - run: python -m cibuildwheel --output-dir wheelhouse
+      - name: Check wheel size
+        shell: bash
+        run: python tools/check_pypi_size.py wheelhouse --max-wheel-mib 8
       - name: Verify wheel documentation and author links
         shell: bash
         run: python tools/check_package_docs.py --archive wheelhouse/*.whl
@@ -58,6 +61,7 @@ jobs:
       - run: python -m pip install --upgrade build
       - run: python -m build --sdist
       - run: python tools/check_package_docs.py --archive dist/*.tar.gz
+      - run: python tools/check_pypi_size.py dist --max-sdist-mib 12
       - uses: actions/upload-artifact@v6
         with:
           name: python-sdist
@@ -76,6 +80,9 @@ jobs:
           pattern: "{wheels-*,python-sdist}"
           path: dist
           merge-multiple: true
+      - name: Enforce PyPI distribution size budget
+        shell: bash
+        run: python3 tools/check_pypi_size.py dist --max-wheel-mib 8 --max-sdist-mib 12 --max-total-mib 150
       - uses: pypa/gh-action-pypi-publish@release/v1
 
   publish-npm:
