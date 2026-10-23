@@ -37,6 +37,7 @@ def inspect(page_path: Path, audio_path: Path, output_dir: Path):
             assert page.locator('#song option').count()==3
             assert page.locator('#timeline').is_visible()
             assert page.locator('#skeleton').is_visible()
+            assert page.locator('#tempo-detail').is_visible()
             assert page.get_by_text('Motion + music: complete dances and loops').count()==1
             assert page.locator('#motion option').count()==len(report['motions'])
             for index,song in enumerate(report['songs']):
@@ -45,6 +46,15 @@ def inspect(page_path: Path, audio_path: Path, output_dir: Path):
                 assert page.locator('#provenance').inner_text().strip()
                 count=page.locator('#candidate option').count()
                 assert count==len(song.get('pairs',[])),(song['id'],count)
+            # Real CI source evidence includes a weaker explicit 120 BPM
+            # double-time interpretation for the 60 BPM synthetic action.
+            arc=next(i for i,s in enumerate(report['songs']) if s['id']=='arcadians')
+            assert any(p.get('metrical_factor')==2 for p in report['songs'][arc]['pairs']), (
+                'Arcadians double-time candidate missing from review gallery')
+            page.select_option('#song',str(arc))
+            assert page.locator('#candidate option').count()>0
+            page.select_option('#candidate','0')
+            assert 'interpret' in page.locator('#tempo-detail').inner_text().lower()
             truth=next(i for i,s in enumerate(report['songs']) if s['id']=='the-truth-is-a-virus')
             page.select_option('#song',str(truth))
             # The source is loaded via the protected local picker, never a remote

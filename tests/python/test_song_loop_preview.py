@@ -2,6 +2,7 @@
 from __future__ import annotations
 import importlib.util
 import json
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -33,7 +34,7 @@ class SongLoopPreviewTests(unittest.TestCase):
                  {'id':'three','beats':3,'estimated_bpm':120,'score':.9},
                  {'id':'sixteen','beats':16,'estimated_bpm':280,'score':.9}]
         audio={'sample_rate':100,'loops':[],
-               'exploratory_candidates':[{'id':'whole-01-x01','bars':2,'grid_start_sample':0,
+               'exploratory_candidates':[{'id':'whole-01-x01','bars':2,'grid_start_sample':0,'grid_end_sample':400,
                                           'start_seconds':0,'end_seconds':4,'status':'requires_listening_or_edit',
                                           'failed_gates':['full_vocal_evidence_missing'],
                                           'exploratory_ranking_cost':.12}]}
@@ -51,10 +52,10 @@ class SongLoopPreviewTests(unittest.TestCase):
                  dict(id='loop',beats=4.0,estimated_bpm=120.,score=.8,
                       motion_kind='loopable')]
         audio={'sample_rate':100,'loops':[], 'exploratory_candidates':[
-            dict(id='whole-01-x01',bars=4,grid_start_sample=0,
+            dict(id='whole-01-x01',bars=4,grid_start_sample=0,grid_end_sample=800,
                  start_seconds=0,end_seconds=8,status='requires_listening_or_edit',
                  failed_gates=[],exploratory_ranking_cost=.12),
-            dict(id='whole-01-x02',bars=2,grid_start_sample=0,
+            dict(id='whole-01-x02',bars=2,grid_start_sample=0,grid_end_sample=400,
                  start_seconds=0,end_seconds=4,status='requires_listening_or_edit',
                  failed_gates=[],exploratory_ranking_cost=.12)]}
         pairs=preview._rank_matches(song,motions,audio)
@@ -66,6 +67,96 @@ class SongLoopPreviewTests(unittest.TestCase):
         loops=[x for x in pairs if x['motion_id']=='loop']
         self.assertEqual({x['motion_repeats'] for x in loops},{2,4})
         self.assertTrue(all(not x['beat_alignment_confirmed'] for x in pairs))
+
+    def test_arcadians_evidenced_double_time_matches_without_rewriting_source(self):
+        # 60 BPM was StemLab's primary guess; the original complete recording
+        # retains 16 source beats. The weaker 120 BPM hypothesis represents 32
+        # interpreted beats -- it is not 16 beats played two times.
+        from math import isclose
+        period=60/144
+        song={'grid':{'bpm':144.,'beats':[i*period for i in range(90)]}}
+        alternatives=[{'bpm':60.,'fit_score':.90,'metrical_relation_to_top':'primary',
+                       'supporting_control_groups':2},
+                      {'bpm':120.,'fit_score':.69,'metrical_relation_to_top':'double_time',
+                       'supporting_control_groups':1,
+                       'notes':['insufficient_independent_control_support']}]
+        motions=[{'id':'full','beats':16.,'estimated_bpm':60.,'score':.8438,
+                  'motion_kind':'full_length','full_motion_confidence':.8438,
+                  'source_tempo_hypotheses':alternatives},
+                 {'id':'clip','beats':4.,'estimated_bpm':60.,'score':1.,
+                  'motion_kind':'loopable','source_tempo_hypotheses':alternatives}]
+        def audio(beats,i):
+            return {'id':f'whole-01-x{i:02}', 'bars':beats//4,
+                    'grid_start_sample':0,'grid_end_sample':round(beats*period*10000),
+                    'start_seconds':0.,'end_seconds':beats*period,
+                    'status':'requires_listening_or_edit','failed_gates':['full_vocal_evidence_missing'],
+                    'exploratory_ranking_cost':.1}
+        report={'sample_rate':10000,'loops':[],
+                'exploratory_candidates':[audio(32,1),audio(16,2)]}
+        result=preview._rank_matches(song,motions,report)
+        full=[x for x in result if x['motion_kind']=='full_length']
+        loops=[x for x in result if x['motion_kind']=='loopable']
+        self.assertEqual(len(full),1)
+        self.assertEqual(full[0]['motion_repeats'],1)
+        self.assertEqual(full[0]['metrical_factor'],2)
+        self.assertEqual(full[0]['original_motion_beats'],16)
+        self.assertEqual(full[0]['motion_beats'],32)
+        self.assertEqual(full[0]['song_beats'],32)
+        self.assertTrue(isclose(full[0]['playback_tempo_ratio'],1.2,rel_tol=.001))
+        self.assertLessEqual(full[0]['metrical_evidence_score'],.69)
+        self.assertFalse(full[0]['metrical_phase_verified'])
+        self.assertFalse(full[0]['beat_alignment_confirmed'])
+        self.assertTrue(any(q['motion_beats']==8 and q['song_beats']==16
+                            and q['motion_repeats']==2 for q in loops))
+
+        # Without original StemLab hypotheses, no metrical leap is permitted.
+        no_evidence=[dict(m,source_tempo_hypotheses=[]) for m in motions]
+        self.assertEqual(preview._rank_matches(song,no_evidence,report),[])
+        altered=[dict(m,source_tempo_hypotheses=[dict(alternatives[1],
+                         metrical_relation_to_top='alternative')]) for m in motions]
+        self.assertEqual(preview._rank_matches(song,altered,report),[])
+
+    def test_actual_beat_indices_override_assumed_four_four_and_reject_missing_end(self):
+        song={'grid':{'bpm':120.,'beats':[i*.5 for i in range(80)]}}
+        motions=[dict(id='three',beats=3.,estimated_bpm=120.,score=.90,
+                      motion_kind='loopable')]
+        # StemLab's observed interval is twelve beats although the metadata's
+        # bar estimate says '4'. The detector must not invent a 16-beat grid.
+        report={'sample_rate':10000,'loops':[], 'exploratory_candidates':[dict(
+            id='whole-01-x01',bars=4,grid_start_sample=0,grid_end_sample=60000,
+            start_seconds=0.,end_seconds=6.,status='requires_listening_or_edit',
+            failed_gates=[],exploratory_ranking_cost=.1)]}
+        pairs=preview._rank_matches(song,motions,report)
+        self.assertEqual(len(pairs),1)
+        self.assertEqual(pairs[0]['song_beats'],12)
+        self.assertEqual(pairs[0]['motion_repeats'],4)
+        self.assertEqual(pairs[0]['beat_count_source'],'indexed_stemlab_audio_beat_grid')
+        del report['exploratory_candidates'][0]['grid_end_sample']
+        self.assertFalse(preview._rank_matches(song,motions,report))
+
+    def test_variable_song_beat_grid_uses_cut_local_bpm_and_flags_time_warp(self):
+        beats=[0.,.45,.99,1.42,2.10,2.57,3.06,3.58,4.14]
+        song={'grid':{'bpm':120.,'beats':beats}}
+        loop=dict(id='loop',beats=4.,estimated_bpm=120.,score=.85,
+                  motion_kind='loopable')
+        audio={'sample_rate':10000,'loops':[], 'exploratory_candidates':[dict(
+            id='whole-01-x01',bars=1,grid_start_sample=0,grid_end_sample=21000,
+            start_seconds=0.,end_seconds=2.10,status='requires_listening_or_edit',
+            failed_gates=[],exploratory_ranking_cost=.1)]}
+        pair=preview._rank_matches(song,[loop],audio)[0]
+        self.assertEqual(pair['song_beats'],4)
+        self.assertAlmostEqual(pair['local_song_bpm'],60*4/2.10,places=3)
+        self.assertAlmostEqual(pair['playback_tempo_ratio'],(60*4/2.1)/120,places=3)
+        self.assertTrue(pair['local_tempo_warp_preview'])
+        self.assertFalse(pair['beat_alignment_confirmed'])
+
+    def test_weak_or_unrelated_tempo_hypothesis_never_becomes_source_bpm(self):
+        source={'id':'motion','beats':4.,'estimated_bpm':60.,'score':.9,
+                'source_tempo_hypotheses':[{'bpm':120.,'fit_score':.3,
+                   'supporting_control_groups':2,'metrical_relation_to_top':'double_time'},
+                  {'bpm':123.,'fit_score':.95,'supporting_control_groups':2,
+                   'metrical_relation_to_top':'double_time'}]}
+        self.assertEqual([v['factor'] for v in preview._metrical_variants(source)],[1])
 
     @unittest.skipUnless(importlib.util.find_spec('numpy'),'NumPy needed for offline FK sample')
     def test_fk_source_preview_preserves_64_pip_samples(self):
@@ -109,7 +200,7 @@ class SongLoopPreviewTests(unittest.TestCase):
             src=root/'src/stemlab/analysis';src.mkdir(parents=True)
             (src/'__init__.py').write_text('')
             (src.parent/'__init__.py').write_text('')
-            (src/'loops.py').write_text('''import json\nfrom pathlib import Path\nclass LoopConfig:\n    def __init__(self, **kwargs): self.__dict__.update(kwargs)\ndef analyze_loops(audio, output_dir, **kwargs):\n    output_dir=Path(output_dir);output_dir.mkdir(parents=True,exist_ok=True)\n    from hashlib import sha256\n    digest=sha256(Path(audio).read_bytes()).hexdigest()\n    data={'source_sha256':digest,'sample_rate':44100,'loop_count':0,'loops':[],\n        'exploratory_count':1,'exploratory_candidates':[{'id':'whole-01-x01','bars':1,\n        'grid_start_sample':0,'start_seconds':0,'end_seconds':2,'status':'requires_listening_or_edit',\n        'failed_gates':['full_vocal_evidence_missing'],'exploratory_ranking_cost':.22}]}\n    (output_dir/'loops.json').write_text(json.dumps(data));return data\n''')
+            (src/'loops.py').write_text('''import json\nfrom pathlib import Path\nclass LoopConfig:\n    def __init__(self, **kwargs): self.__dict__.update(kwargs)\ndef analyze_loops(audio, output_dir, **kwargs):\n    output_dir=Path(output_dir);output_dir.mkdir(parents=True,exist_ok=True)\n    from hashlib import sha256\n    digest=sha256(Path(audio).read_bytes()).hexdigest()\n    data={'source_sha256':digest,'sample_rate':44100,'loop_count':0,'loops':[],\n        'exploratory_count':1,'exploratory_candidates':[{'id':'whole-01-x01','bars':1,\n        'grid_start_sample':0,'grid_end_sample':88200,'start_seconds':0,'end_seconds':2,'status':'requires_listening_or_edit',\n        'failed_gates':['full_vocal_evidence_missing'],'exploratory_ranking_cost':.22}]}\n    (output_dir/'loops.json').write_text(json.dumps(data));return data\n''')
             (src.parent/'types.py').write_text('''class BeatResult:\n    def __init__(self, **kwargs): self.__dict__.update(kwargs)\n''')
             job=Path(temp)/'job';job.mkdir();(job/'previews').mkdir()
             motion=job/'previews'/'short.motion.json'
@@ -121,6 +212,10 @@ class SongLoopPreviewTests(unittest.TestCase):
                 'source_end_seconds':3,'score':.9}
             (job/'job.json').write_text(json.dumps({'format':'dancerudiments.source-motion-loop-job',
                                                     'previews':[entry]}))
+            # A second independently selected job with identical source data
+            # must not duplicate identical motion geometry in the viewer.
+            other=Path(temp)/'other-job'
+            shutil.copytree(job,other)
             # Stub sources implement canonical signature but never install/download.
             with patch.dict(sys.modules,{x:None for x in ('stemlab','stemlab.analysis','stemlab.analysis.loops','stemlab.types')}):
                 for k in ('stemlab','stemlab.analysis','stemlab.analysis.loops','stemlab.types'):
@@ -133,10 +228,12 @@ class SongLoopPreviewTests(unittest.TestCase):
                              'model':'test_grid','bpm':120,'beats':[i*.5 for i in range(16)],
                              'downbeats':[0,2,4,6],'beat_status':'synthetic',
                              'downbeat_status':'synthetic','meter_status':'synthetic'}):
-                        result=preview.build(root,job,Path(temp)/'output',fail_on_song_error=True)
+                        result=preview.build(root,[job,other],Path(temp)/'output',fail_on_song_error=True)
                 finally:
                     sys.path.remove(str(root/'src'))
             self.assertEqual(len(result['songs']),1)
+            self.assertEqual(len(result['motions']),1)
+            self.assertEqual(len(result['source_motion_job_sha256s']),2)
             self.assertEqual(result['songs'][0]['status'],'candidate_previews')
             self.assertEqual(len(result['songs'][0]['pairs']),1)
             index=Path(temp)/'output'/'index.html'

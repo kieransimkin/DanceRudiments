@@ -34,16 +34,32 @@ changed.
 ## Audio loop analysis and rig matching
 
 The job calls the **real StemLab** `stemlab.analysis.loops.analyze_loops` API on
-each entire MP3, in `exploratory / whole_song` mode, using at most four proposed
-bars or 20 seconds for each candidate. There is no full-vocal stem in this
+each entire MP3, in `exploratory / whole_song` mode, using up to eight proposed
+bars or 30 seconds per candidate, with 24 ranked exploratory alternatives and
+StemLab's `spectral_context` ranking (spectral similarity is **not** a safe
+join). There is no full-vocal stem in this
 lightweight test, so no audio loop is presented as vocal-clear or seamless;
 exploratory ranking and `failed_gates` remain inspectable in each original
 StemLab `loops.json` report. No audio snippets or models are exported.
 
-The analyzer then joins song downbeat or preview bar intervals to whole numbers
-of previously analysed motion cycles, retaining 64-pip source recordings,
+The matcher now uses **the indices of the two actual song-beat events selected
+by StemLab as each proposed cut's boundaries**; it does not assume that
+`bars × 4` is the observed number of beats. Missing or non-aligned boundary
+evidence cannot produce an audio-motion pairing. It joins those intervals to
+whole numbers of previously analysed source motion cycles, retaining 64-pip source recordings,
 source profile fingerprints, unverified source tempo, change-of-speed ratio and
-ranking diagnostics. Motion is not inferred by analysing the MP3 as if it were
+ranking diagnostics. Half- and double-time interpretations are available only
+where the **original StemLab motion report** contains an independently evidenced
+alternative (at least one supporting control group, fit score at least 0.45,
+correct relative BPM, correct metrical label). Alternatives retain their own
+weaker score and phase-unverified warning. A 16-beat source Action interpreted
+at double-time represents 32 musical beats, not a repeated 16-beat dance.
+The playback-rate estimate is based on **the mean BPM of each cut's actual
+indexed beat timestamps**, not the song-wide average; a strongly nonuniform
+interval is marked as requiring variable-tempo preview time-warping rather than
+pretending the whole interval has one clock. The shortlist reserves places for
+both full Actions and short loop candidates
+instead of silently filling every slot with complete dances. Motion is not inferred by analysing the MP3 as if it were
 a mesh animation. In this CI job, the source animation is a **generated synthetic
 BVH with independently moving arm and knee controls**: not the Kandi Boom
 skinned mesh or third-party mocap. This checks the integration without bundling
@@ -125,3 +141,50 @@ A full Action can be paired only once with a similar-length audio beat interval;
 it must not be replicated to cover a song loop. A loopable excerpt may be repeated
 for an audition, but no visual or audio seam is approved. The underlying original
 rigs and all original music/audio are unchanged.
+
+## Compare additional provenance-tracked motions locally
+
+The preview builder accepts **multiple explicit** source-first motion jobs.
+It validates each `job.json` and every selected `.motion.json` SHA-256, and
+shows at most eight selected records in the viewer. No global motion search,
+automatic import, or public third-party motion upload occurs:
+
+```sh
+python tools/build_song_loop_preview.py \
+  --stemlab-root .cache/stemlab-source \
+  --motion-job .cache/loop-analysis/salsa \
+  --motion-job .cache/loop-analysis/ballet \
+  --output-dir .cache/combined-song-preview --require-all-songs
+```
+
+The viewer labels primary/alternative metrical interpretations and distinguishes
+original source BPM, interpreted beat count, sample replay rate, and scored
+loop quality. Source profiles are **not automatically retargeted** onto Kandi
+Boom. Local preview reports containing third-party skeletal trajectories are
+user-controlled and should not be published without source-specific rights.
+
+## Reproducible real-motion diagnostics (separate from public media preview)
+
+The independent `real-motion-benchmark.yml` checks the two original, already
+reviewed CMU BVH files used for Kandi's salsa and ballet. It uses the pinned
+source and effective frame-rate policies in `tools/mesh_demo_sources.json`,
+**then** calls StemLab on their source-time rig captures and evaluates the same
+70% complete-Action gate plus independent loop candidates. It does not require
+either genuine dance to pass that heuristic threshold; rejecting an unsuitable
+Action is a valid measurement. CI explicitly fetches only the two pinned hashes
+and uploads **summary.json only**, not original/converted motion samples or
+audio. CMU source-specific terms, including no direct resale, continue to apply.
+
+For an already-local cache, without downloading:
+
+```sh
+python tools/evaluate_real_rig_motions.py \
+  --cache-root .cache/real-motion-sources \
+  --output-dir .cache/real-motion-summary --max-previews 2
+```
+
+Add `--download` only when you explicitly want to fetch the two reviewed
+source motions. `summary.json` records per-source real tempo hypotheses,
+grid-fit scores, conversion outcomes and seam diagnostics; these values are
+kinematic evidence, **not** a claim that the source music or Kandi's rendered
+mesh has been validated.

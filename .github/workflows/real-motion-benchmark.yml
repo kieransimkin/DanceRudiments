@@ -1,0 +1,86 @@
+name: Real provenance-tracked motion benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/real-motion-benchmark.yml'
+      - 'tools/evaluate_real_rig_motions.py'
+      - 'python/dancerudiments_authoring/full_motion_analysis.py'
+      - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'tools/mesh_demo_sources.json'
+      - 'tests/python/test_real_motion_benchmark.py'
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-real-dance:
+    name: Pinned CMU salsa + ballet source Action quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+      TMPDIR: ${{ github.workspace }}/.cache/tmp
+      PYTHONPATH: ${{ github.workspace }}/.cache/stemlab-source/src
+      DANCERUDIMENTS_REQUIRE_NATIVE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: kieransimkin/stemlab
+          # Exact source snapshot whose rig-motion analyser is integration-tested.
+          ref: e4b440e585748a5177b228e0a50e747787ec9762
+          path: .cache/stemlab-source
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Verify isolated working directory can safely create/rename/delete
+        run: |
+          python - <<'PY'
+          import os,tempfile
+          from pathlib import Path
+          for directory in (Path('.cache'),Path(os.environ['TMPDIR'])):
+              directory.mkdir(parents=True,exist_ok=True)
+              with tempfile.TemporaryDirectory(dir=directory) as d:
+                  f=Path(d)/'before';f.write_bytes(b'preflight')
+                  assert f.read_bytes()==b'preflight'
+                  f.rename(f.with_name('after'))
+                  assert f.with_name('after').read_bytes()==b'preflight'
+                  f.with_name('after').unlink()
+          PY
+      - name: Install native DanceRudiments and source-time StemLab dependencies
+        run: python -m pip install '.[motion-import]' 'soundfile>=0.12,<1'
+      - name: Verify real-source evaluator synthetic negative tests
+        run: python -m unittest discover -s tests/python -p test_real_motion_benchmark.py -v
+      - name: Analyse exactly two already reviewed, hash-pinned original dance recordings
+        # This *does* download the two explicitly selected CMU source files under
+        # existing source-specific terms. Data is used only during the job.
+        run: |
+          python tools/evaluate_real_rig_motions.py \
+            --cache-root .cache/real-motion-sources \
+            --output-dir .cache/real-motion-summary \
+            --download --min-full-confidence 0.70 --max-previews 2
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          r=json.loads(Path('.cache/real-motion-summary/summary.json').read_text())
+          assert r['analysed_scene_count']==2 and r['failed_scene_count']==0,r
+          assert {i['scene_id'] for i in r['scenes']}=={'boxbot','prism'}
+          assert all(i['source_sha256'] and i['profile_sha256'] for i in r['scenes'])
+          assert not any(i['beat_alignment_confirmed'] or i['loop_seam_approved'] for i in r['scenes'])
+          print('Evidence only:',[(i['scene_id'],i['bpm_estimated'],
+                i['bpm_confidence_percent'],i['preview_loop_count']) for i in r['scenes']])
+          PY
+      - name: Upload SUMMARY only (never copyrighted motion samples or music)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: real-source-motion-bpm-and-loop-summary
+          path: .cache/real-motion-summary/summary.json
+          if-no-files-found: warn
+          retention-days: 14

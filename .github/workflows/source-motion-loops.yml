@@ -19,10 +19,6 @@ on:
       - 'tools/analyze_blender_capture_batch.py'
       - 'tests/python/test_blender_source_batch.py'
       - 'docs/source-loop-analysis.md'
-      - 'docs/song-loop-preview.md'
-      - 'tools/build_song_loop_preview.py'
-      - 'tools/song_loop_viewer/**'
-      - 'tests/python/test_song_loop_preview.py'
       - 'README.md'
   pull_request:
     paths:
@@ -41,10 +37,6 @@ on:
       - 'tools/analyze_blender_capture_batch.py'
       - 'tests/python/test_blender_source_batch.py'
       - 'docs/source-loop-analysis.md'
-      - 'docs/song-loop-preview.md'
-      - 'tools/build_song_loop_preview.py'
-      - 'tools/song_loop_viewer/**'
-      - 'tests/python/test_song_loop_preview.py'
       - 'README.md'
   workflow_dispatch:
 
@@ -252,6 +244,16 @@ jobs:
                      for s in report['songs'])
           assert report['songs'][1]['grid']['model'] == 'stemlab_consensus_saved'
           assert report['songs'][2]['grid']['downbeat_status'] != 'confirmed'
+          # Arcadians was previously incorrectly rejected: it needs a documented
+          # double-time hypothesis (60 -> 120 BPM), never an invented musical BPM.
+          assert any(p.get('metrical_factor') == 2 for p in report['songs'][0]['pairs']), (
+              'Arcadians must surface a reviewed double-time motion pairing')
+          assert any(p.get('motion_kind') == 'loopable' for p in report['songs'][0]['pairs']), (
+              'Arcadians must have at least one independent loopable motion')
+          assert all(p['beat_count_source'] == 'indexed_stemlab_audio_beat_grid'
+                     for s in report['songs'] for p in s['pairs'])
+          assert all(p['metrical_phase_verified'] is False
+                     for s in report['songs'] for p in s['pairs'])
           assert any(s['pairs'] for s in report['songs']), 'No audible motion-loop pairings could be proposed'
           assert any(m['motion_kind'] == 'full_length' for m in report['motions'])
           assert any(m['motion_kind'] == 'loopable' for m in report['motions'])

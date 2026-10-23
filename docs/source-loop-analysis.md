@@ -222,3 +222,25 @@ original Blender file, open referenced external texture files or reinterpret
 unverified music tempo as a confirmed beat. The output has independently ranked
 `full_motion_shortlist` and `loopable_shortlist` arrays and rejects missing or
 inconsistent capture identities rather than silently retargeting to another rig.
+
+## Real-source benchmark and half/double-time music preview
+
+The optional workflow `real-motion-benchmark.yml` uses the existing reviewed
+CMU salsa/ballet source manifest (exact source hashes, rig profiles, effective
+source FPS, licence) to evaluate **real** source motions before conversion.
+It records whole-action confidence, rejection reasons and loop suggestions in
+a summary-only CI artifact. It never distributes their motion samples. This
+complements the synthetic deterministic tests; neither test establishes the
+true source music/downbeat or a clean retarget to Kandi.
+
+For music-aware audition, `build_song_loop_preview.py` now preserves independent
+StemLab half/double-time alternatives instead of treating the highest-scoring
+source BPM as the only possible metrical level. It preserves the original
+recording and normalised channel samples; the alternative only changes the
+*interpreted* beats-per-motion. The song side uses actual indexed cut-boundary
+beat events, not assumed four-beat bars. The review viewer does not label an
+alternative as confirmed or convert an entire Action into a repeatable loop.
+For nonuniform song tempos, each music-pair estimate reports the **local mean**
+of the actual matched beat intervals and flags significant beat-interval
+variation; the original source recording is unchanged. See
+[song preview](song-loop-preview.md) for exact thresholds and inputs.
