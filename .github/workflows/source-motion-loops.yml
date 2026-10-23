@@ -7,15 +7,19 @@ on:
       - '.github/workflows/source-motion-loops.yml'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
       - 'tools/analyze_source_motion.py'
+      - 'tools/analyze_motion_collection.py'
       - 'tests/python/test_source_loop_analysis.py'
       - 'docs/source-loop-analysis.md'
+      - 'README.md'
   pull_request:
     paths:
       - '.github/workflows/source-motion-loops.yml'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
       - 'tools/analyze_source_motion.py'
+      - 'tools/analyze_motion_collection.py'
       - 'tests/python/test_source_loop_analysis.py'
       - 'docs/source-loop-analysis.md'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +32,7 @@ jobs:
     timeout-minutes: 30
     env:
       DANCERUDIMENTS_REQUIRE_NATIVE: '1'
+      DANCERUDIMENTS_REQUIRE_STEMLAB: '1'
       PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
       TMPDIR: ${{ github.workspace }}/.cache/tmp
       # The pinned StemLab source snapshot is for feature integration regression
@@ -62,8 +67,24 @@ jobs:
               assert file.with_name('renamed').read_text() == 'source-first'
               file.with_name('renamed').unlink()
           PY
-      - name: Install native DanceRudiments and optional NumPy source import
-        run: python -m pip install '.[motion-import]'
+      - name: Install native DanceRudiments and lightweight rig-analysis dependencies
+        # StemLab's analysis package currently imports its audio-loop module on
+        # package initialisation. soundfile is needed to import the module even
+        # though kinematic inference itself requires only NumPy. Do NOT install
+        # the heavy StemLab audio/torch/model dependency graph in this job.
+        run: python -m pip install '.[motion-import]' 'soundfile>=0.12,<1'
+      - name: Fail fast unless the real pinned StemLab analyser is importable
+        run: |
+          python - <<'PY'
+          import inspect
+          from pathlib import Path
+          from stemlab.analysis.rig_motion import analyze_rig_capture, write_rig_analysis
+          expected = Path('.cache/stemlab-source/src/stemlab/analysis/rig_motion.py').resolve()
+          actual = Path(inspect.getfile(analyze_rig_capture)).resolve()
+          assert actual == expected, (actual, expected)
+          assert callable(write_rig_analysis)
+          print('Using genuine pinned StemLab kinematic analyser:', actual)
+          PY
       - name: Test source capture, real StemLab inference, and native loop previews
         run: python -m unittest discover -s tests/python -p 'test_source_loop_analysis.py' -v
       - name: Exercise full CLI with an original synthetic BVH source
@@ -73,12 +94,28 @@ jobs:
           import math
           p = Path('.cache/synthetic-original.bvh')
           p.parent.mkdir(parents=True, exist_ok=True)
-          rows = [' '.join(map(str, (0.08*math.sin(i*math.tau/80), 0, 0,
-                                      0, 0, 0))) for i in range(641)]
+          # A 120-BPM pulse layered over a two-second repeated arm/knee phrase.
+          # Two independent moving joints produce real beat-grid evidence rather
+          # than a smooth single-channel sine that may have no defensible tempo.
+          rows = []
+          for i in range(16*60 + 1):
+              seconds = i / 60
+              arm = (0.85*math.exp(-((seconds % .5 - .12)/.065)**2)
+                     + .12*math.sin(math.tau * seconds / 2))
+              knee = .10*math.sin(math.tau * seconds / 2 + .4)
+              rows.append(' '.join(map(str, (0, 0, 0, 0, 0, 0,
+                                               40*arm, 0, 0, 20*knee, 0, 0))))
           p.write_text('HIERARCHY\nROOT Hips\n{\n OFFSET 0 0 0\n'
                        ' CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation\n'
-                       ' End Site\n {\n OFFSET 0 1 0\n }\n}\nMOTION\n'
-                       'Frames: 641\nFrame Time: 0.025\n'+'\n'.join(rows)+'\n')
+                       ' JOINT Arm\n {\n  OFFSET 0 1 0\n'
+                       '  CHANNELS 3 Zrotation Xrotation Yrotation\n'
+                       '  End Site\n  {\n   OFFSET 0 1 0\n  }\n }\n'
+                       ' JOINT Knee\n {\n  OFFSET 0 -1 0\n'
+                       '  CHANNELS 3 Zrotation Xrotation Yrotation\n'
+                       '  End Site\n  {\n   OFFSET 0 -1 0\n  }\n }\n'
+                       '}\nMOTION\n'
+                       'Frames: 961\nFrame Time: 0.016666666666666666667\n'
+                       + '\n'.join(rows) + '\n')
           PY
           python tools/analyze_source_motion.py .cache/synthetic-original.bvh \
             --output-dir .cache/source-loop-smoke --max-previews 2 --verify-native
@@ -89,7 +126,10 @@ jobs:
           assert report['source_kind'] == 'original_bvh_or_blender_capture'
           assert report['source_original_sha256']
           assert report['profile_sha256']
-          assert Path('.cache/source-loop-smoke/stemlab-analysis.json').is_file()
+          assert report['preview_count'] > 0, 'Synthetic source produced no usable loops'
+          stemlab = json.loads(Path('.cache/source-loop-smoke/stemlab-analysis.json').read_text())
+          assert stemlab['recommended_tempo'], 'Synthetic source produced no tempo estimate'
+          assert stemlab['loop_candidates'], 'Synthetic source produced no loop hypotheses'
           assert all(item['native_samples_verified'] for item in report['previews'])
           assert all(not item['audio_beat_alignment_verified'] for item in report['previews'])
           PY
@@ -130,5 +170,16 @@ jobs:
           assert not report['truncated']
           action = report['actions'][0]
           assert action['source_sha256']
+          assert action['preview_count'] > 0, 'Batch source yielded no native loop previews'
           assert (root/action['relative_output']/'stemlab-analysis.json').is_file()
           PY
+      - name: Preserve synthetic source-first evidence on success or failure
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: source-first-loop-synthetic-evidence
+          path: |
+            .cache/source-loop-smoke/
+            .cache/source-loop-collection-smoke/
+          if-no-files-found: warn
+          retention-days: 7

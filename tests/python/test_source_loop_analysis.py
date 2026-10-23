@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import math
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -53,7 +55,8 @@ def fixture(*, static=False, drift=0.0):
     return RigCapture(profile, tuple(times), tuple(frames), '{"origin":"synthetic"}')
 
 
-def fake_stemlab(*, score=.9, pose_only=False):
+def fake_stemlab(*, score=.9, pose_only=False, missing_grid=False,
+                 pose_mismatch=.01, root_drift=0.):
     def analyze(path, *, min_bpm, max_bpm):
         data = json.loads(Path(path).read_text())
         assert not Path(path).parent.joinpath('previews').exists(), 'Conversion ran before analysis'
@@ -61,14 +64,19 @@ def fake_stemlab(*, score=.9, pose_only=False):
             source_kind='capture', source_file_sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
             type_uri=data['type_uri'], profile_sha256=data['profile_sha256'],
             recommended_tempo=dict(bpm=120., beat_zero_seconds=.0, score=.95),
-            estimated_beat_map=None,
+            estimated_beat_map=None if missing_grid else dict(format='dancerudiments.beat-map',
+                schema_version=1, pips_per_beat=64, interpolation='linear',
+                anchors=[dict(seconds=0, beat=0), dict(seconds=.5, beat=1)],
+                bpm_status='estimated',
+                phase_status='estimated', extrapolate=False,
+                source='StemLab motion-only estimate: '+hashlib.sha256(Path(path).read_bytes()).hexdigest()),
             loop_candidates=[dict(start_seconds=2.0, end_seconds=4.0,
                                   beats=None if pose_only else 4,
                                   alignment='pose_recurrence_only' if pose_only else 'estimated_motion_beat_grid',
                                   requires_review=True, repaired=False,
                                   evidence='repeated_and_seam', score=score,
-                                  pose_mismatch=.01, velocity_mismatch=.02,
-                                  root_drift_relative=0.)])
+                                  pose_mismatch=pose_mismatch, velocity_mismatch=.02,
+                                  root_drift_relative=root_drift)])
 
     def write(path, report, *, beat_map_path=None):
         Path(path).write_text(json.dumps(report))
@@ -112,6 +120,24 @@ class SourceFirstLoopTests(unittest.TestCase):
             self.assertEqual(report['rejected_candidates'][0]['reason'], 'not_an_unverified_beat_grid_loop')
             self.assertEqual(list((Path(directory)/'analysis'/'previews').glob('*.json')), [])
 
+    def test_missing_stemlab_beat_map_cannot_promote_loop_to_beat_grid(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+                sys.modules, fake_stemlab(missing_grid=True)):
+            report = analyse_source_capture(fixture(), Path(directory)/'analysis')
+            self.assertEqual(report['preview_count'], 0)
+            self.assertEqual(report['rejected_candidates'][0]['reason'], 'missing_source_grid_evidence')
+            self.assertFalse(list((Path(directory)/'analysis'/'previews').glob('*.json')))
+
+    def test_invalid_pose_or_root_drift_is_never_compiled(self):
+        for metric in ({'pose_mismatch': .85}, {'root_drift': .50}):
+            with self.subTest(metric=metric), tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+                    sys.modules, fake_stemlab(**metric)):
+                report = analyse_source_capture(fixture(), Path(directory)/'analysis')
+                self.assertEqual(report['preview_count'], 0)
+                self.assertEqual(report['rejected_candidates'][0]['reason'],
+                                 'unsafe_or_missing_seam_evidence')
+                self.assertFalse(list((Path(directory)/'analysis'/'previews').glob('*.json')))
+
     def test_invalid_bpm_or_previews_rejected_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(sys.modules, fake_stemlab()):
             folder = Path(directory)/'output'
@@ -121,6 +147,9 @@ class SourceFirstLoopTests(unittest.TestCase):
                     analyse_source_capture(fixture(), folder, **params)
                 self.assertFalse(folder.exists())
 
+    @unittest.skipUnless(importlib.util.find_spec('numpy') is not None or
+                         os.environ.get('DANCERUDIMENTS_REQUIRE_NATIVE') == '1',
+                         'Original BVH conversion needs optional NumPy')
     def test_bvh_source_original_frames_survive_source_first_capture(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -144,7 +173,9 @@ class SourceFirstLoopTests(unittest.TestCase):
     def test_stemlab_real_synthetic_motion_when_available(self):
         try:
             from stemlab.analysis.rig_motion import analyze_rig_capture  # noqa: F401
-        except ImportError:
+        except ImportError as exc:
+            if os.environ.get('DANCERUDIMENTS_REQUIRE_STEMLAB') == '1':
+                self.fail(f'StemLab rig-motion integration is required in this CI job: {exc}')
             self.skipTest('Compatible StemLab is an optional offline dependency')
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)/'loop-analysis'
@@ -153,6 +184,7 @@ class SourceFirstLoopTests(unittest.TestCase):
             self.assertTrue(evidence['bpm_candidates'])
             self.assertLess(abs(evidence['recommended_tempo']['bpm']-120), 5)
             self.assertTrue(evidence['loop_candidates'])
+            self.assertGreater(report['preview_count'], 0, 'A known periodic fixture must produce compiled previews')
             self.assertEqual(report['source_capture_sha256'], evidence['source_file_sha256'])
             self.assertTrue(all(item['requires_review'] for item in report['previews']))
 

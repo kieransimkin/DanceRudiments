@@ -24,7 +24,10 @@ beat grid or an approved seamless animation.
    timestamps, then estimates motion accents, candidate BPM/phase, recurring
    poses, loop seams, root displacement and joint velocity discontinuity.
 4. **Select and compile previews:** Accept only explicitly unapproved
-   `estimated_motion_beat_grid` candidates with supported beat counts. Use the
+   `estimated_motion_beat_grid` candidates with supported beat counts, a matching
+   **unverified** StemLab beat-map provenance and source-time seam diagnostics
+   within StemLab's physical mismatch thresholds. Do not compile corrupted,
+   externally approved or missing-grid evidence. Use the
    candidate's exact source start/end seconds for the source beat map. Compile
    into the standard `RigMotion` format at 64 pips per quarter-note beat,
    with half-open loop boundaries, **without** adding a second runtime sampler.
@@ -40,8 +43,13 @@ beat grid or an approved seamless animation.
 Use a compatible StemLab **source checkout or published release containing its
 `stemlab.analysis.rig_motion` interface**. Its rig-motion implementation only
 needs NumPy for this job; avoid downloading any machine-learning models for
-kinematic analysis. Keep StemLab optional rather than forcing its large audio
-stack on base DanceRudiments consumers.
+kinematic analysis. The currently pinned StemLab source also imports its
+high-level audio analysis package on module initialisation; this transitively
+requires **soundfile** even for the otherwise NumPy-only rig analyser. Install
+`soundfile>=0.12,<1` when working with that source checkout. The dedicated CI
+job installs only this light compatibility requirement, and verifies the actual
+pinned analyser file is loaded. Keep StemLab optional rather than forcing its
+large audio stack on base DanceRudiments consumers.
 
 ```sh
 # Source-time BVH, no previous rudiment conversion:
@@ -124,6 +132,11 @@ project-local temporary directory and rename the complete result into place.
 BVH parsing, calibration exclusion, native 64-pip compilation, negative
 cases, and a full StemLab rhythm inference smoke test using a pinned test-only
 StemLab source snapshot. That snapshot is **not** a runtime or release dependency.
+It fails if the StemLab analyser is missing (no silent test skips), and checks
+that the synthetic source yields a real tempo hypothesis and at least one
+compiled preview, rather than letting `all([])` count as verification. A generic
+suite with no NumPy can skip only the NumPy-dependent BVH import fixture; the
+motion-analysis workflow treats NumPy and native playback as hard requirements.
 No third-party source downloads, model weights, musical tracks or rights-bearing
 motion assets are needed for these regression checks. Production and release
 workflows must independently use compatible **officially published** packages.

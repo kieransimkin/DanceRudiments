@@ -59,8 +59,10 @@ def _stemlab():
     try:
         from stemlab.analysis.rig_motion import analyze_rig_capture, write_rig_analysis
     except ImportError as exc:
-        raise RuntimeError('Install a compatible StemLab with analyze_rig_capture; '
-                           'its optional rig-motion analysis must be available before conversion') from exc
+        raise RuntimeError('Cannot import StemLab source-time motion analysis: '
+                           f'{exc}. Install a compatible StemLab runtime; '
+                           'kinematic analysis requires NumPy but its package '
+                           'initialisation may also require soundfile.') from exc
     return analyze_rig_capture, write_rig_analysis
 
 
@@ -78,7 +80,23 @@ def _preview_eligible(report, capture, *, target_bpm):
     beat/downbeat agreement is a separate optional confirmation.
     """
     chosen, rejected = [], []
+    # StemLab's loop windows are hypotheses tied to its estimated source grid.
+    # Do not manufacture a preview if the map was absent, replaced or approved.
+    grid = report.get('estimated_beat_map')
+    try:
+        source_map = BeatMap.from_dict(grid) if isinstance(grid, dict) else None
+    except (ScoreError, ValueError, TypeError, KeyError):
+        source_map = None
+    approved_grid = (source_map is not None
+                     and source_map.bpm_status == 'estimated'
+                     and source_map.phase_status == 'estimated'
+                     and source_map.extrapolate is False
+                     and isinstance(report.get('source_file_sha256'), str)
+                     and report['source_file_sha256'] in source_map.source)
     for source_index, candidate in enumerate(report.get('loop_candidates', ())):
+        if not approved_grid:
+            rejected.append(dict(source_index=source_index, reason='missing_source_grid_evidence'))
+            continue
         if (not isinstance(candidate, dict)
                 or candidate.get('alignment') != 'estimated_motion_beat_grid'
                 or type(candidate.get('beats')) is not int
@@ -106,6 +124,17 @@ def _preview_eligible(report, capture, *, target_bpm):
         score = _real(candidate.get('score'), 'loop score')
         if not 0 <= score <= 1:
             rejected.append(dict(source_index=source_index, reason='invalid_loop_score'))
+            continue
+        # Fail closed if third-party evidence changes its seam thresholds, is
+        # corrupted, or omits physical diagnostics. These values match the
+        # canonical StemLab source-time seam gates, not post-render approval.
+        if (candidate.get('evidence') not in ('seam_only', 'repeated_and_seam')
+                or any(type(candidate.get(key)) not in (int, float)
+                       or not math.isfinite(candidate[key]) or not 0 <= candidate[key] <= bound
+                       for key, bound in (('pose_mismatch', .32),
+                                          ('velocity_mismatch', .6),
+                                          ('root_drift_relative', .02)))):
+            rejected.append(dict(source_index=source_index, reason='unsafe_or_missing_seam_evidence'))
             continue
         speed_ratio = target_bpm / source_bpm if target_bpm is not None else 1.0
         # Existing StemLab diagnostics are retained unchanged. Prefer observed
