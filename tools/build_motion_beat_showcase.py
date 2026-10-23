@@ -136,6 +136,7 @@ def pick_review_loops(report, angular_changes, *, frame_dt, max_per_action=2):
             'velocity_mismatch': diag['velocity_mismatch'],
             'root_drift_relative': diag['root_drift_relative'],
             'render_priority': round(score * min(1.5, activity) / (1.0 + .2 * seam), 6),
+            'selection_kind': 'unverified_loop_candidate',
             'preview_identity_sha256': item['recording_sha256'],
             'native_samples_verified': True, 'requires_review': True,
             'beat_alignment_confirmed': False, 'loop_seam_approved': False,
@@ -233,7 +234,12 @@ def make_preview_gif(clip, loop, output, *, label, attribution):
         dr = ImageDraw.Draw(img)
         dr.rounded_rectangle((12, 12, 408, 368), radius=16, outline=(70, 90, 108), width=2)
         dr.text((26, 22), label[:42], font=fontsize, fill=(242, 238, 223))
-        dr.text((26, 40), f"motion BPM ~{loop['source_bpm_estimated']:.1f} / {loop['beats_estimated']} beats / REVIEW", font=fontsize,
+        bpm = loop.get('source_bpm_estimated')
+        tempo = f'motion BPM ~{bpm:.1f}' if bpm is not None else 'motion BPM unknown'
+        repeating = loop.get('selection_kind', 'unverified_loop_candidate') == 'unverified_loop_candidate'
+        note = (f"{loop['beats_estimated']} beat slots / LOOP REVIEW" if repeating
+                else 'NON-LOOPING EXCERPT / MOTION REVIEW')
+        dr.text((26, 40), (tempo + ' / ' + note)[:60], font=fontsize,
                 fill=(183, 199, 218))
         dr.line((20, 344, 400, 344), fill=(83, 102, 119), width=1)
         pix = [(210 + p[0]*scale, 193 - p[1]*scale) for p in projected]
@@ -250,13 +256,18 @@ def make_preview_gif(clip, loop, output, *, label, attribution):
         progress = (frame_no + 1) / len(basis)
         dr.rounded_rectangle((26, 324, 394, 332), radius=4, fill=(52, 61, 80))
         dr.rounded_rectangle((26, 324, 26 + 368*progress, 332), radius=4, fill=(104, 216, 190))
-        dr.text((26, 348), 'CMU source rig / unverified kinematic beat and loop', font=fontsize,
-                fill=(157, 171, 190))
+        footer = ('CMU source rig / unverified motion-loop candidate' if repeating
+                  else 'CMU source rig / excerpt NOT loopable or beat-aligned')
+        dr.text((26, 348), footer, font=fontsize, fill=(157, 171, 190))
         image_frames.append(img)
     output.parent.mkdir(parents=True, exist_ok=True)
+    # An unapproved loop candidate repeats for seam inspection. Source studies
+    # play ONCE: a GIF loop would imply a seamless repeat where none was found.
+    repeating = loop.get('selection_kind', 'unverified_loop_candidate') == 'unverified_loop_candidate'
+    gif_options = {'loop': 0} if repeating else {}
     image_frames[0].save(output, format='GIF', save_all=True,
-                         append_images=image_frames[1:], duration=round(1000/12), loop=0,
-                         optimize=True, disposal=2)
+                         append_images=image_frames[1:], duration=round(1000/12),
+                         optimize=True, disposal=2, **gif_options)
     with Image.open(output) as check:
         if check.n_frames < 8:
             raise AssertionError('Motion preview did not animate')
@@ -264,8 +275,82 @@ def make_preview_gif(clip, loop, output, *, label, attribution):
             'mime': 'image/gif', 'source_licence': attribution}
 
 
+def pick_motion_study(angular_changes, *, frame_dt, duration_seconds,
+                      source_bpm=None):
+    """Choose a genuinely moving, NON-LOOPING excerpt from the original Action.
+
+    This is a fallback visualisation when no physical/beat-aligned source loop
+    passes the established seam and native verification gates. It never invents
+    an estimated musical beat zero, seam validation, or a compiled rig motion.
+    """
+    x = np.asarray(angular_changes, dtype=float)
+    if (x.ndim != 1 or len(x) < 8 or not np.isfinite(x).all() or
+            frame_dt <= 0 or duration_seconds < 1.8):
+        return None
+    global_activity = float(np.median(x))
+    if global_activity <= MIN_ABSOLUTE_ANGULAR_ACTIVITY:
+        return None
+    length = min(3.0, max(1.5, min(2.6, duration_seconds * .54)))
+    first = min(.15, max(frame_dt, duration_seconds - length))
+    last = duration_seconds - length - .05
+    if last < first:
+        first = max(frame_dt, min(first, duration_seconds - length))
+        last = first
+    starts = np.linspace(first, last, min(44, max(2, math.ceil((last-first)/.16))))
+    viable = []
+    for start in starts:
+        end = min(duration_seconds, float(start) + length)
+        a = max(0, math.floor(start / frame_dt))
+        b = min(len(x), math.ceil(end / frame_dt))
+        if b-a < 8:
+            continue
+        segment = x[a:b]
+        moving = float(np.mean(segment > MIN_ABSOLUTE_ANGULAR_ACTIVITY))
+        median = float(np.median(segment))
+        if median <= MIN_ABSOLUTE_ANGULAR_ACTIVITY or moving < .35:
+            continue
+        relative = median / global_activity
+        if relative < MIN_ACTIVITY_RATIO:
+            continue
+        # Motion amount is only a display-interest heuristic. Not a probability
+        # of musical timing, best dancer or seamless replay quality.
+        q70 = float(np.percentile(segment, 70))
+        interest = min(2., relative) * moving * math.log1p(q70 * 300)
+        viable.append((interest, start, end, relative, moving))
+    if not viable:
+        return None
+    interest, start, end, relative, moving = max(viable, key=lambda t: (t[0], -t[1]))
+    return dict(selection_kind='non_looping_motion_study',
+                start_seconds=round(float(start), 6),
+                end_seconds=round(float(end), 6),
+                duration_seconds=round(float(end-start), 6),
+                source_bpm_estimated=(float(source_bpm) if source_bpm is not None else None),
+                beats_estimated=None,
+                activity_relative_to_action=round(relative, 5),
+                moving_frame_fraction=round(moving, 5),
+                render_priority=round(interest, 6),
+                native_samples_verified=False,
+                verified_source_bytes=True,
+                requires_review=True, audio_beat_alignment_verified=False,
+                loop_seam_approved=False, repeat_policy='do_not_repeat')
+
+
+def _dance_family(row):
+    """Prefer a mix of visibly different dances in the limited CI gallery."""
+    title = row.get('title', row['source_id']).casefold()
+    for style in ('charleston', 'twist', 'chicken', 'macarena', 'breakdance',
+                  'russian', 'whirl', 'pirouette', 'ballet', 'salsa'):
+        if style in title:
+            return style
+    return row['source_id']
+
+
 def select_showcase(rows, *, max_selected=4):
-    """At most one clip per original Action. Never conflate selection with approval."""
+    """Select verified loop candidates first, then active non-looping studies.
+
+    Never lower the full-Action 70% confidence gate or turn pose recurrence
+    into a published loop. Diversity is applied to each class independently.
+    """
     if not 1 <= max_selected <= 8:
         raise ValueError('Select 1..8 showcases')
     options = []
@@ -273,63 +358,92 @@ def select_showcase(rows, *, max_selected=4):
         if row.get('error'):
             continue
         for loop in row.get('review_loops', []):
-            options.append((loop['render_priority'], row['source_id'], row, loop))
-    options.sort(key=lambda x: (-x[0], x[1]))
-    result, seen = [], set()
-    for _, identity, row, loop in options:
-        if identity in seen:
-            continue
-        seen.add(identity)
-        result.append((row, loop))
-        if len(result) >= max_selected:
-            break
+            options.append((0, -loop['render_priority'], row['source_id'], row, loop))
+        study = row.get('motion_study')
+        if study is not None:
+            options.append((1, -study['render_priority'], row['source_id'], row, study))
+    options.sort(key=lambda x: x[:3])
+    result, seen, families = [], set(), set()
+    for prefer_diversity in (True, False):
+        for _, _, identity, row, selection in options:
+            if identity in seen:
+                continue
+            family = _dance_family(row)
+            if prefer_diversity and family in families:
+                continue
+            result.append((row, selection))
+            seen.add(identity)
+            families.add(family)
+            if len(result) >= max_selected:
+                return result
     return result
 
 
 def write_gallery(directory, rows, selections, *, mirror_commit):
-    """Only derived summaries + rendered GIFs; no reusable motion samples."""
+    "Publish distinct loop hypotheses and non-looping examples with safe HTML."
     directory = Path(directory)
-    cards = []
-    for row, loop in selections:
-        rendered = f"{row['source_id']}.gif"
-        cards.append((row, loop, rendered))
     items = []
-    for row, loop, file in cards:
+    loops = sum(p.get('selection_kind', 'unverified_loop_candidate') ==
+                'unverified_loop_candidate' for _, p in selections)
+    studies = len(selections) - loops
+    for row, segment in selections:
         source = html.escape(row['source_id'])
         title = html.escape(row['title'])
-        items.append(f'''<article class="card"><img src="previews/{html.escape(file)}" loading="lazy"
-          alt="Source rig animation of {title}; loop seam and musical beat are unverified">
+        file = f"{row['source_id']}.gif"
+        kind = segment.get('selection_kind', 'unverified_loop_candidate')
+        bpm = segment.get('source_bpm_estimated')
+        tempo = f'{bpm:.1f} BPM' if bpm is not None else 'unresolved BPM'
+        duration = segment['duration_seconds']
+        activity = segment['activity_relative_to_action']
+        if kind == 'unverified_loop_candidate':
+            tag = 'Loop candidate — NOT APPROVED'
+            evidence = (f"Estimated {segment['beats_estimated']} motion beat slots; "
+                        f"pose mismatch {segment['pose_mismatch']}; "
+                        f"velocity mismatch {segment['velocity_mismatch']}; "
+                        f"root drift {segment['root_drift_relative']}. "
+                        'Native sample check passed, but foot plants and repeat seam remain unverified.')
+        else:
+            tag = 'Non-looping source-motion study'
+            evidence = (f'{segment["moving_frame_fraction"]:.0%} of sampled frames contain '
+                        'measurable joint motion. This is an ACTIVE EXCERPT, not a '
+                        'beat-matched loop. Playback stops at the final frame.')
+        items.append(f'''<article class="card"><img src="previews/{html.escape(file)}"
+          alt="Moving source skeleton: {title}; {tag}. Musical timing unverified" loading="lazy">
           <h2>{title} <span>CMU {source}</span></h2>
-          <p>Estimated motion tempo {loop['source_bpm_estimated']:.1f} BPM · {loop['beats_estimated']} source-grid beats ·
-          {loop['duration_seconds']:.2f} seconds. Relative activity {loop['activity_relative_to_action']:.2f}×.</p>
-          <p><small>Native sample check passed. Pose mismatch {loop['pose_mismatch']}; velocity mismatch
-          {loop['velocity_mismatch']}; root drift {loop['root_drift_relative']}.</small></p>
-          <a href="{html.escape(row['source_url'])}">Original CMU recording</a>
-          <p class="caution">Review-only segment · No confirmed musical tempo, beat one, foot contact or seamless repeat</p>
+          <p class="tag">{html.escape(tag)}</p>
+          <p>Estimated whole-Action kinematic tempo: {html.escape(tempo)} ·
+          Preview duration {duration:.2f}s · Relative motion activity {activity:.2f}×.</p>
+          <p><small>{html.escape(evidence)}</small></p>
+          <a href="{html.escape(row['source_url'], quote=True)}">Original CMU recording</a>
+          <p class="caution">No confirmed music beats, beat one, foot contact or seamless repeat</p>
           </article>''')
     document=f'''<!doctype html><html lang="en"><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>DanceRudiments · CI motion beat candidates</title><style>
+    <title>DanceRudiments · source-motion beat finding</title><style>
     :root{{font:16px/1.5 system-ui;color:#d9e7ee;background:#0e1521}}
     main{{max-width:1160px;margin:0 auto;padding:32px 18px}}
     h1{{font-size:clamp(25px,4vw,43px)}}h2{{font-size:19px}}
-    p{{max-width:74ch}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}}
+    p{{max-width:74ch}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:20px}}
     .card{{background:#172335;padding:14px;border:1px solid #32475c;border-radius:12px}}
     img{{display:block;width:100%;border-radius:8px;aspect-ratio:420/380;object-fit:contain}}
     span{{font-size:12px;color:#a3bccc}}small{{color:#bacdd6}}
     a{{color:#94ded5}}.caution{{color:#f1bd9e;font-size:13px}}
+    .tag{{text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:#95d4c8}}
     </style></head><body><main><h1>Beat-finding on real rig movement</h1>
-    <p>Automated, source-hash-checked CMU motion review from DanceRudiments and StemLab.
-    Clips are selected from a wider panel by native-verification, repeated-pose/velocity seam diagnostics,
-    full-source motion activity and candidate ranking. Musical tempo and beats are <strong>not</strong> verified.
-    A good-looking loop seam is not proof of foot planting or collision-free retargeting.</p>
+    <p>Source-hash-checked CMU motions analysed with DanceRudiments and StemLab.
+    This build contains <strong>{loops} unapproved loop candidates</strong> and
+    <strong>{studies} non-looping motion studies</strong>. Where the beat-and-seam
+    evidence did not support a loop, the gallery displays an active source excerpt
+    instead of pretending a repeating pose is a validated dance loop.</p>
     <div class="grid">{''.join(items)}</div>
-    <p>Sources: <a href="https://mocap.cs.cmu.edu/">CMU Graphics Lab</a>.
+    <p>Source: <a href="https://mocap.cs.cmu.edu/">CMU Graphics Lab</a>.
     The data used in this project was obtained from mocap.cs.cmu.edu.
     The database was created with funding from NSF EIA-0196217.
     BVH conversion by Bruce Hahne / cgspeed. Converted motion data may not be sold directly.
     Pinned source mirror commit: {html.escape(mirror_commit)}.</p>
-    <p>CI publishes animated previews and summary metadata only, not reusable original/converted BVH or rig-motion arrays.</p>
+    <p>CI publishes rendered skeleton previews and bounded analysis metadata only,
+    never original BVH, converted rig-motion channels, or audio.
+    An estimated source tempo does not establish musical downbeats, meter or beat phase.</p>
     </main></body></html>'''
     (directory/'index.html').write_text(document, encoding='utf-8')
 
@@ -385,6 +499,10 @@ def build(cache_root, output_dir, *, ids=DEFAULT_IDS, download=False, max_select
             shortlist = pick_review_loops(report, motion_changes,
                                           frame_dt=float(clip.frame_time_seconds))
             fit = report.get('full_motion_fit', {})
+            study = pick_motion_study(motion_changes,
+                                      frame_dt=float(clip.frame_time_seconds),
+                                      duration_seconds=float(clip.duration_seconds),
+                                      source_bpm=fit.get('selected_bpm'))
             row.update(source_frames=clip.frame_count,
                        header_fps_estimated=round(clip.source_fps, 6),
                        duration_seconds=round(clip.duration_seconds, 6),
@@ -394,8 +512,11 @@ def build(cache_root, output_dir, *, ids=DEFAULT_IDS, download=False, max_select
                        grid_fit_confidence_is_calibrated_probability=False,
                        full_action_shortlisted=bool(report.get('full_motion_count')),
                        full_action_rejection_reasons=fit.get('reasons', []),
-                       raw_motion_loop_candidates=len(report.get('previews', [])),
-                       review_loops=shortlist)
+                       raw_motion_loop_candidates=(
+                           int(report.get('unconverted_candidate_count', 0)) +
+                           int(report.get('loopable_clip_count', 0))),
+                       native_preview_count=len(report.get('previews', [])),
+                       review_loops=shortlist, motion_study=study)
             private_clips[identity] = clip
         except (OSError, RuntimeError, ValueError) as exc:
             row['error'] = f'{type(exc).__name__}: {str(exc)[:400]}'
@@ -406,8 +527,10 @@ def build(cache_root, output_dir, *, ids=DEFAULT_IDS, download=False, max_select
                          output_dir/'previews'/f"{row['source_id']}.gif",
                          label=f"CMU {row['source_id']} · {row['title']}",
                          attribution='CMU-Mocap')
-        row['showcase_loop'] = dict(loop)
-        row['preview_gif'] = f"previews/{row['source_id']}.gif"
+        row['showcase_selection'] = dict(loop)
+        if loop.get('selection_kind') == 'unverified_loop_candidate':
+            row['showcase_loop'] = dict(loop)
+        row['preview_gif'] = f'previews/{row["source_id"]}.gif'
     # No numerical skeleton channels in the artifact: do not expose `.private`.
     write_gallery(output_dir, rows, selections, mirror_commit=manifest['mirror_commit'])
     metadata = {'format': FORMAT, 'schema_version': 1,
@@ -415,8 +538,16 @@ def build(cache_root, output_dir, *, ids=DEFAULT_IDS, download=False, max_select
                 'sources_reviewed': len(rows), 'sources_failed': sum('error' in r for r in rows),
                 'reviewable_source_count': sum(bool(r.get('review_loops')) for r in rows),
                 'selected_source_count': len(selections),
-                'selection_policy': f'diverse_actions; native_verified; >= {MIN_LOOP_SECONDS}s; '
-                    f'physical_seam_checks; >={MIN_ACTIVITY_RATIO}x relative motion activity',
+                'selected_loop_candidate_count': sum(
+                    entry.get('selection_kind') == 'unverified_loop_candidate'
+                    for _, entry in selections),
+                'selected_motion_study_count': sum(
+                    entry.get('selection_kind') == 'non_looping_motion_study'
+                    for _, entry in selections),
+                'selection_policy': ('native-verified physical loop candidates first; '
+                    'fallback to original-byte-verified active NON-LOOPING studies; '
+                    f'never weaken >= {MIN_LOOP_SECONDS}s seam gate, '
+                    f'>={MIN_ACTIVITY_RATIO}x movement gate, or 70% full-Action gate'),
                 'visualisation': 'animated GIF of original source rig, not a rig-motion binary',
                 'annotations': 'source-time kinematic estimates, neither musical downbeats nor loop approval',
                 'source_rights': 'CMU-Mocap; see source URLs and attribution',
@@ -424,8 +555,8 @@ def build(cache_root, output_dir, *, ids=DEFAULT_IDS, download=False, max_select
     (output_dir/'summary.json').write_text(json.dumps(metadata, indent=2, allow_nan=False)+'\n',
                                             encoding='utf-8')
     if len(selections) < minimum_previews:
-        raise RuntimeError(f'Only {len(selections)} native-verified moving review loops; '
-                           f'expected {minimum_previews}. Inspect summary.json rather than lowering the threshold.')
+        raise RuntimeError(f'Only {len(selections)} source-verified moving showcase excerpts; '
+                           f'expected {minimum_previews}. See summary.json for rejected loops and studies.')
     return metadata
 
 
@@ -437,7 +568,9 @@ def main(argv=None):
     parser.add_argument('--download', action='store_true',
                         help='Allow download only of SHA-256 pinned CMU BVH files, after opt-in')
     parser.add_argument('--max-selected', type=int, default=4)
-    parser.add_argument('--minimum-previews', type=int, default=3)
+    parser.add_argument('--minimum-showcases', '--minimum-previews',
+                        dest='minimum_previews', type=int, default=3,
+                        help='Minimum source-verified animated demonstrations; NOT minimum approved loops')
     parser.add_argument('--min-full-confidence', type=float, default=.7)
     opts=parser.parse_args(argv)
     result=build(opts.cache_root,opts.output_dir,ids=tuple(opts.ids),
@@ -445,7 +578,8 @@ def main(argv=None):
                  min_full_confidence=opts.min_full_confidence,
                  minimum_previews=opts.minimum_previews)
     print(json.dumps({k:result[k] for k in ('sources_reviewed','sources_failed',
-                  'reviewable_source_count','selected_source_count')},indent=2))
+                  'reviewable_source_count','selected_source_count',
+                  'selected_loop_candidate_count','selected_motion_study_count')},indent=2))
     return 0
 
 if __name__ == '__main__':

@@ -6,6 +6,7 @@ import sys
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -132,7 +133,8 @@ def test_gallery_has_attribution_and_review_labels(tmp_path):
     assert 'previews/103_03.gif' in html
 
 
-def test_complete_showcase_build_with_pinned_stubbed_sources(tmp_path, monkeypatch):
+@pytest.mark.parametrize("has_loops", [True, False])
+def test_complete_showcase_build_with_pinned_stubbed_sources(tmp_path, monkeypatch, has_loops):
     """Integration of selection->source rig GIF->safe artifact without a download."""
     import hashlib
     import types
@@ -170,7 +172,9 @@ def test_complete_showcase_build_with_pinned_stubbed_sources(tmp_path, monkeypat
                 'full_motion_fit': {'selected_bpm': 120, 'confidence_percent': 60,
                                     'reasons': ['unverified_phase']},
                 'full_motion_count': 0,
-                'previews': [loop()]}
+                'previews': [loop()] if has_loops else [],
+                'unconverted_candidate_count': 0,
+                'loopable_clip_count': int(has_loops)}
     imports = {
         'acquire_cmu_dance': types.SimpleNamespace(load_manifest=load_manifest, _ensure_file=ensure_file),
         'dancerudiments_authoring': types.ModuleType('dancerudiments_authoring'),
@@ -185,12 +189,15 @@ def test_complete_showcase_build_with_pinned_stubbed_sources(tmp_path, monkeypat
     info = showcase.build(repo, output, ids=tuple(ids), download=False,
                           minimum_previews=3, max_selected=3)
     assert info['selected_source_count'] == 3
+    assert info['selected_loop_candidate_count'] == (3 if has_loops else 0)
+    assert info['selected_motion_study_count'] == (0 if has_loops else 3)
     assert len(list((output/'previews').glob('*.gif'))) == 3
     for name in ids:
         row = next(x for x in info['sources'] if x['source_id'] == name)
         assert row['source_id'] == info['sources'][ids.index(name)]['source_id']
         assert row['loop_seam_approved'] is False
-        assert 'showcase_loop' in row
+        assert 'showcase_selection' in row
+        assert ('showcase_loop' in row) == has_loops
     assert not list(output.glob('*.motion.json'))
     assert not list(output.glob('*.bvh'))
     assert (output/'index.html').exists() and (output/'summary.json').exists()
@@ -199,3 +206,65 @@ def test_complete_showcase_build_with_pinned_stubbed_sources(tmp_path, monkeypat
         assert False
     except FileExistsError:
         pass
+
+
+def test_fallback_motion_study_is_active_but_never_a_loop(tmp_path):
+    motion = showcase._quaternion_angular_motion(synthetic_clip())
+    study = showcase.pick_motion_study(
+        motion, frame_dt=1/30, duration_seconds=8., source_bpm=117.)
+    assert study is not None
+    assert study['selection_kind'] == 'non_looping_motion_study'
+    assert study['repeat_policy'] == 'do_not_repeat'
+    assert study['native_samples_verified'] is False
+    assert study['loop_seam_approved'] is False
+    assert study['beats_estimated'] is None
+    assert study['activity_relative_to_action'] >= .35
+    assert study['moving_frame_fraction'] >= .35
+    assert 1.5 <= study['duration_seconds'] <= 3.0
+    path = tmp_path/'study.gif'
+    showcase.make_preview_gif(synthetic_clip(), study, path,
+                              label='Synthetic motion', attribution='synthetic')
+    with Image.open(path) as gif:
+        assert gif.n_frames >= 8 and gif.size == (420,380)
+        assert 'loop' not in gif.info, 'Non-looping source study must not repeat forever'
+
+
+def test_idle_motion_not_promoted_to_motion_study():
+    assert showcase.pick_motion_study(np.zeros(240),frame_dt=1/30,duration_seconds=8) is None
+    assert showcase.pick_motion_study(np.ones(240)*0.00001,frame_dt=1/30,
+                                      duration_seconds=8) is None
+    assert showcase.pick_motion_study(np.ones(240)*.03,frame_dt=1/30,
+                                      duration_seconds=1.) is None
+
+
+def test_loop_candidates_priority_then_diverse_nonloop_studies():
+    study=lambda quality: {'selection_kind':'non_looping_motion_study',
+                           'render_priority':quality}
+    rows=[
+        {'source_id':'a','title':'Charleston','review_loops':[], 'motion_study':study(.9)},
+        {'source_id':'b','title':'Twist','review_loops':[], 'motion_study':study(.8)},
+        {'source_id':'c','title':'Chicken Dance','review_loops':[{'render_priority':.1}],
+         'motion_study':study(1.0)},
+        {'source_id':'d','title':'Macarena','review_loops':[], 'motion_study':study(.6)},
+    ]
+    selected = showcase.select_showcase(rows, max_selected=4)
+    assert len(selected)==4
+    assert selected[0][0]['source_id']=='c', 'A real native-verified loop is prioritised'
+    assert {row['source_id'] for row, _ in selected}=={'a','b','c','d'}
+    assert len({row['source_id'] for row,_ in selected})==4
+
+
+def test_study_gallery_declares_exactly_what_is_not_verified(tmp_path):
+    study={'selection_kind':'non_looping_motion_study','duration_seconds':2.5,
+           'activity_relative_to_action':1.2,'moving_frame_fraction':.7,
+           'source_bpm_estimated':188.5}
+    rows=[{'source_id':'143_35','title':'Macarena Dance',
+           'source_url':'https://example.invalid','review_loops':[],
+           'motion_study':study}]
+    showcase.write_gallery(tmp_path,rows,[(rows[0],study)],mirror_commit='1'*40)
+    html=(tmp_path/'index.html').read_text()
+    assert 'Non-looping source-motion study' in html
+    assert '0 unapproved loop candidates' in html
+    assert '1 non-looping motion studies' in html
+    assert 'native' not in html.lower() or 'native' not in html.split('Non-looping source-motion study')[1].split('</article>')[0]
+    assert 'never original BVH' in html

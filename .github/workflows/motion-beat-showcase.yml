@@ -57,7 +57,7 @@ jobs:
           PY
       - name: Verify candidate ranking, idle-motion rejection, and animated rig renderer
         run: python -m pytest tests/python/test_motion_beat_showcase.py -q
-      - name: Download eight reviewed CMU source files and analyse original Actions
+      - name: Analyse eight original Actions and render honest motion showcases
         # SHA-256 and Git blob SHA-1 are pinned in cmu-dance-sources.json.
         # Source motion is used only inside this job; no original BVH or compiled
         # recording rows are uploaded, and no musical downbeat is inferred.
@@ -66,7 +66,7 @@ jobs:
             --cache-root .cache/motion-beat-source-pool \
             --output-dir .cache/motion-beat-showcase \
             --ids 103_03 106_12 143_34 143_35 05_11 90_28 90_30 55_01 \
-            --download --max-selected 4 --minimum-previews 3 \
+            --download --max-selected 4 --minimum-showcases 3 \
             --min-full-confidence 0.70
       - name: Audit actual moving skeleton images and source-provenance summary
         run: |
@@ -79,6 +79,14 @@ jobs:
           assert data['sources_reviewed']==8, data
           assert data['sources_failed']==0, data
           assert data['selected_source_count']>=3, data
+          assert data['selected_source_count']==(data['selected_loop_candidate_count']+
+                data['selected_motion_study_count']), data
+          # Real movement may lack safe beat-aligned loops. It must remain an
+          # explicit NON-looping study, not an invented successful loop.
+          assert all((r.get('showcase_selection') or {}).get('selection_kind') in
+                ('unverified_loop_candidate', 'non_looping_motion_study')
+                for r in data['sources'] if r.get('preview_gif'))
+          assert all(r.get('loop_seam_approved') is False for r in data['sources'])
           assert data['source_mirror_commit']=='09a07f54f3bbb58797325f009282d0b2048a2871'
           assert not any(x.get('beat_alignment_confirmed') or x.get('loop_seam_approved')
                          for x in data['sources'])
@@ -90,6 +98,9 @@ jobs:
           doc=(root/'index.html').read_text('utf8')
           assert 'beat-finding' in doc and 'CMU Graphics Lab' in doc
           assert all(f.name in doc for f in files)
+          assert 'non-looping motion studies' in doc
+          print('Selected candidate loops:', data['selected_loop_candidate_count'],
+                '; active source studies:', data['selected_motion_study_count'])
           print('CI demo candidates:',[(r['source_id'],r.get('bpm_estimated'),
                 r.get('grid_fit_confidence_percent'),len(r.get('review_loops',[])))
                 for r in data['sources']])

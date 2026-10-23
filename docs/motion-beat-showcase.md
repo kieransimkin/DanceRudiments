@@ -88,3 +88,16 @@ original capture timing**. In particular, previous CMU salsa `60_01` needs a
 reviewed 60fps correction; this exploratory pool deliberately excludes it and
 uses original pinned header time with a visible provenance caveat. Do not
 interpret a high kinematic BPM as an artist-verified music tempo.
+
+## Actual first CI run and verified fallback (23 October 2026)
+
+The first complete eight-source CI analysis ([run 39907507217](https://github.com/kieransimkin/DanceRudiments/actions/runs/39907507217)) successfully parsed and analysed **all eight** SHA-pinned original BVH Actions. None passed the conservative fully native-verified physical loop selection. This is a meaningful negative finding, not a build infrastructure failure. Full-Action heuristic confidences ranged from about 40–62%; every result retained unverified musical phase. The original workflow treated that negative scientific result as failure and produced no animated output.
+
+The improved generator now distinguishes two independent presentation types:
+
+- **Unverified loop candidate:** only from an actual native-verified, source-tempo-grid-aligned preview that passes the existing physical seam/root-drift and activity checks. It can repeat in the review GIF, but remains neither seamless nor musically approved.
+- **Non-looping source-motion study:** when a source has no qualifying loop, select a short active window from the original source rig (real measured quaternion angular movement, excluding static intervals). It is explicitly **not a loop**: the GIF plays once; beat alignment, repeat seam and native-converted loop verification are not asserted. The source and its file SHA-256 have still been verified, and its estimated whole-Action tempo remains a hypothesis.
+
+The gallery ranks qualifying loop previews first, then active motion studies, with at most one preview per original Action and a preference for distinct dance styles. The CI floor of three now applies to **animated verified-source showcase segments**, not to loop candidates. It still fails when source extraction or meaningful movement are unavailable; full-length `>=70%` and all seam, contact and native-verification policies remain unchanged.
+
+The `summary.json` reports `selected_loop_candidate_count` and `selected_motion_study_count` separately. Neither category represents artist-approved musical beat detection or an approved repeating motion. Before promoting clips to real loops, record verified foot contacts, source-beat phase, retargeted target-mesh quality and measured repeat seam.
