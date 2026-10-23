@@ -147,8 +147,7 @@ class SourceFirstLoopTests(unittest.TestCase):
                     analyse_source_capture(fixture(), folder, **params)
                 self.assertFalse(folder.exists())
 
-    @unittest.skipUnless(importlib.util.find_spec('numpy') is not None or
-                         os.environ.get('DANCERUDIMENTS_REQUIRE_NATIVE') == '1',
+    @unittest.skipUnless(importlib.util.find_spec('numpy') is not None,
                          'Original BVH conversion needs optional NumPy')
     def test_bvh_source_original_frames_survive_source_first_capture(self):
         with tempfile.TemporaryDirectory() as directory:

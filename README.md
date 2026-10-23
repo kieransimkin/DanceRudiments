@@ -79,6 +79,15 @@ optional motion package plus the hash-pinned Kandi target assets; switching
 performances unloads the previous recording and target scene. Play, pause, seek,
 restart and preview speed continue to use the existing native C++/WASM sampler.
 
+### Playback-rate interpretations for rigged motion
+
+The Kandi Boom gallery offers **half time (0.5Ã—)**, **original time (1Ã—)**
+and **double time (2Ã—)** in addition to the 0.75Ã— and 1.5Ã— preview
+rates. The TypeScript `motionTimeRate` and `motionSourcePipAtTime`
+helpers convert elapsed presentation time to an original source pip.
+The motion stays on the native 64-pip source clock, with no implicit
+audio synchronisation, source-BPM correction, wrapping or resampling.
+
 The gallery also supports **local StemLab rhythm-analysis review**. After loading
 Kandi, import the corresponding `stemlab.rig-motion-analysis` JSON from the
 complete salsa/ballet package. Source hashes and channel identity are validated
