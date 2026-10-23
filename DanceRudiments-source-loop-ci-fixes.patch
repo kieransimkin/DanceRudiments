@@ -1,0 +1,344 @@
+diff --git a/.github/workflows/source-motion-loops.yml b/.github/workflows/source-motion-loops.yml
+index 0f9a712..6268821 100644
+--- a/.github/workflows/source-motion-loops.yml
++++ b/.github/workflows/source-motion-loops.yml
+@@ -7,15 +7,19 @@ on:
+       - '.github/workflows/source-motion-loops.yml'
+       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+       - 'tools/analyze_source_motion.py'
++      - 'tools/analyze_motion_collection.py'
+       - 'tests/python/test_source_loop_analysis.py'
+       - 'docs/source-loop-analysis.md'
++      - 'README.md'
+   pull_request:
+     paths:
+       - '.github/workflows/source-motion-loops.yml'
+       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+       - 'tools/analyze_source_motion.py'
++      - 'tools/analyze_motion_collection.py'
+       - 'tests/python/test_source_loop_analysis.py'
+       - 'docs/source-loop-analysis.md'
++      - 'README.md'
+   workflow_dispatch:
+ 
+ permissions:
+@@ -28,6 +32,7 @@ jobs:
+     timeout-minutes: 30
+     env:
+       DANCERUDIMENTS_REQUIRE_NATIVE: '1'
++      DANCERUDIMENTS_REQUIRE_STEMLAB: '1'
+       PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+       TMPDIR: ${{ github.workspace }}/.cache/tmp
+       # The pinned StemLab source snapshot is for feature integration regression
+@@ -62,8 +67,24 @@ jobs:
+               assert file.with_name('renamed').read_text() == 'source-first'
+               file.with_name('renamed').unlink()
+           PY
+-      - name: Install native DanceRudiments and optional NumPy source import
+-        run: python -m pip install '.[motion-import]'
++      - name: Install native DanceRudiments and lightweight rig-analysis dependencies
++        # StemLab's analysis package currently imports its audio-loop module on
++        # package initialisation. soundfile is needed to import the module even
++        # though kinematic inference itself requires only NumPy. Do NOT install
++        # the heavy StemLab audio/torch/model dependency graph in this job.
++        run: python -m pip install '.[motion-import]' 'soundfile>=0.12,<1'
++      - name: Fail fast unless the real pinned StemLab analyser is importable
++        run: |
++          python - <<'PY'
++          import inspect
++          from pathlib import Path
++          from stemlab.analysis.rig_motion import analyze_rig_capture, write_rig_analysis
++          expected = Path('.cache/stemlab-source/src/stemlab/analysis/rig_motion.py').resolve()
++          actual = Path(inspect.getfile(analyze_rig_capture)).resolve()
++          assert actual == expected, (actual, expected)
++          assert callable(write_rig_analysis)
++          print('Using genuine pinned StemLab kinematic analyser:', actual)
++          PY
+       - name: Test source capture, real StemLab inference, and native loop previews
+         run: python -m unittest discover -s tests/python -p 'test_source_loop_analysis.py' -v
+       - name: Exercise full CLI with an original synthetic BVH source
+@@ -73,12 +94,28 @@ jobs:
+           import math
+           p = Path('.cache/synthetic-original.bvh')
+           p.parent.mkdir(parents=True, exist_ok=True)
+-          rows = [' '.join(map(str, (0.08*math.sin(i*math.tau/80), 0, 0,
+-                                      0, 0, 0))) for i in range(641)]
++          # A 120-BPM pulse layered over a two-second repeated arm/knee phrase.
++          # Two independent moving joints produce real beat-grid evidence rather
++          # than a smooth single-channel sine that may have no defensible tempo.
++          rows = []
++          for i in range(16*60 + 1):
++              seconds = i / 60
++              arm = (0.85*math.exp(-((seconds % .5 - .12)/.065)**2)
++                     + .12*math.sin(math.tau * seconds / 2))
++              knee = .10*math.sin(math.tau * seconds / 2 + .4)
++              rows.append(' '.join(map(str, (0, 0, 0, 0, 0, 0,
++                                               40*arm, 0, 0, 20*knee, 0, 0))))
+           p.write_text('HIERARCHY\nROOT Hips\n{\n OFFSET 0 0 0\n'
+                        ' CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation\n'
+-                       ' End Site\n {\n OFFSET 0 1 0\n }\n}\nMOTION\n'
+-                       'Frames: 641\nFrame Time: 0.025\n'+'\n'.join(rows)+'\n')
++                       ' JOINT Arm\n {\n  OFFSET 0 1 0\n'
++                       '  CHANNELS 3 Zrotation Xrotation Yrotation\n'
++                       '  End Site\n  {\n   OFFSET 0 1 0\n  }\n }\n'
++                       ' JOINT Knee\n {\n  OFFSET 0 -1 0\n'
++                       '  CHANNELS 3 Zrotation Xrotation Yrotation\n'
++                       '  End Site\n  {\n   OFFSET 0 -1 0\n  }\n }\n'
++                       '}\nMOTION\n'
++                       'Frames: 961\nFrame Time: 0.016666666666666666667\n'
++                       + '\n'.join(rows) + '\n')
+           PY
+           python tools/analyze_source_motion.py .cache/synthetic-original.bvh \
+             --output-dir .cache/source-loop-smoke --max-previews 2 --verify-native
+@@ -89,7 +126,10 @@ jobs:
+           assert report['source_kind'] == 'original_bvh_or_blender_capture'
+           assert report['source_original_sha256']
+           assert report['profile_sha256']
+-          assert Path('.cache/source-loop-smoke/stemlab-analysis.json').is_file()
++          assert report['preview_count'] > 0, 'Synthetic source produced no usable loops'
++          stemlab = json.loads(Path('.cache/source-loop-smoke/stemlab-analysis.json').read_text())
++          assert stemlab['recommended_tempo'], 'Synthetic source produced no tempo estimate'
++          assert stemlab['loop_candidates'], 'Synthetic source produced no loop hypotheses'
+           assert all(item['native_samples_verified'] for item in report['previews'])
+           assert all(not item['audio_beat_alignment_verified'] for item in report['previews'])
+           PY
+@@ -130,5 +170,16 @@ jobs:
+           assert not report['truncated']
+           action = report['actions'][0]
+           assert action['source_sha256']
++          assert action['preview_count'] > 0, 'Batch source yielded no native loop previews'
+           assert (root/action['relative_output']/'stemlab-analysis.json').is_file()
+           PY
++      - name: Preserve synthetic source-first evidence on success or failure
++        if: always()
++        uses: actions/upload-artifact@v6
++        with:
++          name: source-first-loop-synthetic-evidence
++          path: |
++            .cache/source-loop-smoke/
++            .cache/source-loop-collection-smoke/
++          if-no-files-found: warn
++          retention-days: 7
+diff --git a/README.md b/README.md
+index b474631..40b7afd 100644
+--- a/README.md
++++ b/README.md
+@@ -95,8 +95,11 @@ changes the full source motions or adds assets to the default catalogue. Run
+ `python tools/analyze_source_motion.py original.bvh --output-dir .cache/source-loops/action`
+ or analyse all reviewed, locally cached source archives with
+ `python tools/analyze_motion_collection.py --sources cmu_dance`. See the
+-[source-first analysis guide](docs/source-loop-analysis.md). Musical beat-1,
+-audio alignment, rig deformation and repeat seams still require separate checks.
++[source-first analysis guide](docs/source-loop-analysis.md). The dedicated
++workflow requires a real StemLab import and nonempty synthetic loop evidence;
++NumPy-dependent BVH tests are skipped in lightweight jobs without that extra.
++Musical beat-1, audio alignment, rig deformation and repeat seams still require
++separate checks.
+ 
+ Kandi's canonical FBX contains vertices with more than four source influences.
+ 
+diff --git a/docs/source-loop-analysis.md b/docs/source-loop-analysis.md
+index c399426..5156a06 100644
+--- a/docs/source-loop-analysis.md
++++ b/docs/source-loop-analysis.md
+@@ -24,7 +24,10 @@ beat grid or an approved seamless animation.
+    timestamps, then estimates motion accents, candidate BPM/phase, recurring
+    poses, loop seams, root displacement and joint velocity discontinuity.
+ 4. **Select and compile previews:** Accept only explicitly unapproved
+-   `estimated_motion_beat_grid` candidates with supported beat counts. Use the
++   `estimated_motion_beat_grid` candidates with supported beat counts, a matching
++   **unverified** StemLab beat-map provenance and source-time seam diagnostics
++   within StemLab's physical mismatch thresholds. Do not compile corrupted,
++   externally approved or missing-grid evidence. Use the
+    candidate's exact source start/end seconds for the source beat map. Compile
+    into the standard `RigMotion` format at 64 pips per quarter-note beat,
+    with half-open loop boundaries, **without** adding a second runtime sampler.
+@@ -40,8 +43,13 @@ beat grid or an approved seamless animation.
+ Use a compatible StemLab **source checkout or published release containing its
+ `stemlab.analysis.rig_motion` interface**. Its rig-motion implementation only
+ needs NumPy for this job; avoid downloading any machine-learning models for
+-kinematic analysis. Keep StemLab optional rather than forcing its large audio
+-stack on base DanceRudiments consumers.
++kinematic analysis. The currently pinned StemLab source also imports its
++high-level audio analysis package on module initialisation; this transitively
++requires **soundfile** even for the otherwise NumPy-only rig analyser. Install
++`soundfile>=0.12,<1` when working with that source checkout. The dedicated CI
++job installs only this light compatibility requirement, and verifies the actual
++pinned analyser file is loaded. Keep StemLab optional rather than forcing its
++large audio stack on base DanceRudiments consumers.
+ 
+ ```sh
+ # Source-time BVH, no previous rudiment conversion:
+@@ -124,6 +132,11 @@ project-local temporary directory and rename the complete result into place.
+ BVH parsing, calibration exclusion, native 64-pip compilation, negative
+ cases, and a full StemLab rhythm inference smoke test using a pinned test-only
+ StemLab source snapshot. That snapshot is **not** a runtime or release dependency.
++It fails if the StemLab analyser is missing (no silent test skips), and checks
++that the synthetic source yields a real tempo hypothesis and at least one
++compiled preview, rather than letting `all([])` count as verification. A generic
++suite with no NumPy can skip only the NumPy-dependent BVH import fixture; the
++motion-analysis workflow treats NumPy and native playback as hard requirements.
+ No third-party source downloads, model weights, musical tracks or rights-bearing
+ motion assets are needed for these regression checks. Production and release
+ workflows must independently use compatible **officially published** packages.
+diff --git a/python/dancerudiments_authoring/source_loop_analysis.py b/python/dancerudiments_authoring/source_loop_analysis.py
+index 4af2b2c..2dd02b1 100644
+--- a/python/dancerudiments_authoring/source_loop_analysis.py
++++ b/python/dancerudiments_authoring/source_loop_analysis.py
+@@ -59,8 +59,10 @@ def _stemlab():
+     try:
+         from stemlab.analysis.rig_motion import analyze_rig_capture, write_rig_analysis
+     except ImportError as exc:
+-        raise RuntimeError('Install a compatible StemLab with analyze_rig_capture; '
+-                           'its optional rig-motion analysis must be available before conversion') from exc
++        raise RuntimeError('Cannot import StemLab source-time motion analysis: '
++                           f'{exc}. Install a compatible StemLab runtime; '
++                           'kinematic analysis requires NumPy but its package '
++                           'initialisation may also require soundfile.') from exc
+     return analyze_rig_capture, write_rig_analysis
+ 
+ 
+@@ -78,7 +80,23 @@ def _preview_eligible(report, capture, *, target_bpm):
+     beat/downbeat agreement is a separate optional confirmation.
+     """
+     chosen, rejected = [], []
++    # StemLab's loop windows are hypotheses tied to its estimated source grid.
++    # Do not manufacture a preview if the map was absent, replaced or approved.
++    grid = report.get('estimated_beat_map')
++    try:
++        source_map = BeatMap.from_dict(grid) if isinstance(grid, dict) else None
++    except (ScoreError, ValueError, TypeError, KeyError):
++        source_map = None
++    approved_grid = (source_map is not None
++                     and source_map.bpm_status == 'estimated'
++                     and source_map.phase_status == 'estimated'
++                     and source_map.extrapolate is False
++                     and isinstance(report.get('source_file_sha256'), str)
++                     and report['source_file_sha256'] in source_map.source)
+     for source_index, candidate in enumerate(report.get('loop_candidates', ())):
++        if not approved_grid:
++            rejected.append(dict(source_index=source_index, reason='missing_source_grid_evidence'))
++            continue
+         if (not isinstance(candidate, dict)
+                 or candidate.get('alignment') != 'estimated_motion_beat_grid'
+                 or type(candidate.get('beats')) is not int
+@@ -107,6 +125,17 @@ def _preview_eligible(report, capture, *, target_bpm):
+         if not 0 <= score <= 1:
+             rejected.append(dict(source_index=source_index, reason='invalid_loop_score'))
+             continue
++        # Fail closed if third-party evidence changes its seam thresholds, is
++        # corrupted, or omits physical diagnostics. These values match the
++        # canonical StemLab source-time seam gates, not post-render approval.
++        if (candidate.get('evidence') not in ('seam_only', 'repeated_and_seam')
++                or any(type(candidate.get(key)) not in (int, float)
++                       or not math.isfinite(candidate[key]) or not 0 <= candidate[key] <= bound
++                       for key, bound in (('pose_mismatch', .32),
++                                          ('velocity_mismatch', .6),
++                                          ('root_drift_relative', .02)))):
++            rejected.append(dict(source_index=source_index, reason='unsafe_or_missing_seam_evidence'))
++            continue
+         speed_ratio = target_bpm / source_bpm if target_bpm is not None else 1.0
+         # Existing StemLab diagnostics are retained unchanged. Prefer observed
+         # repeated motion, strong original seams and moderate tempo adjustments.
+diff --git a/tests/python/test_source_loop_analysis.py b/tests/python/test_source_loop_analysis.py
+index 3e5e7df..f26cd46 100644
+--- a/tests/python/test_source_loop_analysis.py
++++ b/tests/python/test_source_loop_analysis.py
+@@ -2,8 +2,10 @@
+ from __future__ import annotations
+ 
+ import hashlib
++import importlib.util
+ import json
+ import math
++import os
+ from pathlib import Path
+ import sys
+ import tempfile
+@@ -53,7 +55,8 @@ def fixture(*, static=False, drift=0.0):
+     return RigCapture(profile, tuple(times), tuple(frames), '{"origin":"synthetic"}')
+ 
+ 
+-def fake_stemlab(*, score=.9, pose_only=False):
++def fake_stemlab(*, score=.9, pose_only=False, missing_grid=False,
++                 pose_mismatch=.01, root_drift=0.):
+     def analyze(path, *, min_bpm, max_bpm):
+         data = json.loads(Path(path).read_text())
+         assert not Path(path).parent.joinpath('previews').exists(), 'Conversion ran before analysis'
+@@ -61,14 +64,19 @@ def fake_stemlab(*, score=.9, pose_only=False):
+             source_kind='capture', source_file_sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+             type_uri=data['type_uri'], profile_sha256=data['profile_sha256'],
+             recommended_tempo=dict(bpm=120., beat_zero_seconds=.0, score=.95),
+-            estimated_beat_map=None,
++            estimated_beat_map=None if missing_grid else dict(format='dancerudiments.beat-map',
++                schema_version=1, pips_per_beat=64, interpolation='linear',
++                anchors=[dict(seconds=0, beat=0), dict(seconds=.5, beat=1)],
++                bpm_status='estimated',
++                phase_status='estimated', extrapolate=False,
++                source='StemLab motion-only estimate: '+hashlib.sha256(Path(path).read_bytes()).hexdigest()),
+             loop_candidates=[dict(start_seconds=2.0, end_seconds=4.0,
+                                   beats=None if pose_only else 4,
+                                   alignment='pose_recurrence_only' if pose_only else 'estimated_motion_beat_grid',
+                                   requires_review=True, repaired=False,
+                                   evidence='repeated_and_seam', score=score,
+-                                  pose_mismatch=.01, velocity_mismatch=.02,
+-                                  root_drift_relative=0.)])
++                                  pose_mismatch=pose_mismatch, velocity_mismatch=.02,
++                                  root_drift_relative=root_drift)])
+ 
+     def write(path, report, *, beat_map_path=None):
+         Path(path).write_text(json.dumps(report))
+@@ -112,6 +120,24 @@ class SourceFirstLoopTests(unittest.TestCase):
+             self.assertEqual(report['rejected_candidates'][0]['reason'], 'not_an_unverified_beat_grid_loop')
+             self.assertEqual(list((Path(directory)/'analysis'/'previews').glob('*.json')), [])
+ 
++    def test_missing_stemlab_beat_map_cannot_promote_loop_to_beat_grid(self):
++        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
++                sys.modules, fake_stemlab(missing_grid=True)):
++            report = analyse_source_capture(fixture(), Path(directory)/'analysis')
++            self.assertEqual(report['preview_count'], 0)
++            self.assertEqual(report['rejected_candidates'][0]['reason'], 'missing_source_grid_evidence')
++            self.assertFalse(list((Path(directory)/'analysis'/'previews').glob('*.json')))
++
++    def test_invalid_pose_or_root_drift_is_never_compiled(self):
++        for metric in ({'pose_mismatch': .85}, {'root_drift': .50}):
++            with self.subTest(metric=metric), tempfile.TemporaryDirectory() as directory, mock.patch.dict(
++                    sys.modules, fake_stemlab(**metric)):
++                report = analyse_source_capture(fixture(), Path(directory)/'analysis')
++                self.assertEqual(report['preview_count'], 0)
++                self.assertEqual(report['rejected_candidates'][0]['reason'],
++                                 'unsafe_or_missing_seam_evidence')
++                self.assertFalse(list((Path(directory)/'analysis'/'previews').glob('*.json')))
++
+     def test_invalid_bpm_or_previews_rejected_without_mutation(self):
+         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(sys.modules, fake_stemlab()):
+             folder = Path(directory)/'output'
+@@ -121,6 +147,9 @@ class SourceFirstLoopTests(unittest.TestCase):
+                     analyse_source_capture(fixture(), folder, **params)
+                 self.assertFalse(folder.exists())
+ 
++    @unittest.skipUnless(importlib.util.find_spec('numpy') is not None or
++                         os.environ.get('DANCERUDIMENTS_REQUIRE_NATIVE') == '1',
++                         'Original BVH conversion needs optional NumPy')
+     def test_bvh_source_original_frames_survive_source_first_capture(self):
+         with tempfile.TemporaryDirectory() as directory:
+             root = Path(directory)
+@@ -144,7 +173,9 @@ class SourceFirstLoopTests(unittest.TestCase):
+     def test_stemlab_real_synthetic_motion_when_available(self):
+         try:
+             from stemlab.analysis.rig_motion import analyze_rig_capture  # noqa: F401
+-        except ImportError:
++        except ImportError as exc:
++            if os.environ.get('DANCERUDIMENTS_REQUIRE_STEMLAB') == '1':
++                self.fail(f'StemLab rig-motion integration is required in this CI job: {exc}')
+             self.skipTest('Compatible StemLab is an optional offline dependency')
+         with tempfile.TemporaryDirectory() as directory:
+             output = Path(directory)/'loop-analysis'
+@@ -153,6 +184,7 @@ class SourceFirstLoopTests(unittest.TestCase):
+             self.assertTrue(evidence['bpm_candidates'])
+             self.assertLess(abs(evidence['recommended_tempo']['bpm']-120), 5)
+             self.assertTrue(evidence['loop_candidates'])
++            self.assertGreater(report['preview_count'], 0, 'A known periodic fixture must produce compiled previews')
+             self.assertEqual(report['source_capture_sha256'], evidence['source_file_sha256'])
+             self.assertTrue(all(item['requires_review'] for item in report['previews']))
+ 
