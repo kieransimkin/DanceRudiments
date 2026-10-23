@@ -72,6 +72,16 @@ source distribution, npm archive or native ZIP before publication. It does not
 claim that an archive has been uploaded. GitHub's hosted About text is repository
 configuration, not part of this patch.
 
+## Named motion playback rates
+
+The public TypeScript entry point exports `MOTION_TIME_RATES`,
+`motionTimeRate`, and `motionSourcePipAtTime` with the exact
+`half=0.5`, `normal=1`, `double=2` interpretations. Use these to
+scale elapsed presentation time before sampling the original native recording.
+They do not change the recorded BPM, infer music, repeat a non-looping motion,
+or resample its stored controls. The existing offline authoring compiler also
+accepts an explicit `--motion-rate 1/2` or `2` source-beat interpretation.
+
 ## Implementation references
 
 - Emscripten loader and asset location: https://emscripten.org/docs/api_reference/module.html

@@ -1,10 +1,12 @@
 /** A UI clock only. Poses are always read by the existing native sampler. */
+export const MOTION_TIME_RATES = Object.freeze({half: 0.5, normal: 1, double: 2});
 export class PipTransport {
   constructor(first, last, now = () => performance.now()) {
     if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || last < first)
       throw Error('Invalid inclusive motion bounds');
     this.first = first; this.last = last; this.now = now;
     this.anchorPip = first; this.anchorTime = now(); this.speed = 1; this.playing = false;
+    this.timeMode = 'normal';
   }
   position(time = this.now()) {
     const value = this.anchorPip + (this.playing ? Math.max(0, time - this.anchorTime) * .064 * this.speed : 0);
@@ -24,5 +26,13 @@ export class PipTransport {
   setSpeed(speed) {
     if (!Number.isFinite(speed) || speed <= 0 || speed > 4) throw Error('Invalid preview speed');
     this.anchorPip = this.position(); this.anchorTime = this.now(); this.speed = speed;
+    this.timeMode = Object.keys(MOTION_TIME_RATES).find(key => MOTION_TIME_RATES[key] === speed) ?? null;
+  }
+  /** Change the source-pip clock, without rewriting, looping or resampling any recording. */
+  setTimeMode(mode) {
+    if (!Object.prototype.hasOwnProperty.call(MOTION_TIME_RATES, mode))
+      throw new RangeError('Motion time mode must be half, normal or double');
+    this.setSpeed(MOTION_TIME_RATES[mode]);
+    this.timeMode = mode;
   }
 }

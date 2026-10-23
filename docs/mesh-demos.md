@@ -77,6 +77,13 @@ timing: one second is represented by 64 integer pips. Their musical BPM and
 beat/downbeat phase have not been established; no music is bundled and the UI
 does not imply beat matching.
 
+The speed selector explicitly offers **half time (0.5×)**, **original (1×)**,
+and **double time (2×)**, alongside the existing 0.75× and 1.5× rates.
+`PipTransport.setTimeMode('half'|'normal'|'double')` and the TypeScript
+`motionTimeRate` / `motionSourcePipAtTime` helpers adjust source-pip advancement,
+not the source recording or BPM estimate. Switching modes preserves the exact
+position through play/pause/seek and the optional loop-review UI.
+
 ## Review motion rhythm and loop candidates
 
 StemLab's `analyze-rig-motion` can inspect either original *complete* hashed

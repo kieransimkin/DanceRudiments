@@ -29,6 +29,16 @@ function showError(error) {
 function status(text, live = false) {
   $('status').textContent = text; $('status-dot').classList.toggle('live', live);
 }
+// Keep the existing numeric options and source-time sampler; label the three
+// standard musical rate interpretations without claiming source BPM is known.
+for (const [value, label] of [
+  ['0.5', 'Half time · 0.5×'],
+  ['1', 'Original time · 1×'],
+  ['2', 'Double time · 2×'],
+]) {
+  const option = Array.from($('speed').options).find(item => item.value === value);
+  if (option) option.textContent = label;
+}
 function metadata() {
   const text = copy[selected.id];
   $('scene-select').value = selected.id;
@@ -65,9 +75,12 @@ function updateTransport() {
     $('seek').style.setProperty('--progress', `${100 * (pip - scene.startPip) / Math.max(1, scene.endPip - scene.startPip)}%`);
     $('elapsed').textContent = timeLabel((pip - scene.startPip) / 64);
     $('pip-readout').textContent = `pip ${pip.toLocaleString()} / ${scene.endPip.toLocaleString()}`;
+    const rateLabel = session.transport.timeMode === 'half' ? 'Half-time source motion · 0.5×'
+      : session.transport.timeMode === 'double' ? 'Double-time source motion · 2×'
+      : session.transport.timeMode === 'normal' ? 'Original source motion · 1×'
+      : `Source-motion preview · ${session.transport.speed}×`;
     $('timing-status').textContent = rhythmReview.currentLoop()
-      ? `Unverified loop preview · ${session.transport.speed}×`
-      : session.transport.speed === 1 ? 'Source time · 1×' : `Source time · ${session.transport.speed}× preview`;
+      ? `Unverified loop · ${rateLabel}` : rateLabel;
     status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === scene.endPip ? 'Performance complete' : 'Paused', playing);
   }
 }

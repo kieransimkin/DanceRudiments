@@ -1,0 +1,207 @@
+diff --git a/tools/mesh_demo_assets/transport.js b/tools/mesh_demo_assets/transport.js
+--- a/tools/mesh_demo_assets/transport.js
++++ b/tools/mesh_demo_assets/transport.js
+@@ -1,10 +1,12 @@
+ /** A UI clock only. Poses are always read by the existing native sampler. */
++export const MOTION_TIME_RATES = Object.freeze({half: 0.5, normal: 1, double: 2});
+ export class PipTransport {
+   constructor(first, last, now = () => performance.now()) {
+     if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || last < first)
+       throw Error('Invalid inclusive motion bounds');
+     this.first = first; this.last = last; this.now = now;
+     this.anchorPip = first; this.anchorTime = now(); this.speed = 1; this.playing = false;
++    this.timeMode = 'normal';
+   }
+   position(time = this.now()) {
+     const value = this.anchorPip + (this.playing ? Math.max(0, time - this.anchorTime) * .064 * this.speed : 0);
+@@ -24,5 +26,13 @@
+   setSpeed(speed) {
+     if (!Number.isFinite(speed) || speed <= 0 || speed > 4) throw Error('Invalid preview speed');
+     this.anchorPip = this.position(); this.anchorTime = this.now(); this.speed = speed;
++    this.timeMode = Object.keys(MOTION_TIME_RATES).find(key => MOTION_TIME_RATES[key] === speed) ?? null;
+   }
++  /** Change the source-pip clock, without rewriting, looping or resampling any recording. */
++  setTimeMode(mode) {
++    if (!Object.prototype.hasOwnProperty.call(MOTION_TIME_RATES, mode))
++      throw new RangeError('Motion time mode must be half, normal or double');
++    this.setSpeed(MOTION_TIME_RATES[mode]);
++    this.timeMode = mode;
++  }
+ }
+diff --git a/bindings/typescript/index.ts b/bindings/typescript/index.ts
+--- a/bindings/typescript/index.ts
++++ b/bindings/typescript/index.ts
+@@ -1,4 +1,6 @@
+ import { approvedDefaults, ApprovedDefaultName } from "./defaults.js";
++export { MOTION_TIME_RATES, motionTimeRate, motionSourcePipAtTime } from "./motion-time.js";
++export type { MotionTimeMode } from "./motion-time.js";
+ export { createMotionPackageLoader, createRecordingWasmAdapter } from "./motion-packages.js";
+ export type {
+   MotionJson, MotionJsonObject, MotionPackageAsset, MotionPackageClip, MotionPackageManifest,
+diff --git a/tools/mesh_demo_assets/app.js b/tools/mesh_demo_assets/app.js
+--- a/tools/mesh_demo_assets/app.js
++++ b/tools/mesh_demo_assets/app.js
+@@ -29,6 +29,16 @@
+ function status(text, live = false) {
+   $('status').textContent = text; $('status-dot').classList.toggle('live', live);
+ }
++// Keep the existing numeric options and source-time sampler; label the three
++// standard musical rate interpretations without claiming source BPM is known.
++for (const [value, label] of [
++  ['0.5', 'Half time · 0.5×'],
++  ['1', 'Original time · 1×'],
++  ['2', 'Double time · 2×'],
++]) {
++  const option = Array.from($('speed').options).find(item => item.value === value);
++  if (option) option.textContent = label;
++}
+ function metadata() {
+   const text = copy[selected.id];
+   $('scene-select').value = selected.id;
+@@ -65,9 +75,12 @@
+     $('seek').style.setProperty('--progress', `${100 * (pip - scene.startPip) / Math.max(1, scene.endPip - scene.startPip)}%`);
+     $('elapsed').textContent = timeLabel((pip - scene.startPip) / 64);
+     $('pip-readout').textContent = `pip ${pip.toLocaleString()} / ${scene.endPip.toLocaleString()}`;
++    const rateLabel = session.transport.timeMode === 'half' ? 'Half-time source motion · 0.5×'
++      : session.transport.timeMode === 'double' ? 'Double-time source motion · 2×'
++      : session.transport.timeMode === 'normal' ? 'Original source motion · 1×'
++      : `Source-motion preview · ${session.transport.speed}×`;
+     $('timing-status').textContent = rhythmReview.currentLoop()
+-      ? `Unverified loop preview · ${session.transport.speed}×`
+-      : session.transport.speed === 1 ? 'Source time · 1×' : `Source time · ${session.transport.speed}× preview`;
++      ? `Unverified loop · ${rateLabel}` : rateLabel;
+     status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === scene.endPip ? 'Performance complete' : 'Paused', playing);
+   }
+ }
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -79,6 +79,13 @@
+ performances unload the previous recording and target scene. Play, pause, seek,
+ restart and preview speed continue to use the existing native C++/WASM sampler.
+ 
++The Kandi gallery now explicitly labels half-time (0.5×), original (1×) and
++double-time (2×) motion playback, with intermediate preview speeds retained.
++These modes change only the speed at which the original 64-pip recordings are
++sampled. The TypeScript API exports `motionTimeRate` and
++`motionSourcePipAtTime` for the same source-time conversion. Changing the
++playback rate does not change musical BPM evidence, source metadata or the rig.
++
+ The gallery also supports **local StemLab rhythm-analysis review**. After loading
+ Kandi, import the corresponding `stemlab.rig-motion-analysis` JSON from the
+ complete salsa/ballet package. Source hashes and channel identity are validated
+diff --git a/docs/mesh-demos.md b/docs/mesh-demos.md
+--- a/docs/mesh-demos.md
++++ b/docs/mesh-demos.md
+@@ -77,6 +77,13 @@
+ beat/downbeat phase have not been established; no music is bundled and the UI
+ does not imply beat matching.
+ 
++The speed selector explicitly offers **half time (0.5×)**, **original (1×)**,
++and **double time (2×)**, alongside the existing 0.75× and 1.5× rates.
++`PipTransport.setTimeMode('half'|'normal'|'double')` and the TypeScript
++`motionTimeRate` / `motionSourcePipAtTime` helpers adjust source-pip advancement,
++not the source recording or BPM estimate. Switching modes preserves the exact
++position through play/pause/seek and the optional loop-review UI.
++
+ ## Review motion rhythm and loop candidates
+ 
+ StemLab's `analyze-rig-motion` can inspect either original *complete* hashed
+diff --git a/docs/bindings.md b/docs/bindings.md
+--- a/docs/bindings.md
++++ b/docs/bindings.md
+@@ -72,6 +72,16 @@
+ claim that an archive has been uploaded. GitHub's hosted About text is repository
+ configuration, not part of this patch.
+ 
++## Named motion playback rates
++
++The public TypeScript entry point exports `MOTION_TIME_RATES`,
++`motionTimeRate`, and `motionSourcePipAtTime` with the exact
++`half=0.5`, `normal=1`, `double=2` interpretations. Use these to
++scale elapsed presentation time before sampling the original native recording.
++They do not change the recorded BPM, infer music, repeat a non-looping motion,
++or resample its stored controls. The existing offline authoring compiler also
++accepts an explicit `--motion-rate 1/2` or `2` source-beat interpretation.
++
+ ## Implementation references
+ 
+ - Emscripten loader and asset location: https://emscripten.org/docs/api_reference/module.html
+diff --git a/bindings/typescript/motion-time.ts b/bindings/typescript/motion-time.ts
+new file mode 100644
+--- /dev/null
++++ b/bindings/typescript/motion-time.ts
+@@ -0,0 +1,26 @@
++/** Explicit source-motion playback rates; never a claim about music BPM. */
++export type MotionTimeMode = 'half' | 'normal' | 'double';
++export const MOTION_TIME_RATES: Readonly<Record<MotionTimeMode, number>> =
++  Object.freeze({half: 0.5, normal: 1, double: 2});
++
++export function motionTimeRate(mode: MotionTimeMode): number {
++  if (!Object.prototype.hasOwnProperty.call(MOTION_TIME_RATES, mode))
++    throw new RangeError('Motion time mode must be half, normal or double');
++  return MOTION_TIME_RATES[mode];
++}
++
++/** Get the absolute integer source pip without resampling or implicit wrapping. */
++export function motionSourcePipAtTime(
++  sourceStartPip: number, elapsedOutputSeconds: number,
++  mode: MotionTimeMode, pipsPerSourceSecond = 64,
++): number {
++  if (!Number.isSafeInteger(sourceStartPip) ||
++      !Number.isFinite(elapsedOutputSeconds) || elapsedOutputSeconds < 0 ||
++      !Number.isFinite(pipsPerSourceSecond) || pipsPerSourceSecond <= 0)
++    throw new RangeError('Invalid source pip, elapsed time or clock');
++  const pip = Math.floor(sourceStartPip + elapsedOutputSeconds *
++    pipsPerSourceSecond * motionTimeRate(mode));
++  if (!Number.isSafeInteger(pip) || pip < -2147483648 || pip > 2147483647)
++    throw new RangeError('Motion source pip exceeds signed int32 bounds');
++  return pip;
++}
+diff --git a/tests/typescript/motion-time.test.js b/tests/typescript/motion-time.test.js
+new file mode 100644
+--- /dev/null
++++ b/tests/typescript/motion-time.test.js
+@@ -0,0 +1,42 @@
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import {PipTransport, MOTION_TIME_RATES} from '../../tools/mesh_demo_assets/transport.js';
++
++test('half, normal and double time preserve pips across live rate changes', () => {
++  let now = 0;
++  const transport = new PipTransport(0, 1280, () => now);
++  assert.deepEqual(MOTION_TIME_RATES, {half: .5, normal: 1, double: 2});
++  transport.setTimeMode('half');
++  transport.play(); now = 1000;
++  assert.equal(transport.pip(), 32);
++  transport.setTimeMode('double');
++  assert.equal(transport.pip(), 32);
++  now += 1000;
++  assert.equal(transport.pip(), 160);
++  transport.setTimeMode('normal');
++  now += 1000;
++  assert.equal(transport.pip(), 224);
++  transport.pause(); now += 9999;
++  assert.equal(transport.pip(), 224);
++  assert.equal(transport.timeMode, 'normal');
++  assert.throws(() => transport.setTimeMode('three_quarters'), /mode/);
++});
++test('pickups, pauses, seeks and inclusive endpoints survive playback rates', () => {
++  let now = 0;
++  const transport = new PipTransport(-64, 64, () => now);
++  transport.setTimeMode('double'); transport.play(); now = 500;
++  assert.equal(transport.pip(), 0);
++  transport.seek(-32);
++  transport.setTimeMode('half'); now += 500;
++  assert.equal(transport.pip(), -16);
++  now += 10000;
++  assert.equal(transport.pip(), 64);
++  assert.equal(transport.playing, false);
++  assert.throws(() => transport.seek(65), /outside/);
++});
++test('existing fractional preview rates remain supported and labelled', () => {
++  const transport = new PipTransport(0, 128);
++  transport.setTimeMode('half'); assert.equal(transport.timeMode, 'half');
++  transport.setSpeed(.75); assert.equal(transport.timeMode, null);
++  transport.setSpeed(2); assert.equal(transport.timeMode, 'double');
++});

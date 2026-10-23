@@ -1,4 +1,6 @@
 import { approvedDefaults, ApprovedDefaultName } from "./defaults.js";
+export { MOTION_TIME_RATES, motionTimeRate, motionSourcePipAtTime } from "./motion-time.js";
+export type { MotionTimeMode } from "./motion-time.js";
 export { createMotionPackageLoader, createRecordingWasmAdapter } from "./motion-packages.js";
 export type {
   MotionJson, MotionJsonObject, MotionPackageAsset, MotionPackageClip, MotionPackageManifest,
