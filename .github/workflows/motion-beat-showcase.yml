@@ -1,0 +1,107 @@
+name: Rigged movement beat-finding showcase
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/motion-beat-showcase.yml'
+      - 'tools/build_motion_beat_showcase.py'
+      - 'tests/python/test_motion_beat_showcase.py'
+      - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/full_motion_analysis.py'
+      - 'motion-packages/cmu-dance-sources.json'
+      - 'docs/motion-beat-showcase.md'
+
+permissions:
+  contents: read
+
+jobs:
+  rig-motion-candidate-showcase:
+    name: Pinned-source rhythm search and animated source-rig previews
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+      TMPDIR: ${{ github.workspace }}/.cache/tmp
+      PYTHONPATH: ${{ github.workspace }}/.cache/stemlab-source/src
+      DANCERUDIMENTS_REQUIRE_NATIVE: '1'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          repository: kieransimkin/stemlab
+          # Pinned compatibility snapshot. No ML weights or model downloads.
+          ref: 321febc6b6768b2e2de2f5b35f0882432bb4de9f
+          path: .cache/stemlab-source
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Install native authoring, kinematic inference, and small-image renderer
+        run: python -m pip install '.[motion-import]' 'soundfile>=0.12,<1' 'Pillow>=11,<13' 'pytest>=8,<10'
+      - name: Confirm project-local cache is writable and pinned analyser is used
+        run: |
+          mkdir -p .cache/tmp
+          python - <<'PY'
+          import inspect,os,tempfile
+          from pathlib import Path
+          from stemlab.analysis.rig_motion import analyze_rig_capture
+          expected=Path('.cache/stemlab-source/src/stemlab/analysis/rig_motion.py').resolve()
+          assert Path(inspect.getfile(analyze_rig_capture)).resolve()==expected
+          with tempfile.TemporaryDirectory(dir=Path(os.environ['TMPDIR'])) as folder:
+              file=Path(folder)/'probe';file.write_bytes(b'demo')
+              assert file.read_bytes()==b'demo'
+          PY
+      - name: Verify candidate ranking, idle-motion rejection, and animated rig renderer
+        run: python -m pytest tests/python/test_motion_beat_showcase.py -q
+      - name: Download eight reviewed CMU source files and analyse original Actions
+        # SHA-256 and Git blob SHA-1 are pinned in cmu-dance-sources.json.
+        # Source motion is used only inside this job; no original BVH or compiled
+        # recording rows are uploaded, and no musical downbeat is inferred.
+        run: |
+          python tools/build_motion_beat_showcase.py \
+            --cache-root .cache/motion-beat-source-pool \
+            --output-dir .cache/motion-beat-showcase \
+            --ids 103_03 106_12 143_34 143_35 05_11 90_28 90_30 55_01 \
+            --download --max-selected 4 --minimum-previews 3 \
+            --min-full-confidence 0.70
+      - name: Audit actual moving skeleton images and source-provenance summary
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from PIL import Image
+          root=Path('.cache/motion-beat-showcase')
+          data=json.loads((root/'summary.json').read_text('utf8'))
+          assert data['sources_reviewed']==8, data
+          assert data['sources_failed']==0, data
+          assert data['selected_source_count']>=3, data
+          assert data['source_mirror_commit']=='09a07f54f3bbb58797325f009282d0b2048a2871'
+          assert not any(x.get('beat_alignment_confirmed') or x.get('loop_seam_approved')
+                         for x in data['sources'])
+          files=sorted((root/'previews').glob('*.gif'))
+          assert len(files)==data['selected_source_count'], files
+          for f in files:
+              with Image.open(f) as img:
+                  assert img.n_frames>=8 and img.size==(420,380), f
+          doc=(root/'index.html').read_text('utf8')
+          assert 'beat-finding' in doc and 'CMU Graphics Lab' in doc
+          assert all(f.name in doc for f in files)
+          print('CI demo candidates:',[(r['source_id'],r.get('bpm_estimated'),
+                r.get('grid_fit_confidence_percent'),len(r.get('review_loops',[])))
+                for r in data['sources']])
+          PY
+      - name: Upload review-only animated rig showcase (no raw BVH/recording data)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: dance-rig-beat-showcase
+          path: |
+            .cache/motion-beat-showcase/index.html
+            .cache/motion-beat-showcase/summary.json
+            .cache/motion-beat-showcase/previews/*.gif
+          if-no-files-found: warn
+          retention-days: 14
