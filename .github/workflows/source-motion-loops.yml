@@ -1,0 +1,134 @@
+name: Source-first motion loops
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/source-motion-loops.yml'
+      - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'tools/analyze_source_motion.py'
+      - 'tests/python/test_source_loop_analysis.py'
+      - 'docs/source-loop-analysis.md'
+  pull_request:
+    paths:
+      - '.github/workflows/source-motion-loops.yml'
+      - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'tools/analyze_source_motion.py'
+      - 'tests/python/test_source_loop_analysis.py'
+      - 'docs/source-loop-analysis.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-first-loop-analysis:
+    name: StemLab motion analysis before native 64-pip compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DANCERUDIMENTS_REQUIRE_NATIVE: '1'
+      PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
+      TMPDIR: ${{ github.workspace }}/.cache/tmp
+      # The pinned StemLab source snapshot is for feature integration regression
+      # only; it is not a release dependency or an implicit ML/model download.
+      PYTHONPATH: ${{ github.workspace }}/.cache/stemlab-source/src
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Fetch pinned compatible StemLab kinematic source (tests only)
+        uses: actions/checkout@v6
+        with:
+          repository: kieransimkin/stemlab
+          ref: e4b440e585748a5177b228e0a50e747787ec9762
+          path: .cache/stemlab-source
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Probe project-local temporary directory
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import os, tempfile
+          parent = Path(os.environ['TMPDIR'])
+          parent.mkdir(parents=True, exist_ok=True)
+          with tempfile.TemporaryDirectory(dir=parent) as temporary:
+              file = Path(temporary) / 'test'
+              file.write_text('source-first')
+              assert file.read_text() == 'source-first'
+              file.rename(file.with_name('renamed'))
+              assert file.with_name('renamed').read_text() == 'source-first'
+              file.with_name('renamed').unlink()
+          PY
+      - name: Install native DanceRudiments and optional NumPy source import
+        run: python -m pip install '.[motion-import]'
+      - name: Test source capture, real StemLab inference, and native loop previews
+        run: python -m unittest discover -s tests/python -p 'test_source_loop_analysis.py' -v
+      - name: Exercise full CLI with an original synthetic BVH source
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import math
+          p = Path('.cache/synthetic-original.bvh')
+          p.parent.mkdir(parents=True, exist_ok=True)
+          rows = [' '.join(map(str, (0.08*math.sin(i*math.tau/80), 0, 0,
+                                      0, 0, 0))) for i in range(641)]
+          p.write_text('HIERARCHY\nROOT Hips\n{\n OFFSET 0 0 0\n'
+                       ' CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation\n'
+                       ' End Site\n {\n OFFSET 0 1 0\n }\n}\nMOTION\n'
+                       'Frames: 641\nFrame Time: 0.025\n'+'\n'.join(rows)+'\n')
+          PY
+          python tools/analyze_source_motion.py .cache/synthetic-original.bvh \
+            --output-dir .cache/source-loop-smoke --max-previews 2 --verify-native
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('.cache/source-loop-smoke/job.json').read_text())
+          assert report['source_kind'] == 'original_bvh_or_blender_capture'
+          assert report['source_original_sha256']
+          assert report['profile_sha256']
+          assert Path('.cache/source-loop-smoke/stemlab-analysis.json').is_file()
+          assert all(item['native_samples_verified'] for item in report['previews'])
+          assert all(not item['audio_beat_alignment_verified'] for item in report['previews'])
+          PY
+      - name: Analyse a reviewed cached synthetic source collection without downloads
+        run: |
+          python - <<'PY'
+          import hashlib, json, zipfile
+          from pathlib import Path
+          root = Path('.cache')
+          original = root / 'synthetic-original.bvh'
+          archive = root / 'synthetic-motion.zip'
+          with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as handle:
+              handle.write(original, arcname='synthetic/dance.bvh')
+          source = {'id': 'synthetic', 'title': 'Synthetic fixture',
+                    'source_url': 'https://example.invalid/synthetic',
+                    'license': {'id': 'MIT', 'attribution': 'Synthetic CI fixture'},
+                    'conversion': {'unit_scale': 1., 'axis_forward': '-Z', 'axis_up': 'Y'},
+                    'archives': [{'cache_path': 'synthetic-motion.zip',
+                                  'size_bytes': archive.stat().st_size,
+                                  'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
+                                  'group': 'test'}]}
+          (root/'synthetic-motion-plan.json').write_text(json.dumps({
+              'format': 'dancerudiments.motion-source-plan',
+              'schema_version': 1, 'sources': [source]}))
+          PY
+          python tools/analyze_motion_collection.py \
+            --plan .cache/synthetic-motion-plan.json \
+            --sources synthetic --cache-root .cache \
+            --output-root .cache/source-loop-collection-smoke \
+            --max-actions 1 --max-previews 2 --verify-native
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('.cache/source-loop-collection-smoke')
+          report = json.loads((root/'index.json').read_text())
+          assert report['analysed_action_count'] == 1, report
+          assert report['failed_action_count'] == 0, report
+          assert not report['truncated']
+          action = report['actions'][0]
+          assert action['source_sha256']
+          assert (root/action['relative_output']/'stemlab-analysis.json').is_file()
+          PY

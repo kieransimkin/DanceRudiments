@@ -87,6 +87,17 @@ the existing timeline. The analysis file stays in the browser; no musical
 beat/downbeat approval, audio synchronisation or seam/foot-contact repair is
 implied. See [mesh-demo rhythm review](docs/mesh-demos.md#review-motion-rhythm-and-loop-candidates).
 
+For newly imported animation, the optional **source-first StemLab loop job**
+analyses original BVH frames or evaluated Blender Action captures **before**
+resampling to the native 64-pip grid. It ranks source-time beat and loop
+hypotheses, then creates independent, review-only RigMotion previews; it never
+changes the full source motions or adds assets to the default catalogue. Run
+`python tools/analyze_source_motion.py original.bvh --output-dir .cache/source-loops/action`
+or analyse all reviewed, locally cached source archives with
+`python tools/analyze_motion_collection.py --sources cmu_dance`. See the
+[source-first analysis guide](docs/source-loop-analysis.md). Musical beat-1,
+audio alignment, rig deformation and repeat seams still require separate checks.
+
 Kandi's canonical FBX contains vertices with more than four source influences.
 The source remains untouched and fully audited; the WebGL renderer uses an
 explicit, normalised four-weight runtime approximation and records that limit in
