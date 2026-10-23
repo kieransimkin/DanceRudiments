@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline source-first StemLab analysis and beat-grid loop preview compilation.
+"""Source-first StemLab full-action confidence and separate beat-grid loop discovery.
 
 Input is an ORIGINAL .bvh file or an evaluated Blender .capture.json Action,
 never an already quantised .motion.json or native optional motion package.
@@ -47,7 +47,11 @@ def main(argv=None):
     parser.add_argument('--max-bpm', type=float, default=200.)
     parser.add_argument('--target-bpm', type=float, help='Optional nominal audition tempo, NOT evidence')
     parser.add_argument('--max-previews', type=int, default=4,
-                        help='Ranked beat-grid loop previews, 0..12; 0 analyses without conversion')
+                        help='Ranked independent loop candidates, 0..12 (0 disables loops)')
+    parser.add_argument('--min-full-confidence', type=float, default=.70,
+                        help='Full-length beat-grid fit threshold 0..1 (default 0.70, heuristic not probability)')
+    parser.add_argument('--no-full-motion', action='store_true',
+                        help='Only analyse; do not export a complete BPM-matched Action')
     parser.add_argument('--verify-native', action='store_true',
                         help='Require installed C++ native sampler and compare converted pip samples')
     args = parser.parse_args(argv)
@@ -78,13 +82,25 @@ def main(argv=None):
             if args.calibration_frames or args.frame_time_override is not None:
                 raise ValueError('Blender capture timing/calibration must be selected during Action extraction')
             capture = load_capture(args.source)
+            # An extracted Blender .capture is a derivative; the original FBX,
+            # GLB or BLEND identity is stored inside its versioned provenance.
+            upstream = capture.provenance.get('source_file', {})
+            if isinstance(upstream, dict):
+                value = upstream.get('sha256')
+                if isinstance(value, str) and len(value) == 64 and all(x in '0123456789abcdef' for x in value):
+                    raw_digest = value
         else:
             raise ValueError('Expected an original BVH or extracted .capture.json; not a compiled rig motion')
         result = analyse_source_capture(capture, output,
             original_source_sha256=raw_digest, min_bpm=args.min_bpm,
             max_bpm=args.max_bpm, target_bpm=args.target_bpm,
-            max_previews=args.max_previews, verify_native=args.verify_native)
+            max_previews=args.max_previews, verify_native=args.verify_native,
+            full_motion_confidence_threshold=args.min_full_confidence,
+            export_full_motion=not args.no_full_motion)
         print(json.dumps(dict(output=str(output), preview_count=result['preview_count'],
+                              full_motion_count=result['full_motion_count'],
+                              full_motion_confidence_percent=result['full_motion_fit']['confidence_percent'],
+                              selected_source_bpm=result['full_motion_fit']['selected_bpm'],
                               source_original_sha256=raw_digest,
                               native_verification_required=args.verify_native,
                               estimated_tempo_only=True), indent=2))

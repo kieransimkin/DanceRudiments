@@ -6,19 +6,45 @@ on:
     paths:
       - '.github/workflows/source-motion-loops.yml'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/full_motion_analysis.py'
       - 'tools/analyze_source_motion.py'
       - 'tools/analyze_motion_collection.py'
+      - 'tools/build_song_loop_preview.py'
+      - 'tools/song_loop_viewer/**'
+      - 'tools/test_song_loop_preview_browser.py'
+      - 'tests/python/test_song_loop_preview.py'
+      - 'docs/song-loop-preview.md'
       - 'tests/python/test_source_loop_analysis.py'
+      - 'tests/python/test_full_motion_confidence.py'
+      - 'tools/analyze_blender_capture_batch.py'
+      - 'tests/python/test_blender_source_batch.py'
       - 'docs/source-loop-analysis.md'
+      - 'docs/song-loop-preview.md'
+      - 'tools/build_song_loop_preview.py'
+      - 'tools/song_loop_viewer/**'
+      - 'tests/python/test_song_loop_preview.py'
       - 'README.md'
   pull_request:
     paths:
       - '.github/workflows/source-motion-loops.yml'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/full_motion_analysis.py'
       - 'tools/analyze_source_motion.py'
       - 'tools/analyze_motion_collection.py'
+      - 'tools/build_song_loop_preview.py'
+      - 'tools/song_loop_viewer/**'
+      - 'tools/test_song_loop_preview_browser.py'
+      - 'tests/python/test_song_loop_preview.py'
+      - 'docs/song-loop-preview.md'
       - 'tests/python/test_source_loop_analysis.py'
+      - 'tests/python/test_full_motion_confidence.py'
+      - 'tools/analyze_blender_capture_batch.py'
+      - 'tests/python/test_blender_source_batch.py'
       - 'docs/source-loop-analysis.md'
+      - 'docs/song-loop-preview.md'
+      - 'tools/build_song_loop_preview.py'
+      - 'tools/song_loop_viewer/**'
+      - 'tests/python/test_song_loop_preview.py'
       - 'README.md'
   workflow_dispatch:
 
@@ -29,7 +55,7 @@ jobs:
   source-first-loop-analysis:
     name: StemLab motion analysis before native 64-pip compilation
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 50
     env:
       DANCERUDIMENTS_REQUIRE_NATIVE: '1'
       DANCERUDIMENTS_REQUIRE_STEMLAB: '1'
@@ -46,7 +72,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kieransimkin/stemlab
-          ref: e4b440e585748a5177b228e0a50e747787ec9762
+          ref: 321febc6b6768b2e2de2f5b35f0882432bb4de9f
           path: .cache/stemlab-source
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -87,6 +113,10 @@ jobs:
           PY
       - name: Test source capture, real StemLab inference, and native loop previews
         run: python -m unittest discover -s tests/python -p 'test_source_loop_analysis.py' -v
+      - name: Test 70-percent full-Action acceptance and independent loop catalogues
+        run: python -m unittest discover -s tests/python -p 'test_full_motion_confidence.py' -v
+      - name: Verify provenance-tracked Blender Action batch full/loop output
+        run: python -m unittest discover -s tests/python -p 'test_blender_source_batch.py' -v
       - name: Exercise full CLI with an original synthetic BVH source
         run: |
           python - <<'PY'
@@ -127,6 +157,13 @@ jobs:
           assert report['source_original_sha256']
           assert report['profile_sha256']
           assert report['preview_count'] > 0, 'Synthetic source produced no usable loops'
+          assert report['full_motion_fit']['confidence'] >= .70, report['full_motion_fit']
+          assert report['full_motion_count'] == 1, report['full_motion_fit']
+          full = report['full_motion_clips'][0]
+          assert full['native_samples_verified'] and not full['loopable']
+          assert full['source_original_sha256'] == report['source_original_sha256']
+          assert (Path('.cache/source-loop-smoke') / full['filename']).is_file()
+          assert (Path('.cache/source-loop-smoke/loopable-clips.json')).is_file()
           stemlab = json.loads(Path('.cache/source-loop-smoke/stemlab-analysis.json').read_text())
           assert stemlab['recommended_tempo'], 'Synthetic source produced no tempo estimate'
           assert stemlab['loop_candidates'], 'Synthetic source produced no loop hypotheses'
@@ -171,6 +208,10 @@ jobs:
           action = report['actions'][0]
           assert action['source_sha256']
           assert action['preview_count'] > 0, 'Batch source yielded no native loop previews'
+          assert action['full_motion_count'] == 1
+          assert report['full_motion_count'] == 1
+          assert report['loopable_clip_count'] >= 1
+          assert report['full_motion_shortlist'][0]['confidence_percent'] >= 70
           assert (root/action['relative_output']/'stemlab-analysis.json').is_file()
           PY
       - name: Preserve synthetic source-first evidence on success or failure
@@ -183,3 +224,66 @@ jobs:
             .cache/source-loop-collection-smoke/
           if-no-files-found: warn
           retention-days: 7
+      - name: Install conventional audio beat tracker and browser test dependencies
+        # Pin to the source revision containing Arcadians, Truth and Star Lights
+        # Glow. No ML model/checkpoint downloads or media exports are permitted.
+        run: |
+          python -m pip install 'librosa>=0.11,<0.12' 'playwright==1.64.0'
+          python -m playwright install --with-deps chromium
+      - name: Test song loop matching, source identities and offline viewer
+        run: python -m unittest discover -s tests/python -p 'test_song_loop_preview.py' -v
+      - name: Run StemLab exploratory audio loops on all three bundled masters
+        run: |
+          python tools/build_song_loop_preview.py \
+            --stemlab-root .cache/stemlab-source \
+            --motion-job .cache/source-loop-smoke \
+            --output-dir .cache/song-loop-preview --require-all-songs
+          python - <<'PY_CHECK'
+          import json
+          from pathlib import Path
+          root = Path('.cache/song-loop-preview')
+          report = json.loads((root/'report.json').read_text())
+          names = [s['id'] for s in report['songs']]
+          assert names == ['arcadians', 'the-truth-is-a-virus',
+                           'star-lights-glow-mystery-liquid-kick'], names
+          assert all(s['status'] != 'analysis_failed' for s in report['songs'])
+          assert all(s['grid'] and len(s['grid']['beats']) >= 8 for s in report['songs'])
+          assert all(s['audio_loop_report'] and (root/s['audio_loop_report']).is_file()
+                     for s in report['songs'])
+          assert report['songs'][1]['grid']['model'] == 'stemlab_consensus_saved'
+          assert report['songs'][2]['grid']['downbeat_status'] != 'confirmed'
+          assert any(s['pairs'] for s in report['songs']), 'No audible motion-loop pairings could be proposed'
+          assert any(m['motion_kind'] == 'full_length' for m in report['motions'])
+          assert any(m['motion_kind'] == 'loopable' for m in report['motions'])
+          assert (root/'index.html').is_file()
+          assert not any(root.rglob('*.mp3')) and not any(root.rglob('*.wav'))
+          assert all(not p['beat_alignment_confirmed'] and not p['loop_seam_approved']
+                     for s in report['songs'] for p in s['pairs'])
+          print('Song loop CI:', [(s['id'],s['status'],len(s['pairs']))
+                                   for s in report['songs']])
+          PY_CHECK
+      - name: Validate generated preview JavaScript syntax
+        run: |
+          python - <<'PY_JS'
+          from pathlib import Path
+          page = Path('.cache/song-loop-preview/index.html').read_text()
+          script = page.split('<script>', 1)[1].split('</script>', 1)[0]
+          Path('.cache/song-loop-preview.js').write_text(script)
+          PY_JS
+          node --check .cache/song-loop-preview.js
+      - name: Browser-smoke desktop/mobile viewer and verify the exact Truth MP3 via file input
+        run: |
+          python tools/test_song_loop_preview_browser.py \
+            --site .cache/song-loop-preview \
+            --truth-audio .cache/stemlab-source/examples/the-truth-is-a-virus/master.mp3 \
+            --output-dir .cache/song-loop-browser-qa
+      - name: Upload audio-free music + motion preview and browser evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: stemlab-song-motion-loop-preview
+          path: |
+            .cache/song-loop-preview/
+            .cache/song-loop-browser-qa/
+          if-no-files-found: warn
+          retention-days: 14

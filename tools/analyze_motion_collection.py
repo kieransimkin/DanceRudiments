@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Batch StemLab analysis of ORIGINAL cached motion-source archives, before conversion.
+"""Batch full-action BPM confidence and loop finding on original reviewed motion archives.
 
 Reviewed source archives are verified against the existing import plan. Motion
-samples are analyzed in source time, and only then are candidate loops compiled
-to separate optional 64-pip previews. Original full-action packages are untouched.
+samples are analysed in original source time. Confident complete Actions and
+separate candidate loops are converted after analysis. Sources stay untouched.
 """
 from __future__ import annotations
 
@@ -28,7 +28,8 @@ from import_motion_collection import asset_path, preflight, slug, verify_archive
 
 def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                        max_previews=4, min_bpm=60., max_bpm=200.,
-                       target_bpm=None, verify_native=False):
+                       target_bpm=None, verify_native=False,
+                       min_full_confidence=.70, export_full_motion=True):
     """Read only existing pinned ZIP members; create a new external report tree."""
     if type(max_actions) is not int or not 1 <= max_actions <= 1000:
         raise ValueError('max_actions must be 1..1000')
@@ -41,6 +42,9 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                  max_actions=max_actions, input_sources=[source['id'] for source in sources],
                  motion_candidate_timing='source seconds, estimated beats only',
                  actions=[], failures=[], duplicates=[], truncated=False,
+                 full_motion_shortlist=[], loopable_shortlist=[],
+                 full_motion_confidence_threshold=min_full_confidence,
+                 full_motion_confidence_interpretation='uncalibrated_kinematic_fit_not_probability',
                  audio_beat_alignment_verified=False)
     seen = {}
     with tempfile.TemporaryDirectory(prefix='.source-collection-', dir=output_root.parent) as temp:
@@ -91,20 +95,40 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                                     raise ScoreError('Only an explicitly evidenced frame time override is supported')
                                 clip = override_bvh_frame_time(clip, **correction)
                             omitted = record.get('calibration_frame_count', 0)
-                            capture = source_capture_from_bvh(clip, calibration_frames=omitted)
+                            capture = source_capture_from_bvh(clip, calibration_frames=omitted,
+                                                              source_provenance=provenance)
                             name = (slug(source['id'], 20) + '_' +
                                     slug(PurePosixPath(member.filename).stem, 65) + '_' + digest[:10])
                             folder = staged / source['id'] / name
                             result = analyse_source_capture(capture, folder,
                                 original_source_sha256=digest, min_bpm=min_bpm, max_bpm=max_bpm,
                                 target_bpm=target_bpm, max_previews=max_previews,
-                                verify_native=verify_native)
+                                verify_native=verify_native,
+                                full_motion_confidence_threshold=min_full_confidence,
+                                export_full_motion=export_full_motion)
                             seen[digest] = member.filename
                             index['actions'].append(dict(provenance,
                                 relative_output=folder.relative_to(staged).as_posix(),
                                 profile_sha256=clip.profile.fingerprint,
                                 original_duration_seconds=clip.duration_seconds,
-                                preview_count=result['preview_count']))
+                                preview_count=result['preview_count'],
+                                full_motion_count=result['full_motion_count'],
+                                full_motion_confidence_percent=result['full_motion_fit']['confidence_percent'],
+                                selected_source_bpm=result['full_motion_fit']['selected_bpm'],
+                                full_motion_reasons=result['full_motion_fit']['reasons']))
+                            for item in result['full_motion_clips']:
+                                index['full_motion_shortlist'].append(dict(
+                                    provenance, relative_output=folder.relative_to(staged).as_posix(),
+                                    filename=item['filename'],
+                                    confidence_percent=item['confidence_percent'],
+                                    estimated_bpm=item['bpm_estimated'],
+                                    profile_sha256=item['profile_sha256']))
+                            for item in result['loopable_clips']:
+                                index['loopable_shortlist'].append(dict(
+                                    provenance, relative_output=folder.relative_to(staged).as_posix(),
+                                    filename=item['filename'], score=item['score'],
+                                    estimated_bpm=item['source_bpm_estimated'],
+                                    beats=item['source_beats']))
                         except (ScoreError, ValueError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
                             index['failures'].append(dict(provenance, error=str(exc)))
                     if stop:
@@ -115,6 +139,10 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                 break
         index['analysed_action_count'] = len(index['actions'])
         index['failed_action_count'] = len(index['failures'])
+        index['full_motion_count'] = len(index['full_motion_shortlist'])
+        index['loopable_clip_count'] = len(index['loopable_shortlist'])
+        index['full_motion_shortlist'].sort(key=lambda x: (-x['confidence_percent'], x['source_sha256']))
+        index['loopable_shortlist'].sort(key=lambda x: (-x['score'], x['source_sha256']))
         (staged / 'index.json').write_text(json.dumps(index, indent=2, allow_nan=False) + '\n',
                                            encoding='utf-8')
         if output_root.exists() or output_root.is_symlink():
@@ -132,6 +160,10 @@ def main(argv=None):
     parser.add_argument('--output-root', type=Path, default=ROOT / '.cache/source-loop-candidates')
     parser.add_argument('--max-actions', type=int, default=100)
     parser.add_argument('--max-previews', type=int, default=4)
+    parser.add_argument('--min-full-confidence', type=float, default=.70,
+                        help='Full-source BPM grid-fit acceptance threshold (0..1, default 0.70)')
+    parser.add_argument('--no-full-motion', action='store_true',
+                        help='Analyse original Actions but do not convert complete recordings')
     parser.add_argument('--min-bpm', type=float, default=60.)
     parser.add_argument('--max-bpm', type=float, default=200.)
     parser.add_argument('--target-bpm', type=float)
@@ -148,9 +180,13 @@ def main(argv=None):
         summary = analyze_collection([available[i] for i in args.sources], args.cache_root,
             args.output_root, max_actions=args.max_actions, max_previews=args.max_previews,
             min_bpm=args.min_bpm, max_bpm=args.max_bpm, target_bpm=args.target_bpm,
-            verify_native=args.verify_native)
+            verify_native=args.verify_native,
+            min_full_confidence=args.min_full_confidence,
+            export_full_motion=not args.no_full_motion)
         print(json.dumps(dict(output=str(args.output_root),
                               analysed_action_count=summary['analysed_action_count'],
+                              full_motion_count=summary['full_motion_count'],
+                              loopable_clip_count=summary['loopable_clip_count'],
                               failed_action_count=summary['failed_action_count'],
                               truncated=summary['truncated']), indent=2))
         return 2 if summary['failures'] or summary['truncated'] else 0

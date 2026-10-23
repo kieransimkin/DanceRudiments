@@ -2,8 +2,13 @@
 
 `tools/analyze_source_motion.py` uses StemLab's rig-motion analyser **before**
 converting original animation into DanceRudiments' 64-pip `RigMotion` recordings.
-The original source Action is preserved unchanged. Only StemLab-ranked, estimated
-beat-grid candidates are compiled into **review-only** preview rudiments. A
+The same job now has **two independent authoring outcomes**: a complete
+BPM-grid-matched Action (when the source-wide fit passes the default 70% policy),
+and source-time loop candidates that may be retained even if the complete Action
+is not sufficiently rhythmic.
+The original source Action is preserved unchanged. Complete Actions are
+converted only after the whole-action fit gate; StemLab-ranked loop candidates
+have their own seam/pose/root-drift gates. Both remain **review-only** recordings. A
 candidate is not silently promoted to a built-in pattern, a music-confirmed
 beat grid or an approved seamless animation.
 
@@ -23,7 +28,17 @@ beat grid or an approved seamless animation.
    output directory. StemLab validates the complete physical profile and
    timestamps, then estimates motion accents, candidate BPM/phase, recurring
    poses, loop seams, root displacement and joint velocity discontinuity.
-4. **Select and compile previews:** Accept only explicitly unapproved
+4. **Score the entire Action:** Compare StemLab's BPM candidates across movement
+   periodicity, weighted motion accents, beat-phase agreement, support from
+   independent rig control groups, and coverage throughout the original Action.
+   Every Action receives a ranked BPM hypothesis list, a 0–100 heuristic
+   **grid-fit confidence**, and rejection reasons. A default `>=70%` fit permits
+   full-length conversion. This number is **not a statistically calibrated
+   probability** that the dance was performed to a particular musical BPM;
+   half/double time, downbeat and metre ambiguity remain explicit. Compiling
+   starts at the first valid 64-pip sample within the original source times
+   and ends at the last; sub-pip head/tail gaps are recorded, not extended.
+5. **Separately identify loopable source motion:** Accept only explicitly unapproved
    `estimated_motion_beat_grid` candidates with supported beat counts, a matching
    **unverified** StemLab beat-map provenance and source-time seam diagnostics
    within StemLab's physical mismatch thresholds. Do not compile corrupted,
@@ -33,7 +48,7 @@ beat grid or an approved seamless animation.
    with half-open loop boundaries, **without** adding a second runtime sampler.
    `pose_recurrence_only` evidence remains in StemLab's report and is **not**
    assigned an arbitrary tempo or converted automatically.
-5. **Verify and review:** Optional `--verify-native` compares the new recordings'
+6. **Verify and review:** Optional `--verify-native` compares the new recordings'
    representative native pip samples against the compiler. It does **not** prove
    loop blending, target-rig deformation, foot contact, true musical downbeats,
    or audio sync. Those require explicit inspection and audio timing evidence.
@@ -56,7 +71,7 @@ large audio stack on base DanceRudiments consumers.
 python tools/analyze_source_motion.py .cache/motion-sources/my-dance.bvh \
   --source-id my_dance --output-dir .cache/source-loop/my-dance \
   --calibration-frames 1 --min-bpm 70 --max-bpm 180 \
-  --target-bpm 124 --max-previews 6 --verify-native
+  --target-bpm 124 --min-full-confidence 0.70 --max-previews 6 --verify-native
 
 # Blender FBX/GLB/BLEND: first extract evaluated animation Actions into captures.
 blender --background --factory-startup --python tools/blender_motion_import.py -- \
@@ -69,7 +84,7 @@ python tools/analyze_source_motion.py .cache/extracted/my-dancer/actual.capture.
 
 # Analysis only, preserving unquantised timing and not converting any preview:
 python tools/analyze_source_motion.py original.bvh \
-  --output-dir .cache/source-loop/report-only --max-previews 0
+  --output-dir .cache/source-loop/report-only --max-previews 0 --no-full-motion
 ```
 
 For **entire reviewed imported collections**, the batch job reads the source
@@ -82,7 +97,7 @@ Action into a time-only rudiment as a prerequisite:
 python tools/analyze_motion_collection.py --sources cmu_dance \
   --cache-root .cache/motion-sources \
   --output-root .cache/loop-analysis/cmu --max-actions 100 \
-  --max-previews 4 --target-bpm 124 --verify-native
+  --max-previews 4 --min-full-confidence 0.70 --target-bpm 124 --verify-native
 ```
 
 Each action gets its own independent evidence and optional preview folder;
@@ -107,10 +122,26 @@ job.json                      # source identity, ranking, preview links, review 
 source.capture.json           # original physical source-time samples (analysis view)
 stemlab-analysis.json         # StemLab motion evidence and all candidate loops
 estimated-source-beats.json   # only when a movement-grid hypothesis exists
+full-length/source_full_action.motion.json # only if confidence >= threshold
+loopable-clips.json          # independent candidate catalogue
 previews/*.motion.json        # optional, non-looping, estimated-tempo previews
 ```
 
-The compiled loop is a half-open integer-pip recording `[0, beats*64)`. It does
+The full-length motion uses the saved numbered rig profile, original capture
+fingerprint and SHA-256, original provenance and explicit estimated source BPM,
+confidence, alternative tempo hypotheses and unrepresented sub-pip endpoints.
+It is **non-looping** and has `bpm_status=estimated`. `--target-bpm` changes its
+presentation clock; it does not raise the confidence score. Set
+`--min-full-confidence` (default `0.70`) to adjust the conservative authoring
+policy, or `--no-full-motion` to produce evidence without compiling the complete
+Action. `--max-previews 0` independently disables loop conversion.
+
+The compiled loop is a half-open integer-pip recording `[0, beats*64)`.
+The separate `loopable-clips.json` references the original `previews/` recordings
+without duplicating compressed/large motion payloads. Each recording carries a
+`suggested_loop_period_pips` and `suggested_loop_playback` marker; wrapping is
+**not automatically enabled** in the native sampler. A loop remains a suggestion
+until seam/contact/retarget checks pass. It does
 **not** contain an explicit duplicate end pose, interpolate between repeats,
 remove root travel, apply foot-planting corrections or auto-loop in the native
 engine. For audition, the host must explicitly seek to the first pip at each
@@ -140,3 +171,54 @@ motion-analysis workflow treats NumPy and native playback as hard requirements.
 No third-party source downloads, model weights, musical tracks or rights-bearing
 motion assets are needed for these regression checks. Production and release
 workflows must independently use compatible **officially published** packages.
+
+
+## Test the motion candidates against bundled StemLab songs
+
+The dedicated source-first workflow also runs StemLab exploratory **audio** loop
+analysis over the three bundled example masters, checks beat evidence and pairs
+possible musical loop windows with native-verified synthetic rig loop previews.
+It generates an **audio-free interactive review visualiser** with waveform, beat
+markers, ranked candidates, source-rig motion and a local hash-verified audio
+file picker. This does not certify audio beat-1, foot planting or seamless
+transitions. See [song loop preview](song-loop-preview.md).
+
+## Whole-Action shortlist and source provenance
+
+The batch `index.json` contains independent `full_motion_shortlist` and
+`loopable_shortlist` arrays. Each complete Action records its original source
+archive, member, bytes' SHA-256, plan SHA-256, licence, rig profile fingerprint,
+selected BPM, competing tempo hypotheses, confidence and acceptance gate.
+Collection imports supply those provenance fields to the capture **before** any
+StemLab evaluation; the compiled `RigMotion.recording.provenance` retains them.
+The full motion preserves root travel and does **not** claim a safe repeating
+seam. The loop shortlist uses separate pose/velocity/root-drift criteria even
+when an Action fails the full-length >=70% confidence gate.
+
+This is a **kinematic** beat fit, not an audio matching probability. A numeric
+percentage can be calibrated against labelled motion/audio examples later;
+version `dancerudiments.full-motion-grid-fit.v1` is a transparent evidence score
+with separate periodicity, whole-action coverage, beat phase and control support.
+A performer moving regularly at 60 BPM may also fit a 120 BPM subdivision; both
+hypotheses remain available for manual selection, and no downbeat is silently
+approved.
+
+## Blender FBX/GLB/BLEND multi-Action batches
+
+Use the original `index.json` created by
+`tools/blender_motion_import.py extract` to analyse every explicitly listed
+source-time `.capture.json` without resampling or recompiling up front:
+
+```sh
+python tools/analyze_blender_capture_batch.py \
+  --index .cache/extracted/my-model/index.json \
+  --output-root .cache/loop-analysis/my-model \
+  --min-full-confidence 0.70 --max-previews 4 --verify-native
+```
+
+The job checks the exact indexed profile SHA-256 and the original source FBX/GLB/BLEND
+SHA-256 recorded by Blender inside each captured Action. It does not execute the
+original Blender file, open referenced external texture files or reinterpret
+unverified music tempo as a confirmed beat. The output has independently ranked
+`full_motion_shortlist` and `loopable_shortlist` arrays and rejects missing or
+inconsistent capture identities rather than silently retargeting to another rig.

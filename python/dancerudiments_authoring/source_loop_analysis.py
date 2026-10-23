@@ -12,20 +12,23 @@ import hashlib
 import json
 import math
 from pathlib import Path
+from fractions import Fraction
+from dataclasses import replace
 import tempfile
 
 from ._validation import ScoreError, canonical_json
 from .motion import write_rig_motion
 from .motion_clock import BeatMap
 from .motion_import import RigCapture, compile_capture, write_capture
-from .recording import RecordingClock
+from .recording import RecordingClock, MAX_RECORDING_VALUES
+from .full_motion_analysis import assess_full_motion, DEFAULT_THRESHOLD
 
 FORMAT = 'dancerudiments.source-motion-loop-job'
 BEAT_COUNTS = frozenset((1, 2, 4, 8, 16, 32))
 MAX_PREVIEWS = 12
 
 
-def source_capture_from_bvh(clip, *, calibration_frames=0):
+def source_capture_from_bvh(clip, *, calibration_frames=0, source_provenance=None):
     """Turn original BVH physical frames into a source-time capture, NOT a rudiment.
 
     Keep the native frame interval, exact source profile and SHA-256. Calibration
@@ -44,6 +47,8 @@ def source_capture_from_bvh(clip, *, calibration_frames=0):
         raise ScoreError('StemLab requires at least 16 source frames and three seconds of motion')
     times = tuple(float(index * clip.frame_time_seconds)
                   for index in range(calibration_frames, clip.frame_count))
+    if source_provenance is not None and not isinstance(source_provenance, dict):
+        raise ScoreError('source_provenance must be a provenance dictionary')
     provenance = dict(clip.metadata, source_file_sha256=clip.source_sha256,
                       source_frame_time_seconds=str(clip.frame_time_seconds),
                       source_profile_sha256=clip.profile.fingerprint,
@@ -153,9 +158,12 @@ def _native_check(motion):
     """
     player = motion.player()  # explicit opt-in: native extension must be installed
     total = len(motion.recording.samples)
-    assert player.start_pip == 0 and player.sample_count == total
-    for pip in sorted(set((0, 1, total // 2, total - 1))):
-        expected = motion.profile.decode(motion.recording.samples[pip])
+    start = motion.recording.clock.start_pip
+    if player.start_pip != start or player.sample_count != total:
+        raise RuntimeError('Native recording start pip / sample count differs from authored motion')
+    for offset in sorted(set((0, 1, total // 2, total - 1))):
+        expected = motion.profile.decode(motion.recording.samples[offset])
+        pip = start + offset  # Full Actions can begin at negative absolute pips.
         actual = player.sample(pip)
         if len(actual) != len(expected) or any(
                 not math.isclose(a, b, abs_tol=5e-7, rel_tol=5e-7)
@@ -164,9 +172,60 @@ def _native_check(motion):
     return True
 
 
+def _annotate_motion(motion, **metadata):
+    """Keep the exact native Recording schema; enrich its preserved provenance."""
+    info = dict(motion.recording.provenance, **metadata)
+    return replace(motion, recording=replace(motion.recording,
+                                             provenance_json=canonical_json(info)))
+
+
+def _full_action_recording(capture, fit, *, presentation_bpm, original_source_sha256):
+    """Quantise the *entire valid source interval* without endpoint extrapolation.
+
+    Start pips may be negative relative to the motion beat-zero hypothesis.
+    Omitted sub-pip ends are explicitly reported, never stretched or fabricated.
+    """
+    source_bpm = fit['selected_bpm']
+    zero = fit['selected_beat_zero_seconds']
+    if not source_bpm or zero is None:
+        raise ValueError('A valid estimated source BPM and phase are required')
+    step = Fraction(60, 64) / Fraction(str(source_bpm))
+    origin = Fraction(str(zero))
+    first = math.ceil((capture._times[0] - origin) / step)
+    last = math.floor((capture._times[-1] - origin) / step)
+    count = last - first + 1
+    if count < 2 or count > MAX_RECORDING_VALUES // len(capture.profile.channels):
+        raise ValueError('Entire source exceeds the available native sample budget')
+    from .motion_clock import BeatMap
+    source = BeatMap.from_bpm(str(source_bpm), beat_zero_seconds=str(zero),
+        source='StemLab source-motion inferred grid; confidence is heuristic, not music-confirmed',
+        bpm_status='estimated', phase_status='estimated')
+    clock = RecordingClock(float(presentation_bpm),
+        'Whole original Action on estimated source grid; target BPM is presentation only',
+        'estimated', 0., 'estimated', first)
+    motion = compile_capture(capture, name='source_full_action',
+                             source_beat_map=source, clock=clock, sample_count=count)
+    motion = _annotate_motion(motion, motion_kind='source_full_action',
+        estimated_source_bpm=source_bpm, grid_fit_method=fit['method'],
+        grid_fit_confidence=fit['confidence'],
+        source_original_sha256=original_source_sha256,
+        musical_timing_verified=False, source_capture_complete=True,
+        playback_loop_policy='non_looping')
+    actual_start = origin + first * step
+    actual_end = origin + last * step
+    return motion, dict(source_bounds_seconds=[float(capture._times[0]), float(capture._times[-1])],
+                        sampled_bounds_seconds=[float(actual_start), float(actual_end)],
+                        omitted_head_seconds=round(float(actual_start-capture._times[0]), 9),
+                        omitted_tail_seconds=round(float(capture._times[-1]-actual_end), 9),
+                        start_pip=first, end_pip_exclusive=last+1,
+                        sample_count=count, source_pips_per_beat=64)
+
+
 def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
                            min_bpm=60.0, max_bpm=200.0, target_bpm=None,
-                           max_previews=4, verify_native=False):
+                           max_previews=4, verify_native=False,
+                           full_motion_confidence_threshold=DEFAULT_THRESHOLD,
+                           export_full_motion=True):
     """Produce a new, transactional analysis directory and optional preview motions.
 
     Every preview is derived FROM a StemLab source-time loop candidate, never from
@@ -181,6 +240,12 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
         raise ValueError('BPM range must be within 30..300 and strictly increasing')
     if target_bpm is not None and not 30 <= _real(target_bpm, 'target_bpm') <= 300:
         raise ValueError('target_bpm must be within 30..300')
+    if type(export_full_motion) is not bool:
+        raise ValueError('export_full_motion must be true or false')
+    if (type(full_motion_confidence_threshold) not in (float, int)
+            or not math.isfinite(full_motion_confidence_threshold)
+            or not 0 <= full_motion_confidence_threshold <= 1):
+        raise ValueError('Full-motion confidence threshold must be within 0..1')
     if original_source_sha256 is not None and (not isinstance(original_source_sha256, str)
             or len(original_source_sha256) != 64
             or any(d not in '0123456789abcdef' for d in original_source_sha256)):
@@ -208,6 +273,35 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
         if report.get('estimated_beat_map') is not None:
             from .recording import _write_json_document
             _write_json_document(stage / 'estimated-source-beats.json', report['estimated_beat_map'])
+        fit = assess_full_motion(report, capture,
+            confidence_threshold=full_motion_confidence_threshold)
+        full = []
+        if export_full_motion and fit['auto_convert']:
+            try:
+                presentation = target_bpm if target_bpm is not None else fit['selected_bpm']
+                full_motion, boundaries = _full_action_recording(capture, fit,
+                    presentation_bpm=presentation,
+                    original_source_sha256=original_source_sha256)
+                (stage / 'full-length').mkdir()
+                path = 'full-length/source_full_action.motion.json'
+                write_rig_motion(stage / path, full_motion)
+                native = _native_check(full_motion) if verify_native else False
+                full.append(dict(filename=path,
+                    recording_sha256=hashlib.sha256((stage/path).read_bytes()).hexdigest(),
+                    source_original_sha256=original_source_sha256,
+                    source_capture_sha256=digest,
+                    profile_sha256=capture.profile.fingerprint,
+                    motion_type='complete_source_action', loopable=False,
+                    bpm_estimated=fit['selected_bpm'],
+                    target_bpm_nominal=round(float(presentation), 6),
+                    confidence=fit['confidence'],
+                    confidence_percent=fit['confidence_percent'],
+                    confidence_method=fit['method'],
+                    native_samples_verified=native, requires_review=True,
+                    audio_beat_alignment_verified=False, **boundaries))
+            except (ScoreError, ValueError) as exc:
+                fit['auto_convert'] = False
+                fit['reasons'].append('full_conversion_unavailable: '+str(exc))
         choices, rejected = _preview_eligible(report, capture, target_bpm=target_bpm)
         summaries = []
         if max_previews:
@@ -227,6 +321,12 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
             name = f'loop_{index+1:03d}_{beats:02d}beats'
             motion = compile_capture(capture, name=name, source_beat_map=source_map,
                                      clock=clock, sample_count=beats*64)
+            motion = _annotate_motion(motion, motion_kind='source_loop_candidate',
+                suggested_loop_period_pips=beats*64,
+                suggested_loop_boundary='start_inclusive_end_exclusive',
+                suggested_loop_playback='repeat_after_manual_review',
+                source_original_sha256=original_source_sha256,
+                musical_timing_verified=False, repeat_seam_verified=False)
             filename = f'previews/{name}.motion.json'
             write_rig_motion(stage / filename, motion)
             native = _native_check(motion) if verify_native else False
@@ -238,8 +338,19 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
                 speed_ratio=round(speed_ratio, 6), score=round(rank, 6),
                 stemlab_score=candidate['score'], stemlab_diagnostics=candidate,
                 start_pip=0, end_pip_exclusive=beats*64, native_samples_verified=native,
+                motion_type='loopable_candidate', recommended_loop_pips=beats*64,
+                suggested_playback='repeat_after_manual_review',
                 requires_review=True, loop_seam_approved=False,
                 mesh_deformation_verified=False, audio_beat_alignment_verified=False))
+        # Separate catalogue from complete source Actions; these paths reference
+        # the native previews instead of copying large rig payloads twice.
+        loop_catalogue = dict(format='dancerudiments.loopable-motion-candidates',
+            schema_version=1, confidence_interpretation='source_motion_heuristics_only',
+            original_source_sha256=original_source_sha256,
+            source_capture_sha256=digest,
+            clips=[dict(x) for x in summaries])
+        (stage / 'loopable-clips.json').write_text(
+            json.dumps(loop_catalogue, indent=2, allow_nan=False)+'\n', encoding='utf-8')
         document = dict(format=FORMAT, schema_version=1,
             source_kind='original_bvh_or_blender_capture',
             source_original_sha256=original_source_sha256,
@@ -249,11 +360,17 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
             stemlab_analysis_sha256=hashlib.sha256((stage / 'stemlab-analysis.json').read_bytes()).hexdigest(),
             source_clock='original source seconds', pips_per_beat=64,
             inferred_tempo_verified=False, confirmed_musical_downbeat=False,
+            full_motion_fit=fit, full_motion_confidence_threshold=full_motion_confidence_threshold,
+            full_motion_count=len(full), full_motion_clips=full,
+            full_motion_shortlisted=bool(full),
+            loopable_clip_count=len(summaries), loopable_clips=summaries,
+            loopable_catalogue_file='loopable-clips.json',
             max_previews=max_previews, preview_count=len(summaries), previews=summaries,
             unconverted_candidate_count=len(report.get('loop_candidates', [])) - len(summaries),
             rejected_candidates=rejected,
             limitations=['Full original Actions remain unchanged and non-looping.',
                 'Motion beat grids, bar phase and loop rankings are hypotheses, not music synchronisation.',
+                'Full-length grid-fit confidence is an uncalibrated heuristic, not a probability.',
                 'Native sample checks do not prove foot contacts or skinned mesh continuity.',
                 'Source licenses, retargeting compatibility and final seam transitions require separate review.'])
         (stage / 'job.json').write_text(json.dumps(document, indent=2, allow_nan=False) + '\n',

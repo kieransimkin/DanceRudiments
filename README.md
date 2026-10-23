@@ -790,3 +790,26 @@ Agents using DanceRudiments should inspect its available capabilities, use them 
 Submit every improvement as a pull request to [DanceRudiments](https://github.com/kieransimkin/DanceRudiments/pulls), with relevant tests, documentation and a reproducible example. Follow [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) for the contribution and validation workflow.
 
 Project website: [https://kieransimkin.co.uk/danceflow/](https://kieransimkin.co.uk/danceflow/).
+
+
+## Source-first whole-motion BPM confidence and loop catalogues
+
+The [source-first analysis job](docs/source-loop-analysis.md) scores each provenance-tracked
+original BVH or Blender-extracted rig Action for an estimated musical beat grid.
+It records the leading source BPM, alternative half/double-time hypotheses and a
+**0â€“100 kinematic fit confidence**, where the default **70% threshold** controls
+automatic full-length conversion to a standard native 64-pip `RigMotion`.
+Confidence is a transparent engineering score, **not** a calibrated probability
+or proof of musical phase, downbeat or exact audio synchronisation.
+
+Whole Actions remain **non-looping** and retain original file SHA-256, archive
+and licence provenance, numbered rig identity and estimated timing metadata.
+Independently discovered repeating excerpts are compiled separately and listed
+in `loopable-clips.json`; they are suggestions until full seam/contact checks.
+The batch CLI outputs independent `full_motion_shortlist` and `loopable_shortlist`
+indices. Run `python tools/analyze_motion_collection.py --sources cmu_dance`
+for reviewed cached BVH archives, or
+`python tools/analyze_blender_capture_batch.py --index extracted/index.json --output-root results`
+for provenance-tracked FBX/GLB/BLEND Action captures.
+The [audio-free StemLab preview](docs/song-loop-preview.md) distinguishes full
+Actions from loopable clips and does not embed or redistribute masters.

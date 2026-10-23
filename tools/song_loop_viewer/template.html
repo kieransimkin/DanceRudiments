@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DanceRudiments × StemLab · Song loop preview</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1119;--panel:#131e2c;--raised:#1a293b;--text:#e4edf7;--soft:#9badc0;--a:#5fd8cd;--b:#ecaa70;--line:#304559}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 80% -20%,#203950 0,transparent 38%),var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,Segoe UI,Arial,sans-serif}main{max-width:1400px;padding:32px 24px 60px;margin:auto}header{display:flex;flex-wrap:wrap;align-items:end;justify-content:space-between;gap:16px;margin-bottom:24px}h1{margin:0;font-size:clamp(1.5rem,2.7vw,2.4rem);letter-spacing:-.045em}h2{font-size:1rem;margin:0 0 12px;letter-spacing:-.02em}.eyebrow{color:var(--a);text-transform:uppercase;letter-spacing:.18em;font-size:10px;font-weight:700}.sub{color:var(--soft);margin:5px 0 0}.pill{padding:5px 9px;border:1px solid #526b6a;color:var(--a);border-radius:999px;font-size:11px}.grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(310px,1fr);gap:16px}.box{border:1px solid var(--line);background:#121e2bd9;border-radius:14px;padding:20px;min-width:0}.wide{grid-column:1/-1}.label{font-size:11px;color:var(--soft);margin-bottom:5px;display:block}.controls{display:grid;grid-template-columns:1.7fr 1.7fr 1.4fr auto;gap:12px;align-items:end}.select,button,input[type=file]{width:100%;border:1px solid #425569;border-radius:7px;min-height:39px;background:var(--raised);color:var(--text);padding:8px 10px;font:inherit}button{width:auto;cursor:pointer;background:#244357;border-color:#467f82;font-weight:700}button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offset:3px}button:disabled{opacity:.4;cursor:default}.small{font-size:12px;color:var(--soft)}.note{color:var(--b);font-size:11px;margin-top:7px;min-height:16px}.track{height:170px;display:block;width:100%;border-radius:8px;background:#08121c;touch-action:manipulation;cursor:crosshair}.stage{height:335px;display:block;width:100%;background:radial-gradient(ellipse at 50% 67%,#19374d,#09131d 75%);border-radius:10px}.meta{display:flex;gap:10px;flex-wrap:wrap}.stat{flex:1 1 110px;padding:11px;background:#172434;border-radius:8px}.stat strong{display:block;font-size:19px;color:var(--text)}.stat span{display:block;font-size:10px;color:var(--soft)}.media{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}.media input{max-width:300px;font-size:11px}.media audio{max-width:100%;height:39px;flex:1;min-width:160px}.message{font-size:11px;color:var(--soft)}table{width:100%;border-collapse:collapse;font-size:12px}td,th{text-align:left;padding:7px;border-bottom:1px solid #263a4e}th{color:var(--soft);font-weight:600}td.num{text-align:right;font-variant-numeric:tabular-nums}.panel-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}.foot{color:var(--soft);font-size:11px;margin-top:20px}.warn{border-left:2px solid var(--b);padding:10px 12px;background:#242019;color:#f1cda8;font-size:12px;margin-top:15px}.no-data{display:none;color:var(--b);padding:8px 0}code{color:#bce7e4}a{color:#9deddf}@media(max-width:850px){main{padding:18px 12px}.grid{grid-template-columns:1fr}.wide{grid-column:auto}.controls{grid-template-columns:1fr}.box{padding:15px}.stage{height:290px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body><main>
+<header><div><div class="eyebrow">DanceFlow / StemLab / DanceRudiments</div><h1>Motion + music: complete dances and loops</h1><p class="sub">Original song beat evidence · StemLab audio-loop suggestions · source-first rig previews</p></div><div class="pill">Review only · no approved loops</div></header>
+<div class="grid">
+<section class="box wide"><div class="controls">
+<label><span class="label">StemLab song master</span><select class="select" id="song" aria-label="Choose song"></select></label>
+<label><span class="label">Ranked audio + motion pairing</span><select class="select" id="candidate" aria-label="Choose candidate"></select></label>
+<label><span class="label">Browse rig motions independently</span><select class="select" id="motion" aria-label="Browse full Actions and loops"></select></label>
+<button id="silent">▶ Silent motion</button></div>
+<div class="meta" id="metrics" style="margin-top:14px"></div>
+<div class="media"><label class="small" for="audiofile">Load the original master locally</label><input id="audiofile" type="file" accept="audio/*,.mp3,.wav,.flac" aria-label="Original bundled song master"><audio controls id="audio" preload="none"></audio></div>
+<div class="note" id="media-status" aria-live="polite">No audio is embedded in the CI artifact. Choose a local master for hash-verified playback.</div>
+</section>
+<section class="box wide"><div class="panel-head"><h2>Full-song waveform, beat grid and selected interval</h2><span class="small" id="cursor">00:00 / 00:00</span></div><canvas class="track" id="timeline" role="img" aria-label="Song waveform with model-estimated beats and selected loop region"></canvas><p class="small">Teal: beat timestamps. Amber: detected or provisional bar anchors. Pale region: selected audio cut pair. Click to seek after loading audio.</p></section>
+<section class="box"><div class="panel-head"><h2>Rig motion preview</h2><span class="small" id="progress">0.00 beats</span></div><canvas id="skeleton" class="stage" role="img" aria-label="Projected source rig joint motion, not a skinned mesh or retarget verification"></canvas><p class="small" id="motion-caution">Projected source-bone wireframe, not the target Kandi Boom skin. Loop seam and retargeting remain unverified.</p></section>
+<section class="box"><h2>Analysis and provenance</h2><table><tbody id="provenance"></tbody></table><div id="no-data" class="no-data">No compatible source-motion candidate is available for this track.</div><div class="warn" id="warnings">Tempo and meter may be inferred; audition before accepting anything. No media is redistributed by this artifact.</div></section>
+<section class="box wide"><h2>StemLab candidate details</h2><table><thead><tr><th>Source candidate</th><th>Rig candidate</th><th>Mode</th><th>Music cut</th><th class="num">Repeat</th><th class="num">Rate</th><th class="num">Ranking</th></tr></thead><tbody id="ranking"></tbody></table><p class="foot">The audio analyser runs in exploratory mode without a vocal-isolation stem; candidates may fail vocal and waveform seam gates. Matched motion is source time resampled at 64 pips/beat and is not approved as a closed rig loop or music-sync performance. Synthetic motion is used by this integration CI test to avoid distributing third-party mocap.</p></section>
+</div>
+</main>
+<script type="application/json" id="preview-data">%%PREVIEW_DATA%%</script>
+<script>
+'use strict';
+const DATA=JSON.parse(document.getElementById('preview-data').textContent);
+const byId=id=>document.getElementById(id);
+const songSelect=byId('song'), candidateSelect=byId('candidate'), motionSelect=byId('motion'), audio=byId('audio');
+let selection=0, manualMotion=false, silent=false, silentStarted=0, localAudioURL=null, animationHandle=0, lastTime=0;
+const songs=DATA.songs, motions=new Map(DATA.motions.map(x=>[x.id,x]));
+const fmt=t=>Number.isFinite(t)?`${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}`:'—';
+const currentSong=()=>songs[selection];
+const currentPair=()=>manualMotion?null:(currentSong()?.pairs[Number(candidateSelect.value)]||null);
+const motionFor=()=>motions.get(motionSelect.value)||motions.get(currentPair()?.motion_id);
+const safe=t=>String(t??'—');
+for(const [i,s] of songs.entries()){const o=document.createElement('option');o.value=i;o.textContent=`${s.title} — ${s.artist}`;songSelect.append(o)}
+for(const m of DATA.motions){const o=document.createElement('option');o.value=m.id;
+ o.textContent=`${m.motion_kind==='full_length'?'FULL':'LOOP'} · ${m.name} · ${m.estimated_bpm.toFixed(1)} BPM${m.full_motion_confidence!=null?' · '+Math.round(m.full_motion_confidence*100)+'% fit':''}`;
+ motionSelect.append(o)}
+function stat(name,value){let el=document.createElement('div');el.className='stat';let a=document.createElement('strong');a.textContent=value;let b=document.createElement('span');b.textContent=name;el.append(a,b);return el}
+function textCell(row,text,klass){let el=document.createElement('td');el.textContent=safe(text);if(klass)el.className=klass;row.append(el)}
+function provenance(label,value){const row=document.createElement('tr');textCell(row,label);textCell(row,value);byId('provenance').append(row)}
+function resetAudio(){audio.pause();audio.removeAttribute('src');audio.load();if(localAudioURL)URL.revokeObjectURL(localAudioURL);localAudioURL=null;byId('audiofile').value='';}
+function updateSong(){resetAudio();silent=false;manualMotion=false;byId('silent').textContent='▶ Silent motion';
+ const s=currentSong();byId('media-status').textContent='No audio embedded. Select the matching local master to unlock audio playback.';
+ candidateSelect.replaceChildren();for(const [i,p] of (s.pairs||[]).entries()){const o=document.createElement('option');o.value=i;o.textContent=`#${i+1} · ${p.song_beats} music beats · ${p.motion_kind==='full_length'?'FULL ACTION':'LOOP'} · ${p.motion_repeats}× motion · ${p.estimated_score.toFixed(3)}`;candidateSelect.append(o)}
+ candidateSelect.disabled=!s.pairs?.length;
+ motionSelect.value=(s.pairs?.[0]?.motion_id||DATA.motions[0]?.id||'');
+ byId('no-data').textContent='No music pairing passed the preview gates; select a full Action or loop directly from the rig catalogue.';
+ byId('no-data').style.display=s.pairs?.length?'none':'block';
+ byId('metrics').replaceChildren(stat('Audio BPM / inferred',s.grid?s.grid.bpm.toFixed(2):'Unknown'),stat('Detected beats',String(s.grid?.beats?.length||0)),stat('Exploratory audio loops',String(s.audio_loop_counts?.exploratory||0)),stat('Full-length shortlist',String(DATA.motions.filter(m=>m.motion_kind==='full_length').length)),stat('Loopable candidates',String(DATA.motions.filter(m=>m.loopable).length)),stat('Motion matches',String(s.pairs?.length||0)));
+ byId('provenance').replaceChildren();provenance('Audio identity',`${s.source_sha256?.slice(0,20)||'—'}…`);
+ provenance('Source status',s.status);provenance('Beat evidence',s.grid?.beat_status);provenance('Bar phase',s.grid?.downbeat_status);
+ provenance('Meter',s.grid?.meter_status);provenance('Sample rate',s.waveform?.sample_rate ? `${s.waveform.sample_rate} Hz`:'—');
+ provenance('Master duration',fmt(s.waveform?.duration_seconds));provenance('Audio-loop gate','Exploratory (no vocal stem)');
+ byId('warnings').textContent=`${safe(s.grid?.tempo_ambiguity||'Beat and meter authority is limited to the labelled source.')} No audio is shipped. No candidate has verified audio or rig seams.`;
+ updateCandidate();}
+function updateCandidate(){const p=currentPair();const m=motionFor();
+ byId('motion-caution').textContent=m?`${m.name} · ${m.skeleton_kind==='source_portable_fk'?'Portable source skeleton':'Channel-motion diagnostic'} · ${m.raw_sample_count} native 64-pip samples · rig deformation not checked`:'No rig motion loaded.';
+ byId('ranking').replaceChildren();const s=currentSong();(s.pairs||[]).forEach((q,i)=>{const r=document.createElement('tr');if(i===Number(candidateSelect.value))r.style.background='#244357';
+ textCell(r,q.loop_id);textCell(r,q.motion_kind==='full_length'?`Full ${Math.round(100*(q.full_motion_confidence||0))}% fit`:'Loopable');textCell(r,q.audio_source.replace('stemlab_',''));textCell(r,`${fmt(q.song_start_seconds)}–${fmt(q.song_end_seconds)}`);textCell(r,`${q.motion_repeats}×`,'num');textCell(r,`${q.playback_tempo_ratio.toFixed(2)}×`,'num');textCell(r,q.estimated_score.toFixed(3),'num');byId('ranking').append(r)});
+ drawTimeline();drawRig(0);}
+async function validateAudio(file){const s=currentSong();resetAudio();if(!file)return;
+ if(!globalThis.crypto?.subtle){byId('media-status').textContent='SHA-256 unavailable in this browser; cannot verify master. Audio playback blocked.';return;}
+ if(file.size!==s.size_bytes){byId('media-status').textContent=`Wrong file length for ${s.title}; expected ${s.size_bytes} bytes.`;return;}
+ byId('media-status').textContent='Checking SHA-256 against the exact bundled master…';
+ const buffer=await file.arrayBuffer();const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',buffer))].map(x=>x.toString(16).padStart(2,'0')).join('');
+ if(currentSong()!==s)return;
+ if(hash!==s.source_sha256){byId('media-status').textContent='Wrong master or mix: SHA-256 differs from the bundled reference. Playback blocked.';return;}
+ localAudioURL=URL.createObjectURL(file);audio.src=localAudioURL;
+ byId('media-status').textContent='Exact master verified locally. Press Play on the audio control or use Silent motion.';
+}
+byId('audiofile').addEventListener('change',e=>validateAudio(e.target.files?.[0]).catch(ex=>{byId('media-status').textContent=`Could not verify audio: ${ex.message}`}));
+songSelect.addEventListener('change',()=>{selection=Number(songSelect.value);updateSong()});
+candidateSelect.addEventListener('change',()=>{manualMotion=false;const p=currentPair();
+ if(p)motionSelect.value=p.motion_id;
+ if(localAudioURL&&p)audio.currentTime=p.song_start_seconds;
+ updateCandidate()});
+motionSelect.addEventListener('change',()=>{manualMotion=true;silent=false;audio.pause();updateCandidate()});
+byId('silent').addEventListener('click',()=>{silent=!silent;silentStarted=performance.now();if(silent)audio.pause();byId('silent').textContent=silent?'■ Stop silent preview':'▶ Silent motion'});
+function beatPosition(times,t){if(!times?.length)return 0;let lo=0,hi=times.length;while(lo<hi){const m=(lo+hi)>>1;if(times[m]<=t)lo=m+1;else hi=m}const i=Math.max(0,lo-1);if(i>=times.length-1)return i;return i+Math.max(0,Math.min(1,(t-times[i])/(times[i+1]-times[i])))}
+function motionPhase(now){let p=currentPair(),m=motionFor();if(!m)return 0;
+ if(!p){const duration=(performance.now()-silentStarted)/1000;
+   const motionBeats=(silent?Math.max(0,duration):0)*m.estimated_bpm/60;
+   const progress=motionBeats/Math.max(.001,m.beats);
+   return m.loopable?progress%1:Math.max(0,Math.min(.99999,progress));}
+ let beats=currentSong()?.grid?.beats||[];const songPhase=beatPosition(beats,now)-p.start_beat_index;
+ return p.motion_kind==='full_length' ? Math.max(0,Math.min(.99999,songPhase/p.motion_beats)) : ((songPhase%p.motion_beats)+p.motion_beats)%p.motion_beats/p.motion_beats;}
+function sizeCanvas(el){const dpr=Math.min(2,window.devicePixelRatio||1);const w=Math.max(100,el.clientWidth),h=Math.max(100,el.clientHeight);if(el.width!==Math.round(w*dpr)||el.height!==Math.round(h*dpr)){el.width=Math.round(w*dpr);el.height=Math.round(h*dpr)}const ctx=el.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);return {ctx,w,h}}
+function drawTimeline(){let s=currentSong();if(!s)return;let {ctx,w,h}=sizeCanvas(byId('timeline'));ctx.clearRect(0,0,w,h);const peaks=s.waveform?.peaks||[];const duration=s.waveform?.duration_seconds||1;
+ ctx.fillStyle='#0c1a27';ctx.fillRect(0,0,w,h);if(peaks.length){const dx=w/peaks.length;for(let i=0;i<peaks.length;i++){const amplitude=peaks[i];const a=Math.min(h*.45,Math.sqrt(amplitude)*h*.42);ctx.fillStyle='#346b80';ctx.fillRect(i*dx,h/2-a,Math.max(1,dx),2*a)}}
+ const p=currentPair();if(p){const a=p.song_start_seconds/duration*w,b=p.song_end_seconds/duration*w;ctx.fillStyle='#d3dcb323';ctx.fillRect(a,0,b-a,h);ctx.fillStyle='#e8b07e';ctx.fillRect(a,0,2,h);ctx.fillRect(b-2,0,2,h)}
+ const beats=s.grid?.beats||[],downs=s.grid?.downbeats||[];let down=0;
+ for(const t of beats){const x=t/duration*w;if(x<0||x>w)continue;while(down<downs.length&&downs[down]<t-.02)down++;const anchor=down<downs.length&&Math.abs(downs[down]-t)<.03;ctx.strokeStyle=anchor?'#eaa66e88':'#5fd8cd3d';ctx.beginPath();ctx.moveTo(x,anchor?8:28);ctx.lineTo(x,anchor?h-8:h-28);ctx.stroke()}
+ const t=localAudioURL?audio.currentTime:lastTime;ctx.fillStyle='#fff';ctx.fillRect(t/duration*w,0,1.5,h);for(let k=0;k<=4;k++){ctx.fillStyle='#93aabd';ctx.font='10px system-ui';const sec=duration*k/4;ctx.fillText(fmt(sec),Math.min(w-33,w*k/4+5),h-7)}
+ byId('cursor').textContent=`${fmt(t)} / ${fmt(duration)}`;}
+function drawRig(phase){const {ctx,w,h}=sizeCanvas(byId('skeleton'));ctx.clearRect(0,0,w,h);ctx.fillStyle='#0b1723';ctx.fillRect(0,0,w,h);
+ const m=motionFor();if(!m?.xyz?.length){ctx.fillStyle='#8ca6b9';ctx.textAlign='center';ctx.font='14px system-ui';ctx.fillText('No motion recording to preview',w/2,h/2);return;}
+ const frame=m.xyz[Math.min(m.xyz.length-1,Math.floor(phase*m.xyz.length))],all=m.xyz;
+ if(!frame.length)return;const projection=p=>[p[0]-.30*p[1],-p[2]+.16*p[1]];
+ const xs=[],ys=[];for(const f of all)for(const p of f){const [x,y]=projection(p);xs.push(x);ys.push(y)}
+ const xmin=Math.min(...xs),xmax=Math.max(...xs),ymin=Math.min(...ys),ymax=Math.max(...ys);
+ const span=Math.max(.001,xmax-xmin,ymax-ymin);const scale=Math.min(w*.70,h*.72)/span;
+ const place=p=>{const [x,y]=projection(p);return [(x-(xmin+xmax)/2)*scale+w/2,(y-(ymin+ymax)/2)*scale+h/2]};
+ ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#57758b';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,h*.82);ctx.lineTo(w,h*.82);ctx.stroke();
+ for(const [a,b] of m.links){const u=place(frame[a]),v=place(frame[b]);ctx.beginPath();ctx.strokeStyle='#65dfd3';ctx.lineWidth=3;ctx.moveTo(...u);ctx.lineTo(...v);ctx.stroke()}
+ for(const p of frame){const [x,y]=place(p);ctx.beginPath();ctx.fillStyle='#f0b482';ctx.arc(x,y,3.8,0,Math.PI*2);ctx.fill()}
+ ctx.textAlign='left';ctx.fillStyle='#8ca6b9';ctx.font='11px system-ui';ctx.fillText('Source rig · illustrative projected FK, not Kandi skinning',12,h-12);
+}
+byId('timeline').addEventListener('click',e=>{if(!localAudioURL)return;const rect=e.target.getBoundingClientRect();audio.currentTime=(e.clientX-rect.left)/rect.width*currentSong().waveform.duration_seconds});
+function frame(now){animationHandle=requestAnimationFrame(frame);const pair=currentPair();let time=lastTime;
+ if(silent&&pair){const bpm=currentSong().grid?.bpm||120;const period=pair.song_beats*60/bpm;time=pair.song_start_seconds+(pair.motion_kind==='full_length'?Math.min(period,(now-silentStarted)/1000):((now-silentStarted)/1000%period));}
+ else if(localAudioURL){time=audio.currentTime;if(pair&&!audio.paused&&time>=pair.song_end_seconds){if(pair.motion_kind==='full_length'){audio.pause();time=pair.song_end_seconds}else{audio.currentTime=pair.song_start_seconds;time=audio.currentTime}}}
+ lastTime=time;drawRig(motionPhase(time));drawTimeline();const p=currentPair();const beat=p?(beatPosition(currentSong().grid?.beats,time)-p.start_beat_index):0;byId('progress').textContent=p?`${Math.max(0,beat).toFixed(2)} music beats`:`${((motionFor()?.beats||0)*motionPhase(time)).toFixed(2)} motion beats`;}
+updateSong();animationHandle=requestAnimationFrame(frame);
+window.addEventListener('pagehide',()=>{cancelAnimationFrame(animationHandle);resetAudio()});
+</script>
+</body></html>
