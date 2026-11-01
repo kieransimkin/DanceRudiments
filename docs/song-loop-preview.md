@@ -65,6 +65,63 @@ BVH with independently moving arm and knee controls**: not the Kandi Boom
 skinned mesh or third-party mocap. This checks the integration without bundling
 restricted CMU motion or implying it has passed retargeting QA.
 
+## Source-bound timing review
+
+The source-analysis job exports actual movement accents and inferred contact
+events in `motion-events.json`. Compatible StemLab provides
+`prepare-alignment-events`, `align-motion-audio` and
+`confirm-motion-alignment` through `python -m stemlab.rig_motion_cli`.
+Alignment requires the exact capture/audio source bytes, explicit clock IDs and
+an initial `stemlab.motion-clock-map.v1`. Its relationship must distinguish an
+original shared performance from creative retiming to a different song. Saved
+individual model runs or observed onset events can supply audio evidence;
+predicted regular grids cannot stand in for observations.
+
+```bash
+python tools/build_song_loop_preview.py \
+  --stemlab-root ../stemlab \
+  --motion-job .cache/source-loops/action \
+  --alignment-report .cache/timing/alignment.json \
+  --output-dir .cache/timing-review --require-all-songs
+```
+
+The builder verifies that each report belongs to an actual displayed source
+capture and one of the exact bundled masters, then embeds the report plus its
+exact file and canonical content hashes. Repaired loops use their corrected
+capture identity and their own zero-based clock; original excerpts keep their
+original source seconds. The projected skeleton uses the same offline world
+evaluator as analysis and handles non-topological bone order. Unsupported
+control rigs show an explicitly labelled channel diagnostic.
+
+**Review motion timing** lists source-matched candidates without selecting one
+as approved. Enable a candidate to preview its affine or variable-tempo mapping;
+phase corrections are explicit audio-clock offsets. Missing coverage is blank,
+never extrapolated or joined across gaps, and loop recordings keep their
+half-open endpoint. The control reads the existing preview frames rather than
+introducing another native motion player.
+
+After loading the exact local master, enter a reviewer name and choose **Save
+timing decision**. The downloaded `stemlab.motion-alignment-review.v1` binds to
+the original report and both source hashes. Optional beat-one seconds and meter
+are confirmed only when entered; leaving either blank preserves its unconfirmed
+status. Original evidence, motion files, seam approval and retargeting approval
+remain separate. StemLab's `validate_alignment_revision` validates the saved
+revision before it is used elsewhere. Later CLI revisions can reference the
+previous revision hash and supply explicit source-clock anchors.
+
+`tests/typescript/song-alignment-review.test.js` checks source matching, variable
+timing, gaps, half-open endpoints and explicit confirmation semantics.
+`test_song_alignment_review.py` checks JavaScript/StemLab revision interchange.
+The browser gate's `--require-timing-review` option exercises the visible
+controls and validates its downloaded **automated test** revision; that test is
+not a musical review by the user.
+
+Keep Numba compilation caches project-owned when running the audio baseline:
+for example `NUMBA_CACHE_DIR="$PWD/.cache/numba-song-review"`. If compiled
+cache contents from another environment cause a native crash, select a new
+cache directory. Local validation used unchanged librosa/Numba packages with a
+fresh cache; it did not replace the detector or force a preferred BPM.
+
 ## Preview interface
 
 The CI artifact `stemlab-song-motion-loop-preview` contains:

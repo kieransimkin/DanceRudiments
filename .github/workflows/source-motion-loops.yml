@@ -6,6 +6,12 @@ on:
     paths:
       - '.github/workflows/source-motion-loops.yml'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/world_motion.py'
+      - 'python/dancerudiments_authoring/loop_repair.py'
+      - 'tools/source_motion_options.py'
+      - 'tests/python/test_source_motion_completion.py'
+      - 'tests/python/test_world_motion.py'
+      - 'tests/python/test_loop_repair.py'
       - 'python/dancerudiments_authoring/full_motion_analysis.py'
       - 'tools/analyze_source_motion.py'
       - 'tools/analyze_motion_collection.py'
@@ -13,6 +19,8 @@ on:
       - 'tools/song_loop_viewer/**'
       - 'tools/test_song_loop_preview_browser.py'
       - 'tests/python/test_song_loop_preview.py'
+      - 'tests/python/test_song_alignment_review.py'
+      - 'tests/typescript/song-alignment-review.test.js'
       - 'docs/song-loop-preview.md'
       - 'tests/python/test_source_loop_analysis.py'
       - 'tests/python/test_full_motion_confidence.py'
@@ -24,6 +32,12 @@ on:
     paths:
       - '.github/workflows/source-motion-loops.yml'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/world_motion.py'
+      - 'python/dancerudiments_authoring/loop_repair.py'
+      - 'tools/source_motion_options.py'
+      - 'tests/python/test_source_motion_completion.py'
+      - 'tests/python/test_world_motion.py'
+      - 'tests/python/test_loop_repair.py'
       - 'python/dancerudiments_authoring/full_motion_analysis.py'
       - 'tools/analyze_source_motion.py'
       - 'tools/analyze_motion_collection.py'
@@ -31,6 +45,8 @@ on:
       - 'tools/song_loop_viewer/**'
       - 'tools/test_song_loop_preview_browser.py'
       - 'tests/python/test_song_loop_preview.py'
+      - 'tests/python/test_song_alignment_review.py'
+      - 'tests/typescript/song-alignment-review.test.js'
       - 'docs/song-loop-preview.md'
       - 'tests/python/test_source_loop_analysis.py'
       - 'tests/python/test_full_motion_confidence.py'
@@ -53,6 +69,7 @@ jobs:
       DANCERUDIMENTS_REQUIRE_STEMLAB: '1'
       PIP_CACHE_DIR: ${{ github.workspace }}/.cache/pip
       TMPDIR: ${{ github.workspace }}/.cache/tmp
+      NUMBA_CACHE_DIR: ${{ github.workspace }}/.cache/numba-song-${{ github.run_id }}-${{ github.run_attempt }}
       # The pinned StemLab source snapshot is for feature integration regression
       # only; it is not a release dependency or an implicit ML/model download.
       PYTHONPATH: ${{ github.workspace }}/.cache/stemlab-source/src
@@ -64,7 +81,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: kieransimkin/stemlab
-          ref: 321febc6b6768b2e2de2f5b35f0882432bb4de9f
+          ref: bd25b6e1736bba30924f770ec2c5d17640005432
           path: .cache/stemlab-source
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -86,11 +103,11 @@ jobs:
               file.with_name('renamed').unlink()
           PY
       - name: Install native DanceRudiments and lightweight rig-analysis dependencies
-        # StemLab's analysis package currently imports its audio-loop module on
-        # package initialisation. soundfile is needed to import the module even
-        # though kinematic inference itself requires only NumPy. Do NOT install
-        # the heavy StemLab audio/torch/model dependency graph in this job.
-        run: python -m pip install '.[motion-import]' 'soundfile>=0.12,<1'
+        # Kinematic inference stays NumPy-only; audio packages are installed later.
+        run: python -m pip install '.[motion-import]' 'pytest>=8,<10'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
       - name: Fail fast unless the real pinned StemLab analyser is importable
         run: |
           python - <<'PY'
@@ -109,6 +126,8 @@ jobs:
         run: python -m unittest discover -s tests/python -p 'test_full_motion_confidence.py' -v
       - name: Verify provenance-tracked Blender Action batch full/loop output
         run: python -m unittest discover -s tests/python -p 'test_blender_source_batch.py' -v
+      - name: Test world evidence, corrected derivatives and timing-review interchange
+        run: python -m pytest -q tests/python/test_world_motion.py tests/python/test_loop_repair.py tests/python/test_source_motion_completion.py tests/python/test_song_alignment_review.py
       - name: Exercise full CLI with an original synthetic BVH source
         run: |
           python - <<'PY'
@@ -224,11 +243,42 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Test song loop matching, source identities and offline viewer
         run: python -m unittest discover -s tests/python -p 'test_song_loop_preview.py' -v
+      - name: Align observed synthetic motion events to an exact saved audio model run
+        run: |
+          python - <<'PY_TIMING'
+          import json
+          from pathlib import Path
+          import numpy as np
+          import soundfile as sf
+          from stemlab.analysis.motion_alignment import (
+              events_from_rhythm_report, file_hash, read_document,
+              align_motion_audio, write_document)
+          job=Path('.cache/source-loop-smoke')
+          audio_source=Path('.cache/stemlab-source/examples/the-truth-is-a-virus/master.mp3')
+          saved=json.loads((audio_source.parent/'beats/beat_this.json').read_text())
+          motion,_=read_document(job/'motion-events.json')
+          audio=events_from_rhythm_report(saved,source_sha256=file_hash(audio_source),
+              clock_id='truth_original_master_seconds',seconds_range=[0.,sf.info(str(audio_source)).duration])
+          fit=json.loads((job/'job.json').read_text())['full_motion_fit']
+          audio_bpm=60/float(np.median(np.diff(saved['beats'])))
+          clock=dict(format='stemlab.motion-clock-map.v1',schema_version=1,
+              relationship='creative_retiming',motion_source_sha256=motion['source']['sha256'],
+              audio_source_sha256=audio['source']['sha256'],
+              motion_clock_id=motion['source']['clock_id'],audio_clock_id=audio['source']['clock_id'],
+              motion_origin_seconds=motion['source']['seconds_range'][0],
+              audio_origin_seconds=saved['beats'][0],seconds_scale=fit['selected_bpm']/audio_bpm)
+          report=align_motion_audio(motion,audio,clock,
+              motion_source=job/'source.capture.json',audio_source=audio_source)
+          assert report['source_bytes_verified'] and report['candidates'],report['result_status']
+          assert report['selected_candidate_id'] is None and not report['music_timing_verified']
+          write_document('.cache/song-motion-alignment/alignment.json',report)
+          PY_TIMING
       - name: Run StemLab exploratory audio loops on all three bundled masters
         run: |
           python tools/build_song_loop_preview.py \
             --stemlab-root .cache/stemlab-source \
             --motion-job .cache/source-loop-smoke \
+            --alignment-report .cache/song-motion-alignment/alignment.json \
             --output-dir .cache/song-loop-preview --require-all-songs
           python - <<'PY_CHECK'
           import json
@@ -269,7 +319,7 @@ jobs:
           python - <<'PY_JS'
           from pathlib import Path
           page = Path('.cache/song-loop-preview/index.html').read_text()
-          script = page.split('<script>', 1)[1].split('</script>', 1)[0]
+          script = '\n'.join(part.split('</script>',1)[0] for part in page.split('<script>')[1:])
           Path('.cache/song-loop-preview.js').write_text(script)
           PY_JS
           node --check .cache/song-loop-preview.js
@@ -278,7 +328,7 @@ jobs:
           python tools/test_song_loop_preview_browser.py \
             --site .cache/song-loop-preview \
             --truth-audio .cache/stemlab-source/examples/the-truth-is-a-virus/master.mp3 \
-            --output-dir .cache/song-loop-browser-qa
+            --output-dir .cache/song-loop-browser-qa --require-timing-review
       - name: Upload audio-free music + motion preview and browser evidence
         if: always()
         uses: actions/upload-artifact@v6

@@ -4,19 +4,16 @@ No music, mesh, external model, downloads or third-party motion files.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
-import sys
 import tempfile
 import unittest
-from unittest import mock
 from types import SimpleNamespace
 
 from dancerudiments_authoring.full_motion_analysis import assess_full_motion, METHOD
 from dancerudiments_authoring.motion import load_rig_motion
 from dancerudiments_authoring.source_loop_analysis import analyse_source_capture, _native_check
-from test_source_loop_analysis import fixture, fake_stemlab
+from test_source_loop_analysis import fixture, fake_stemlab, patch_stemlab
 
 
 def fake_rhythmic_stemlab(*, weak=False):
@@ -26,6 +23,9 @@ def fake_rhythmic_stemlab(*, weak=False):
 
     def analyze(path, *, min_bpm, max_bpm):
         result = underlying(path, min_bpm=min_bpm, max_bpm=max_bpm)
+        capture = json.loads(Path(path).read_text())
+        result['source_range_seconds'] = [capture['frame_times_seconds'][0],
+                                          capture['frame_times_seconds'][-1]]
         result['recommended_tempo'] = dict(bpm=120., beat_zero_seconds=.12,
             score=.95 if not weak else .04,
             group_periodicity=.96 if not weak else .02,
@@ -45,7 +45,7 @@ def fake_rhythmic_stemlab(*, weak=False):
 class FullMotionConfidenceTests(unittest.TestCase):
     def test_rhythmic_complete_action_surpasses_default_seventy_percent(self):
         capture = fixture()
-        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(sys.modules, fake_rhythmic_stemlab()):
+        with tempfile.TemporaryDirectory() as folder, patch_stemlab(fake_rhythmic_stemlab()):
             root = Path(folder)/'result'
             result = analyse_source_capture(capture, root,
                                             original_source_sha256='c'*64,
@@ -86,7 +86,7 @@ class FullMotionConfidenceTests(unittest.TestCase):
                 analyse_source_capture(capture, root)
 
     def test_poor_whole_action_fit_does_not_block_local_loop_candidates(self):
-        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(sys.modules, fake_rhythmic_stemlab(weak=True)):
+        with tempfile.TemporaryDirectory() as folder, patch_stemlab(fake_rhythmic_stemlab(weak=True)):
             result = analyse_source_capture(fixture(), Path(folder)/'result')
             self.assertLess(result['full_motion_fit']['confidence'], .7)
             self.assertEqual(result['full_motion_count'], 0)
@@ -97,14 +97,14 @@ class FullMotionConfidenceTests(unittest.TestCase):
     def test_high_threshold_and_explicit_disable_are_independent_of_loop_export(self):
         for params in ({'full_motion_confidence_threshold': 1.},
                        {'export_full_motion': False}):
-            with self.subTest(params=params), tempfile.TemporaryDirectory() as folder, mock.patch.dict(
-                    sys.modules, fake_rhythmic_stemlab()):
+            with self.subTest(params=params), tempfile.TemporaryDirectory() as folder, patch_stemlab(
+                    fake_rhythmic_stemlab()):
                 result = analyse_source_capture(fixture(), Path(folder)/'result', **params)
                 self.assertEqual(result['full_motion_count'], 0)
                 self.assertEqual(result['loopable_clip_count'], 1)
 
     def test_invalid_threshold_fails_before_output_mutation(self):
-        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(sys.modules, fake_rhythmic_stemlab()):
+        with tempfile.TemporaryDirectory() as folder, patch_stemlab(fake_rhythmic_stemlab()):
             root = Path(folder)/'result'
             for threshold in (-.1, 1.1, float('nan'), True):
                 with self.subTest(threshold=threshold), self.assertRaises(ValueError):
@@ -124,7 +124,7 @@ class FullMotionConfidenceTests(unittest.TestCase):
 
     def test_missing_motion_tempo_and_corrupt_grid_are_not_auto_converted(self):
         capture=fixture()
-        with tempfile.TemporaryDirectory() as folder, mock.patch.dict(sys.modules, fake_rhythmic_stemlab()):
+        with tempfile.TemporaryDirectory() as folder, patch_stemlab(fake_rhythmic_stemlab()):
             src=Path(folder)/'result'
             report=analyse_source_capture(capture, src, export_full_motion=False)
             evidence=json.loads((src/'stemlab-analysis.json').read_text())

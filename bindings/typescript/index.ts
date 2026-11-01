@@ -1,12 +1,12 @@
 import { approvedDefaults, ApprovedDefaultName } from "./defaults.js";
 export { MOTION_TIME_RATES, motionTimeRate, motionSourcePipAtTime } from "./motion-time.js";
 export type { MotionTimeMode } from "./motion-time.js";
-export { createMotionPackageLoader, createRecordingWasmAdapter } from "./motion-packages.js";
+export { createMotionPackageLoader, createRecordingWasmAdapter, createStandaloneRigMotion } from "./motion-packages.js";
 export type {
   MotionJson, MotionJsonObject, MotionPackageAsset, MotionPackageClip, MotionPackageManifest,
   MotionRigChannel, MotionRigProfile, MotionRecordingClock, MotionRecording,
   NativeMotionRecording, NativeMotionRecordingFactory, MotionPackageTarget,
-  MotionLoadOptions, MotionPackageLoaderOptions, LoadedRigMotion, MotionPackageLoader,
+  MotionLoadOptions, MotionPackageLoaderOptions, StandaloneRigMotionOptions, LoadedRigMotion, MotionPackageLoader,
 } from "./motion-packages.js";
 
 export type Offset3 = Readonly<{ x: number; y: number; z: number }>;

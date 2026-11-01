@@ -107,6 +107,56 @@ or analyse all reviewed, locally cached source archives with
 [source-first analysis guide](docs/source-loop-analysis.md). Musical beat-1,
 audio alignment, rig deformation and repeat seams still require separate checks.
 
+### World/contact timing and bounded loop finishing
+
+Source analysis now evaluates portable skeletal captures in world space before
+compilation. Root-relative joint motion, body-height changes and inferred foot
+plants provide separate evidence alongside control-space accents. The default
+`--tempo-strategy consensus` retains competing tempo interpretations and abstains
+when supported families disagree. Unevaluated constrained rigs are explicitly
+unsupported for this world-space pass.
+
+Use `--repair-loops` to create separate, bounded corrected derivatives. Pose and
+tangent closure, retained activity, correction budgets and available foot-contact
+constraints must pass. An explicit `--repair-options` JSON can request bounded
+root stabilization or in-place root travel. Every accepted derivative is checked
+again after compilation to the existing half-open **64-pip** native recording;
+`--verify-native` additionally checks C++ playback. Unchanged source Actions and
+raw loop candidates keep their own identities and catalogues.
+
+```bash
+python tools/analyze_source_motion.py original.bvh \
+  --output-dir .cache/motion-review/action \
+  --tempo-strategy consensus --repair-loops --max-repairs 6 --verify-native
+```
+
+The same options work for reviewed archive collections, extracted Blender Action
+batches and the two-source benchmark. See [the complete workflow and measured
+CMU results](docs/source-motion-completion.md), [world-space evidence](docs/world-motion-analysis.md)
+and [loop correction limits](docs/loop-repair.md).
+
+The source job exports observed `motion-events.json` for compatible StemLab
+audio/motion alignment. Exact audio/capture hashes and an explicit clock map bind
+offset, playback-rate and variable-tempo proposals to their sources. Pass a
+result with `tools/build_song_loop_preview.py --alignment-report alignment.json`
+to compare candidates, adjust phase and save a separate timing decision. The
+browser requires the exact local audio master before saving; beat one and meter
+remain unconfirmed unless entered. See [timing review](docs/song-loop-preview.md#source-bound-timing-review).
+
+Kandi's mesh gallery accepts a local corrected `.motion.json` and matching
+`.repair.json`, verifies their identity and final compiled checks, then uses the
+same native player and calibrated source-to-Kandi adapter. Explicit repeat,
+compare-original and restore controls make the derivative reviewable on the
+actual skin. Numerical closure, functional mesh QA and a user's musical decision
+remain distinct results.
+
+These changes require the companion StemLab world/event APIs. Source integration
+CI pins their exact development commit; published package/release dependencies
+continue to follow the existing stable-release policy. CI uses pytest for both
+function-style and unittest-style motion tests, builds the native runtime, and
+checks the timing-review JSON against StemLab's validator. No release or Pages
+deployment follows automatically from the analysis commands.
+
 Kandi's canonical FBX contains vertices with more than four source influences.
 The source remains untouched and fully audited; the WebGL renderer uses an
 explicit, normalised four-weight runtime approximation and records that limit in

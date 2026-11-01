@@ -18,6 +18,7 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'python'))
 sys.path.insert(0,str(ROOT/'tools'))
+from source_motion_options import add_completion_arguments, completion_options
 
 
 def summarize_action(recipe, scene, clip, report):
@@ -55,6 +56,10 @@ def summarize_action(recipe, scene, clip, report):
         number_of_source_loop_candidates=report.get('unconverted_candidate_count',0)
                        +report.get('loopable_clip_count',0),
         preview_loop_count=report.get('loopable_clip_count',0),
+        world_motion_supported=report.get('world_motion_supported',False),
+        tempo_strategy=report.get('tempo_strategy','control'),
+        corrected_loop_count=report.get('repaired_loop_count',0),
+        correction_attempt_count=report.get('loop_repair_attempt_count',0),
         loop_seam_approved=False,
         beat_alignment_confirmed=False,
         measured_target_mesh_deformation=False,
@@ -62,7 +67,8 @@ def summarize_action(recipe, scene, clip, report):
 
 
 def evaluate(output_dir,cache_root,*,download=False,required_complete=True,
-             min_confidence=.70,max_previews=2):
+             min_confidence=.70,max_previews=2,world_space=True,
+             tempo_strategy='consensus',repair_loops=False,max_repairs=4,repair_options=None):
     from dancerudiments_authoring.source_loop_analysis import (
         source_capture_from_bvh,analyse_source_capture)
     from build_mesh_demo_assets import load_sources,_prepare_clip
@@ -90,7 +96,9 @@ def evaluate(output_dir,cache_root,*,download=False,required_complete=True,
             report=analyse_source_capture(captured,jobdir,
                 original_source_sha256=clip.source_sha256,
                 min_bpm=55,max_bpm=220,max_previews=max_previews,
-                verify_native=True,full_motion_confidence_threshold=min_confidence)
+                verify_native=True,full_motion_confidence_threshold=min_confidence,
+                world_space=world_space,tempo_strategy=tempo_strategy,repair_loops=repair_loops,
+                max_repairs=max_repairs,repair_options=repair_options)
             rows.append(summarize_action(recipe,scene,clip,report))
         except (OSError,RuntimeError,ValueError) as exc:
             errors.append(dict(scene_id=scene['id'],source_sha256=original['sha256'],
@@ -104,6 +112,7 @@ def evaluate(output_dir,cache_root,*,download=False,required_complete=True,
              full_action_confidence_threshold=min_confidence,
              full_action_shortlist_count=sum(r['full_action_shortlisted'] for r in rows),
              total_loop_previews=sum(r['preview_loop_count'] for r in rows),
+             total_corrected_loops=sum(r['corrected_loop_count'] for r in rows),
              scenes=rows, failures=errors)
     output_dir.mkdir(parents=True)
     (output_dir/'summary.json').write_text(json.dumps(doc,indent=2,allow_nan=False)+'\n')
@@ -120,12 +129,18 @@ def main(argv=None):
                         help='Explicitly download only the two source files approved by pinned mesh demo recipe')
     parser.add_argument('--min-full-confidence',type=float,default=.70)
     parser.add_argument('--max-previews',type=int,default=2)
+    add_completion_arguments(parser)
     args=parser.parse_args(argv)
-    report=evaluate(args.output_dir,args.cache_root,download=args.download,
-                    min_confidence=args.min_full_confidence,max_previews=args.max_previews)
+    try:
+        options=completion_options(args)
+        report=evaluate(args.output_dir,args.cache_root,download=args.download,
+                        min_confidence=args.min_full_confidence,max_previews=args.max_previews,
+                        **options)
+    except (ValueError, RuntimeError, OSError) as exc:
+        parser.error(str(exc))
     print(json.dumps({k:report[k] for k in (
         'analysed_scene_count','failed_scene_count',
-        'full_action_shortlist_count','total_loop_previews')},indent=2))
+        'full_action_shortlist_count','total_loop_previews','total_corrected_loops')},indent=2))
 
 
 if __name__=='__main__':main()

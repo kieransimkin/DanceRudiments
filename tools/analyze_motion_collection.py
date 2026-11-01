@@ -24,12 +24,15 @@ from dancerudiments_authoring.source_loop_analysis import (
     analyse_source_capture, source_capture_from_bvh,
 )
 from import_motion_collection import asset_path, preflight, slug, verify_archive
+from source_motion_options import add_completion_arguments, completion_options
 
 
 def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                        max_previews=4, min_bpm=60., max_bpm=200.,
                        target_bpm=None, verify_native=False,
-                       min_full_confidence=.70, export_full_motion=True):
+                       min_full_confidence=.70, export_full_motion=True,
+                       world_space=True, tempo_strategy='consensus', repair_loops=False,
+                       max_repairs=4, repair_options=None):
     """Read only existing pinned ZIP members; create a new external report tree."""
     if type(max_actions) is not int or not 1 <= max_actions <= 1000:
         raise ValueError('max_actions must be 1..1000')
@@ -42,7 +45,7 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                  max_actions=max_actions, input_sources=[source['id'] for source in sources],
                  motion_candidate_timing='source seconds, estimated beats only',
                  actions=[], failures=[], duplicates=[], truncated=False,
-                 full_motion_shortlist=[], loopable_shortlist=[],
+                 full_motion_shortlist=[], loopable_shortlist=[], repaired_loop_shortlist=[],
                  full_motion_confidence_threshold=min_full_confidence,
                  full_motion_confidence_interpretation='uncalibrated_kinematic_fit_not_probability',
                  audio_beat_alignment_verified=False)
@@ -105,13 +108,18 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                                 target_bpm=target_bpm, max_previews=max_previews,
                                 verify_native=verify_native,
                                 full_motion_confidence_threshold=min_full_confidence,
-                                export_full_motion=export_full_motion)
+                                export_full_motion=export_full_motion,
+                                world_space=world_space, tempo_strategy=tempo_strategy,
+                                repair_loops=repair_loops, max_repairs=max_repairs,
+                                repair_options=repair_options)
                             seen[digest] = member.filename
                             index['actions'].append(dict(provenance,
                                 relative_output=folder.relative_to(staged).as_posix(),
                                 profile_sha256=clip.profile.fingerprint,
                                 original_duration_seconds=clip.duration_seconds,
                                 preview_count=result['preview_count'],
+                                repaired_loop_count=result['repaired_loop_count'],
+                                world_motion_supported=result['world_motion_supported'],
                                 full_motion_count=result['full_motion_count'],
                                 full_motion_confidence_percent=result['full_motion_fit']['confidence_percent'],
                                 selected_source_bpm=result['full_motion_fit']['selected_bpm'],
@@ -129,6 +137,12 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
                                     filename=item['filename'], score=item['score'],
                                     estimated_bpm=item['source_bpm_estimated'],
                                     beats=item['source_beats']))
+                            for item in result['repaired_loop_clips']:
+                                index['repaired_loop_shortlist'].append(dict(
+                                    provenance, relative_output=folder.relative_to(staged).as_posix(),
+                                    filename=item['filename'], score=item['score'],
+                                    estimated_bpm=item['source_bpm_estimated'],
+                                    beats=item['source_beats'], repair_report_file=item['repair_report_file']))
                         except (ScoreError, ValueError, RuntimeError, OSError, zipfile.BadZipFile) as exc:
                             index['failures'].append(dict(provenance, error=str(exc)))
                     if stop:
@@ -141,6 +155,7 @@ def analyze_collection(sources, cache_root, output_root, *, max_actions=100,
         index['failed_action_count'] = len(index['failures'])
         index['full_motion_count'] = len(index['full_motion_shortlist'])
         index['loopable_clip_count'] = len(index['loopable_shortlist'])
+        index['repaired_loop_count'] = len(index['repaired_loop_shortlist'])
         index['full_motion_shortlist'].sort(key=lambda x: (-x['confidence_percent'], x['source_sha256']))
         index['loopable_shortlist'].sort(key=lambda x: (-x['score'], x['source_sha256']))
         (staged / 'index.json').write_text(json.dumps(index, indent=2, allow_nan=False) + '\n',
@@ -168,6 +183,7 @@ def main(argv=None):
     parser.add_argument('--max-bpm', type=float, default=200.)
     parser.add_argument('--target-bpm', type=float)
     parser.add_argument('--verify-native', action='store_true')
+    add_completion_arguments(parser)
     args = parser.parse_args(argv)
     try:
         plan = json.loads(args.plan.read_text(encoding='utf-8'))
@@ -182,11 +198,12 @@ def main(argv=None):
             min_bpm=args.min_bpm, max_bpm=args.max_bpm, target_bpm=args.target_bpm,
             verify_native=args.verify_native,
             min_full_confidence=args.min_full_confidence,
-            export_full_motion=not args.no_full_motion)
+            export_full_motion=not args.no_full_motion, **completion_options(args))
         print(json.dumps(dict(output=str(args.output_root),
                               analysed_action_count=summary['analysed_action_count'],
                               full_motion_count=summary['full_motion_count'],
                               loopable_clip_count=summary['loopable_clip_count'],
+                              repaired_loop_count=summary['repaired_loop_count'],
                               failed_action_count=summary['failed_action_count'],
                               truncated=summary['truncated']), indent=2))
         return 2 if summary['failures'] or summary['truncated'] else 0

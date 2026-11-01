@@ -9,6 +9,7 @@ This optional offline module does not import StemLab or download models on impor
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
 from pathlib import Path
@@ -20,7 +21,7 @@ from ._validation import ScoreError, canonical_json
 from .motion import write_rig_motion
 from .motion_clock import BeatMap
 from .motion_import import RigCapture, compile_capture, write_capture
-from .recording import RecordingClock, MAX_RECORDING_VALUES
+from .recording import RecordingClock, MAX_RECORDING_VALUES, _write_json_document
 from .full_motion_analysis import assess_full_motion, DEFAULT_THRESHOLD
 
 FORMAT = 'dancerudiments.source-motion-loop-job'
@@ -49,7 +50,9 @@ def source_capture_from_bvh(clip, *, calibration_frames=0, source_provenance=Non
                   for index in range(calibration_frames, clip.frame_count))
     if source_provenance is not None and not isinstance(source_provenance, dict):
         raise ScoreError('source_provenance must be a provenance dictionary')
-    provenance = dict(clip.metadata, source_file_sha256=clip.source_sha256,
+    provenance = dict(source_provenance or {})
+    provenance.update(clip.metadata)
+    provenance.update(source_file_sha256=clip.source_sha256,
                       source_frame_time_seconds=str(clip.frame_time_seconds),
                       source_profile_sha256=clip.profile.fingerprint,
                       calibration_frames_excluded_from_analysis=calibration_frames,
@@ -85,6 +88,8 @@ def _preview_eligible(report, capture, *, target_bpm):
     beat/downbeat agreement is a separate optional confirmation.
     """
     chosen, rejected = [], []
+    from .world_motion import source_valid_segments
+    coverage = source_valid_segments(capture)
     # StemLab's loop windows are hypotheses tied to its estimated source grid.
     # Do not manufacture a preview if the map was absent, replaced or approved.
     grid = report.get('estimated_beat_map')
@@ -114,6 +119,9 @@ def _preview_eligible(report, capture, *, target_bpm):
         end = _real(candidate.get('end_seconds'), 'end_seconds')
         if not (capture.frame_times_seconds[0] <= start < end <= capture.frame_times_seconds[-1]):
             rejected.append(dict(source_index=source_index, reason='outside_source_bounds'))
+            continue
+        if not any(left <= start < end <= right for left, right in coverage):
+            rejected.append(dict(source_index=source_index, reason='crosses_source_time_gap'))
             continue
         source_bpm = 60.0 * candidate['beats'] / (end - start)
         if not 30 <= source_bpm <= 300:
@@ -221,11 +229,117 @@ def _full_action_recording(capture, fit, *, presentation_bpm, original_source_sh
                         sample_count=count, source_pips_per_beat=64)
 
 
+def _finish_loop_candidates(capture, stage, fit, world, *, max_repairs,
+                            options, target_bpm, verify_native, original_sha256):
+    """Author bounded corrected derivatives separately from untouched candidates."""
+    from .loop_repair import (LoopRepairOptions, contacts_from_world_report,
+                              propose_loop_repairs, verify_compiled_loop_seam)
+    from .world_motion import source_valid_segments
+    if options is None:
+        options = LoopRepairOptions()
+    elif isinstance(options, dict):
+        options = LoopRepairOptions(**options)
+    if not isinstance(options, LoopRepairOptions):
+        raise ValueError('repair_options must be LoopRepairOptions or a settings object')
+    clips, attempts = [], []
+    coverage = source_valid_segments(capture)
+    if fit.get('selected_bpm') is None:
+        return clips, [dict(accepted=False, rejection_reasons=['no_supported_source_tempo'])]
+    contacts = contacts_from_world_report(capture, world) if world.get('supported') else ()
+    results = propose_loop_repairs(capture, bpm=fit['selected_bpm'],
+        beat_zero_seconds=fit['selected_beat_zero_seconds'], max_candidates=max_repairs,
+        options=options, contacts=contacts)
+    for index, result in enumerate(results):
+        attempt = dict(result.report)
+        if not result.accepted:
+            attempts.append(attempt)
+            continue
+        if not any(left <= attempt['source_start_seconds'] < attempt['source_end_seconds'] <= right
+                   for left, right in coverage):
+            attempt.update(accepted=False, status='source_coverage_rejected',
+                           rejection_reasons=['crosses_source_time_gap'])
+            attempts.append(attempt)
+            continue
+        beats = attempt['proposal']['beats']
+        bpm = 60. * beats / attempt['period_seconds']
+        name = f'repaired_{index+1:03d}_{beats:02d}beats'
+        capture_file = f'repaired-loops/{name}.capture.json'
+        motion_file = f'repaired-loops/{name}.motion.json'
+        report_file = f'repaired-loops/{name}.repair.json'
+        (stage / 'repaired-loops').mkdir(exist_ok=True)
+        source_map = BeatMap.from_bpm(str(bpm), beat_zero_seconds='0',
+            source='Explicit bounded loop derivative; estimated source tempo',
+            bpm_status='estimated', phase_status='estimated')
+        presentation = target_bpm if target_bpm is not None else bpm
+        clock = RecordingClock(float(presentation),
+            'Corrected loop derivative; musical alignment remains unverified',
+            'estimated', 0., 'estimated', 0)
+        try:
+            motion = compile_capture(result.capture, name=name, source_beat_map=source_map,
+                                     clock=clock, sample_count=beats*64)
+        except (ScoreError, ValueError) as exc:
+            attempt.update(accepted=False, status='compilation_rejected',
+                           rejection_reasons=['compiled_payload: '+str(exc)])
+            attempts.append(attempt)
+            continue
+        motion = _annotate_motion(motion, motion_kind='repaired_loop_candidate',
+            original_source_sha256=original_sha256,
+            original_capture_sha256=capture.fingerprint,
+            corrected_capture_sha256=result.capture.fingerprint,
+            repair_id=attempt['repair_id'],
+            repair_method=attempt['method'], repair_source_bounds_seconds=[
+                attempt['source_start_seconds'], attempt['source_end_seconds']],
+            numerical_repeat_seam_verified=True, repeat_seam_verified=False,
+            suggested_loop_period_pips=beats*64,
+            suggested_loop_playback='repeat_after_manual_review',
+            musical_timing_verified=False, target_mesh_verified=False)
+        compiled_check = verify_compiled_loop_seam(motion, result.capture, attempt)
+        attempt['compiled_verification'] = compiled_check
+        if not compiled_check['passed']:
+            attempt['accepted'] = False
+            attempt['status'] = 'compiled_verification_rejected'
+            attempt['rejection_reasons'] = list(attempt.get('rejection_reasons', [])) + [
+                'compiled_payload: ' + reason for reason in compiled_check['rejection_reasons']]
+            attempts.append(attempt)
+            continue
+        native = _native_check(motion) if verify_native else False
+        write_capture(stage / capture_file, result.capture)
+        write_rig_motion(stage / motion_file, motion)
+        attempt.update(native_samples_verified=native,
+                       original_source_sha256=original_sha256,
+                       compiled_motion_sha256=hashlib.sha256((stage/motion_file).read_bytes()).hexdigest(),
+                       corrected_capture_file=capture_file,
+                       corrected_capture_file_sha256=hashlib.sha256((stage/capture_file).read_bytes()).hexdigest())
+        _write_json_document(stage / report_file, attempt)
+        attempts.append(attempt)
+        clips.append(dict(filename=motion_file,
+            recording_sha256=hashlib.sha256((stage/motion_file).read_bytes()).hexdigest(),
+            repair_report_file=report_file,
+            repair_report_sha256=hashlib.sha256((stage/report_file).read_bytes()).hexdigest(),
+            corrected_capture_file=capture_file,
+            corrected_capture_file_sha256=attempt['corrected_capture_file_sha256'],
+            source_start_seconds=attempt['source_start_seconds'],
+            source_end_seconds=attempt['source_end_seconds'],
+            source_beats=beats, source_bpm_estimated=bpm,
+            target_bpm_nominal=presentation, speed_ratio=presentation/bpm,
+            score=max(0., min(1., float(attempt['activity_retention']))),
+            score_method='retained_motion_fraction',
+            activity_retention=attempt['activity_retention'],
+            profile_sha256=capture.profile.fingerprint, motion_type='repaired_loop_candidate',
+            start_pip=0, end_pip_exclusive=beats*64, recommended_loop_pips=beats*64,
+            native_samples_verified=native, numerical_repeat_seam_verified=True,
+            repaired=True, requires_review=True, loop_seam_approved=False,
+            mesh_deformation_verified=False, audio_beat_alignment_verified=False))
+    return clips, attempts
+
+
 def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
                            min_bpm=60.0, max_bpm=200.0, target_bpm=None,
                            max_previews=4, verify_native=False,
                            full_motion_confidence_threshold=DEFAULT_THRESHOLD,
-                           export_full_motion=True):
+                           export_full_motion=True, world_space=True,
+                           tempo_strategy='consensus', repair_loops=False,
+                           max_repairs=4, repair_options=None):
     """Produce a new, transactional analysis directory and optional preview motions.
 
     Every preview is derived FROM a StemLab source-time loop candidate, never from
@@ -234,6 +348,8 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
     """
     if not isinstance(capture, RigCapture):
         raise ScoreError('Expected source-time RigCapture (not a compiled RigMotion)')
+    from .world_motion import source_valid_segments
+    coverage = source_valid_segments(capture)
     if type(max_previews) is not int or not 0 <= max_previews <= MAX_PREVIEWS:
         raise ValueError(f'max_previews must be 0..{MAX_PREVIEWS}')
     if not 30 <= _real(min_bpm, 'min_bpm') < _real(max_bpm, 'max_bpm') <= 300:
@@ -242,6 +358,12 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
         raise ValueError('target_bpm must be within 30..300')
     if type(export_full_motion) is not bool:
         raise ValueError('export_full_motion must be true or false')
+    if type(world_space) is not bool or type(repair_loops) is not bool:
+        raise ValueError('world_space and repair_loops must be boolean')
+    if tempo_strategy not in ('consensus', 'control', 'world', 'contact'):
+        raise ValueError('Unknown motion tempo evidence strategy')
+    if type(max_repairs) is not int or not 1 <= max_repairs <= MAX_PREVIEWS:
+        raise ValueError(f'max_repairs must be 1..{MAX_PREVIEWS}')
     if (type(full_motion_confidence_threshold) not in (float, int)
             or not math.isfinite(full_motion_confidence_threshold)
             or not 0 <= full_motion_confidence_threshold <= 1):
@@ -262,7 +384,27 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
         capture_path = stage / 'source.capture.json'
         write_capture(capture_path, capture)
         digest = hashlib.sha256(capture_path.read_bytes()).hexdigest()
-        report = analyze_rig_capture(capture_path, min_bpm=min_bpm, max_bpm=max_bpm)
+        world = dict(supported=False, status='disabled')
+        analysis_options = dict(min_bpm=min_bpm, max_bpm=max_bpm)
+        if world_space:
+            from .world_motion import analyze_world_motion, UnsupportedWorldMotion
+            try:
+                world = analyze_world_motion(capture, source_file_sha256=digest)
+            except UnsupportedWorldMotion as exc:
+                world = dict(supported=False, status='unsupported', reason=str(exc),
+                             source_file_sha256=digest, profile_sha256=capture.profile.fingerprint)
+            if world['supported']:
+                parameters = inspect.signature(analyze_rig_capture).parameters
+                if 'world_motion' not in parameters and not any(
+                        x.kind == inspect.Parameter.VAR_KEYWORD for x in parameters.values()):
+                    raise RuntimeError('This job requires StemLab world-motion evidence support; '
+                                       'install the compatible StemLab release before analysis')
+                analysis_options.update(world_motion=stage / 'world-motion-evidence.json',
+                                        tempo_strategy=tempo_strategy)
+        if not world['supported'] and tempo_strategy in ('world', 'contact'):
+            raise ValueError('The selected tempo strategy needs a supported source-world capture')
+        _write_json_document(stage / 'world-motion-evidence.json', world)
+        report = analyze_rig_capture(capture_path, **analysis_options)
         if (report.get('format') != 'stemlab.rig-motion-analysis'
                 or report.get('source_kind') != 'capture'
                 or report.get('source_file_sha256') != digest
@@ -270,11 +412,23 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
                 or report.get('type_uri') != capture.profile.type_uri):
             raise ValueError('StemLab report does not match the exact input source capture')
         write_rig_analysis(stage / 'stemlab-analysis.json', report)
+        # Observed accents/contact events are an alignment input. Estimated
+        # regular-grid points are deliberately excluded by StemLab's adapter.
+        try:
+            from stemlab.analysis.motion_alignment import events_from_rig_report
+        except ImportError:
+            motion_events_file = None
+        else:
+            motion_events_file = 'motion-events.json'
+            _write_json_document(stage / motion_events_file,
+                events_from_rig_report(report, clock_id='source_capture_seconds'))
         if report.get('estimated_beat_map') is not None:
-            from .recording import _write_json_document
             _write_json_document(stage / 'estimated-source-beats.json', report['estimated_beat_map'])
         fit = assess_full_motion(report, capture,
             confidence_threshold=full_motion_confidence_threshold)
+        if len(coverage) > 1:
+            fit['auto_convert'] = False
+            fit['reasons'].append('source_time_gaps_prevent_complete_conversion')
         full = []
         if export_full_motion and fit['auto_convert']:
             try:
@@ -342,6 +496,15 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
                 suggested_playback='repeat_after_manual_review',
                 requires_review=True, loop_seam_approved=False,
                 mesh_deformation_verified=False, audio_beat_alignment_verified=False))
+        repaired, repair_attempts = ([], [])
+        if repair_loops:
+            repaired, repair_attempts = _finish_loop_candidates(capture, stage, fit, world,
+                max_repairs=max_repairs, options=repair_options, target_bpm=target_bpm,
+                verify_native=verify_native, original_sha256=original_source_sha256)
+            _write_json_document(stage / 'loop-repairs.json', dict(
+                format='dancerudiments.loop-repair-catalogue', schema_version=1,
+                source_capture_sha256=digest, original_source_sha256=original_source_sha256,
+                clips=repaired, attempts=repair_attempts, requires_review=True))
         # Separate catalogue from complete source Actions; these paths reference
         # the native previews instead of copying large rig payloads twice.
         loop_catalogue = dict(format='dancerudiments.loopable-motion-candidates',
@@ -358,13 +521,21 @@ def analyse_source_capture(capture, output_dir, *, original_source_sha256=None,
             profile_sha256=capture.profile.fingerprint, type_uri=capture.profile.type_uri,
             stemlab_analysis_file='stemlab-analysis.json',
             stemlab_analysis_sha256=hashlib.sha256((stage / 'stemlab-analysis.json').read_bytes()).hexdigest(),
+            world_motion_evidence_file='world-motion-evidence.json',
+            world_motion_evidence_sha256=hashlib.sha256((stage / 'world-motion-evidence.json').read_bytes()).hexdigest(),
+            world_motion_supported=world['supported'], tempo_strategy=tempo_strategy,
+            motion_events_file=motion_events_file,
             source_clock='original source seconds', pips_per_beat=64,
+            source_valid_segments_seconds=coverage,
             inferred_tempo_verified=False, confirmed_musical_downbeat=False,
             full_motion_fit=fit, full_motion_confidence_threshold=full_motion_confidence_threshold,
             full_motion_count=len(full), full_motion_clips=full,
             full_motion_shortlisted=bool(full),
             loopable_clip_count=len(summaries), loopable_clips=summaries,
             loopable_catalogue_file='loopable-clips.json',
+            repaired_loop_count=len(repaired), repaired_loop_clips=repaired,
+            loop_repair_attempt_count=len(repair_attempts),
+            loop_repair_catalogue_file='loop-repairs.json' if repair_loops else None,
             max_previews=max_previews, preview_count=len(summaries), previews=summaries,
             unconverted_candidate_count=len(report.get('loop_candidates', [])) - len(summaries),
             rejected_candidates=rejected,

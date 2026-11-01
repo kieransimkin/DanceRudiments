@@ -120,6 +120,62 @@ Use `node --test tests/typescript/mesh-rhythm-review.test.js` for standalone
 model-free schema, bounds and rejection tests. The existing `npm test` also
 includes that suite; full browser acceptance requires a rebuilt actual gallery.
 
+## Review a finished loop on Kandi
+
+The **Finished loop · Kandi review** panel accepts the separate
+`repaired_*.motion.json` and matching `repaired_*.repair.json` emitted by the
+[offline loop repair pipeline](loop-repair.md). Load the matching original
+performance first, select both local files, then press **Load finished clip**.
+The clip begins paused. **Compare original** selects the corresponding original
+source window; **Finished clip** returns to the correction. Play, pause, seek
+and preview speed work in either view. **Repeat for visual seam review** is an
+explicit opt-in. **Clear clip** restores the source pose that was active before
+the import and disposes the derivative's native handle.
+
+The panel checks the motion file's exact byte SHA-256 against the repair report,
+the original BVH identity, source window, original and corrected capture hashes,
+repair ID, source profile fingerprint and complete embedded profile. It also
+requires the separate compiled-row and half-open wrap check to have passed,
+checks declared correction/activity limits and any supplied foot constraints,
+and rejects approval flags. The shared `createStandaloneRigMotion` loader checks
+normalized sample precision, discrete values and quaternion groups before
+creating a native recording. These checks establish consistent numeric evidence;
+an imported report remains evidence from its producing pipeline, rather than a
+new independent proof of the source capture inside the browser.
+
+The original source package and Kandi calibration stay in memory. Both views
+call the same C++/WASM Recording sampler and the same calibrated Kandi retarget.
+The correction has its own estimated presentation BPM: the UI advances at
+`64 × BPM / 60` pips per second, and an explicitly repeated N-sample clip has
+an N-pip period without sampling a duplicated endpoint. Original comparisons
+retain the existing 64-pips-per-second source clock. Neither recording loops
+inside the native sampler.
+
+Numerical acceptance does not approve Kandi's silhouette, foot placement,
+skin intersections or musical timing. The panel keeps those states unverified
+and asks the reviewer to inspect the feet and repeat boundary. Files stay local
+to the browser, are limited to 64 MiB for motion and 2 MiB for the report, and
+are discarded on clear, scene switch or unload. No derivative is bundled or
+fetched automatically.
+
+The optional browser gate exercises the actual Kandi skin, independent
+Python-native physical-channel parity, repeated playback, original comparison,
+restoration and handle disposal:
+
+```sh
+python tools/test_mesh_demo_browser.py \
+  --site-dir .cache/mesh-review-site --output-dir .cache/mesh-review-evidence \
+  --gallery-only \
+  --finished-motion analysis/repaired-loops/repaired_001_04beats.motion.json \
+  --repair-report analysis/repaired-loops/repaired_001_04beats.repair.json
+```
+
+Supply a rebuilt gallery under the site's `meshes/` directory. A gallery-only
+receipt cannot seal or deploy a release site. The browser evidence records both
+input hashes and still leaves visual/musical approval false. Synthetic loader,
+identity and clock tests run in `npm test` through
+`standalone-rig-motion.test.js` and `mesh-derivative-review.test.js`.
+
 ## Validation
 
 The release workflow must pass all existing motion-package integrity tests plus

@@ -3,6 +3,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {createKandiBoomCharacter} from './kandi-boom.js';
 import {PipTransport} from './transport.js';
 import {createRhythmReview} from './rhythm-review.js';
+import {createDerivativeReview, validateFinishedMotion} from './derivative-review.js';
 
 // The builder checks these targets against the reviewed source-rig pins. They
 // are independent of the package manifest fetched when the user loads a scene.
@@ -70,19 +71,28 @@ function updateTransport() {
   $('play-toggle').setAttribute('aria-label', playing ? 'Pause' : 'Play');
   $('play-icon').innerHTML = playing ? '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>' : '<path d="m8 5 11 7-11 7z"/>';
   if (ready) {
-    const pip = session.transport.pip(), scene = session.scene;
+    const range = playbackRange(session), pip = Math.min(range.last, session.transport.pip());
+    $('seek').min = String(range.first); $('seek').max = String(range.last);
     $('seek').value = String(pip);
-    $('seek').style.setProperty('--progress', `${100 * (pip - scene.startPip) / Math.max(1, scene.endPip - scene.startPip)}%`);
-    $('elapsed').textContent = timeLabel((pip - scene.startPip) / 64);
-    $('pip-readout').textContent = `pip ${pip.toLocaleString()} / ${scene.endPip.toLocaleString()}`;
+    $('seek').style.setProperty('--progress', `${100 * (pip - range.first) / Math.max(1, range.last - range.first)}%`);
+    $('elapsed').textContent = timeLabel((pip - range.first) / session.transport.pipsPerSecond);
+    $('duration').textContent = timeLabel((range.last - range.first) / session.transport.pipsPerSecond);
+    $('pip-readout').textContent = `pip ${pip.toLocaleString()} / ${range.last.toLocaleString()}`;
     const rateLabel = session.transport.timeMode === 'half' ? 'Half-time source motion · 0.5×'
       : session.transport.timeMode === 'double' ? 'Double-time source motion · 2×'
       : session.transport.timeMode === 'normal' ? 'Original source motion · 1×'
       : `Source-motion preview · ${session.transport.speed}×`;
-    $('timing-status').textContent = rhythmReview.currentLoop()
-      ? `Unverified loop · ${rateLabel}` : rateLabel;
-    status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === scene.endPip ? 'Performance complete' : 'Paused', playing);
+    $('timing-status').textContent = session.derivative
+      ? `${session.derivativeMode === 'finished' ? 'Finished clip · numerical checks passed' : 'Original window comparison'} · ${session.transport.speed}× · visual / musical review pending`
+      : rhythmReview.currentLoop() ? `Unverified loop · ${rateLabel}` : rateLabel;
+    status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === range.last ? 'Performance complete' : 'Paused', playing);
   }
+}
+function playbackRange(owner) {
+  if (owner.derivative) return owner.derivativeMode === 'finished'
+    ? {first: owner.derivative.info.first, last: owner.derivative.info.last}
+    : {first: owner.derivative.info.sourceFirstPip, last: owner.derivative.info.sourceEndPip};
+  return {first: owner.scene.startPip, last: owner.scene.endPip};
 }
 function resetCamera() {
   if (!camera || !controls) return;
@@ -158,9 +168,11 @@ function releaseChunk(owner) {
 function unload({clearError = true} = {}) {
   generation++;
   rhythmReview.reset();
+  derivativeReview.reset();
   const previous = session; session = null;
   if (previous) {
     previous.closed = true; previous.controller.abort(); previous.transport?.pause();
+    previous.derivativeGeneration++; previous.derivative?.loaded.dispose(); previous.derivative = null;
     releaseChunk(previous); previous.loader?.dispose(); previous.character?.dispose();
     previous.loader = previous.character = previous.module = null;
   }
@@ -173,8 +185,10 @@ function unload({clearError = true} = {}) {
 }
 function current(owner) { return !owner.closed && session === owner && !owner.controller.signal.aborted; }
 function applyPose(owner) {
-  if (!current(owner) || !owner.active) return;
-  const pip = owner.desiredPip, motion = owner.active.motion;
+  if (!current(owner)) return;
+  const pip = owner.desiredPip, motion = owner.derivativeMode === 'finished'
+    ? owner.derivative?.loaded.motion : owner.active?.motion;
+  if (!motion) return;
   if (pip < motion.startPip || pip >= motion.startPip + motion.sampleCount || owner.lastPip === pip) return;
   const physical = motion.sample(pip); // Native C++/WASM sampling, then channel-unit decoding.
   if (!owner.character.isCalibrated()) {
@@ -192,6 +206,12 @@ function applyPose(owner) {
 }
 function sampleAt(owner, pip) {
   if (!current(owner)) return Promise.resolve();
+  if (owner.derivativeMode === 'finished') {
+    const range = playbackRange(owner);
+    if (!Number.isSafeInteger(pip) || pip < range.first || pip > range.last)
+      return Promise.reject(Error('Host clock pip is outside the finished clip'));
+    owner.desiredPip = pip; applyPose(owner); return Promise.resolve();
+  }
   if (!Number.isSafeInteger(pip) || pip < owner.scene.startPip || pip > owner.scene.endPip)
     return Promise.reject(Error('Host clock pip is outside the complete performance'));
   owner.desiredPip = pip;
@@ -220,6 +240,7 @@ async function loadSelected() {
   unload();
   const owner = {scene: selected, controller: new AbortController(), closed: false, ready: false,
     token: generation, chunkGeneration: 0, desiredPip: selected.startPip, lastPip: null,
+    derivativeGeneration: 0, derivative: null, derivativeMode: null,
     normalizedSample: null, physicalSample: null, nativePip: null};
   session = owner; const signal = owner.controller.signal;
   $('empty-state').hidden = true; $('loading-state').hidden = false; $('error').hidden = true;
@@ -250,21 +271,23 @@ async function loadSelected() {
     owner.module = await WebAssembly.compile(wasm);
     if (!current(owner)) return;
     const adapter = runtime.createRecordingWasmAdapter(owner.module);
+    owner.runtime = runtime;
+    owner.nativeFactory = async (recording, options) => {
+      const native = await adapter(recording, options); let alive = true;
+      stats.activeNativeHandles++;
+      return {sample(pip) {
+        const row = native.sample(pip); stats.nativeSampleCalls++;
+        owner.nativePip = pip; owner.normalizedSample = Array.from(row); return row;
+      }, dispose() {
+        if (!alive) return; alive = false; native.dispose(); stats.activeNativeHandles--; stats.disposedNativeHandles++;
+      }};
+    };
     owner.loader = runtime.createMotionPackageLoader({
       manifestUrl: new URL(owner.scene.manifestPath, location.href), packageId: owner.scene.packageId,
       manifestSha256: owner.scene.manifestSha256,
       expectedProfile: {typeUri: expected.type_uri, sha256: expected.fingerprint, dimensions: expected.dimensions},
       fetch: trackedFetch,
-      nativeFactory: async (recording, options) => {
-        const native = await adapter(recording, options); let alive = true;
-        stats.activeNativeHandles++;
-        return {sample(pip) {
-          const row = native.sample(pip); stats.nativeSampleCalls++;
-          owner.nativePip = pip; owner.normalizedSample = Array.from(row); return row;
-        }, dispose() {
-          if (!alive) return; alive = false; native.dispose(); stats.activeNativeHandles--; stats.disposedNativeHandles++;
-        }};
-      },
+      nativeFactory: owner.nativeFactory,
     });
     const manifest = await owner.loader.catalogue({signal});
     if (!current(owner)) return;
@@ -282,6 +305,7 @@ async function loadSelected() {
     if (!current(owner)) { owner.character.dispose(); return; }
     world.add(owner.character.group);
     owner.transport = new PipTransport(owner.scene.startPip, owner.scene.endPip);
+    owner.originalTransport = owner.transport;
     owner.transport.setSpeed(Number($('speed').value));
     // Establish source root-motion zero at the retained calibration frame, then
     // frame the real Kandi skin using a moving pose before returning to start.
@@ -293,8 +317,10 @@ async function loadSelected() {
     await sampleAt(owner, owner.scene.startPip);
     if (!current(owner)) return;
     owner.followPosition = owner.character.rootBone.getWorldPosition(new THREE.Vector3());
+    owner.verifiedProfile = owner.active.motion.profile;
     resetCamera(); owner.ready = true;
     rhythmReview.attach(owner.scene, owner.chunks);
+    derivativeReview.attach();
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) owner.transport.play();
     $('loading-state').hidden = true; $('mesh-label').textContent = `${owner.character.stats.vertexCount.toLocaleString()} Kandi vertices`;
     $('resource-note').textContent = 'One selected motion chunk in memory. Switching performances unloads Kandi and the previous recording.';
@@ -313,7 +339,7 @@ function togglePlay() {
   if (!session?.ready) return;
   const transport = session.transport;
   if (transport.playing) transport.pause();
-  else { if (transport.pip() === transport.last) transport.seek(rhythmReview.currentLoop()?.first ?? transport.first); transport.play(); }
+  else { if (transport.pip() === transport.last) transport.seek(rhythmReview.currentLoop()?.first ?? playbackRange(session).first); transport.play(); }
   updateTransport();
 }
 function seek(pip) {
@@ -327,13 +353,71 @@ const rhythmReview = createRhythmReview({
   onSeek: seek,
   onPreview: () => { if (session?.ready) { session.transport.play(); updateTransport(); } },
 });
+function selectDerivativeMode(owner, mode) {
+  if (!current(owner) || !owner.derivative) return;
+  owner.transport.pause(); owner.derivativeMode = mode;
+  owner.transport = owner.derivative.transports[mode];
+  owner.transport.pause(); owner.transport.setSpeed(Number($('speed').value));
+  owner.transport.seek(playbackRange(owner).first); owner.lastPip = null;
+  const pip = playbackRange(owner).first;
+  sampleAt(owner, pip).catch(error => fail(error, owner)); updateTransport();
+}
+function clearDerivative(owner) {
+  if (!current(owner)) return;
+  owner.derivativeGeneration++;
+  const previous = owner.derivative;
+  if (!previous) return;
+  owner.transport.pause(); previous.loaded.dispose(); owner.derivative = null; owner.derivativeMode = null;
+  owner.transport = owner.originalTransport; owner.transport.pause();
+  owner.transport.setSpeed(Number($('speed').value)); owner.transport.seek(previous.originalPip);
+  owner.lastPip = null; rhythmReview.attach(owner.scene, owner.chunks);
+  sampleAt(owner, previous.originalPip).catch(error => fail(error, owner)); updateTransport();
+  $('resource-note').textContent = 'Original performance restored. The finished recording handle has been released.';
+}
+const derivativeReview = createDerivativeReview({
+  sidebar: document.querySelector('.sidebar'),
+  async onLoad(bytes, report) {
+    const owner = session;
+    if (!owner?.ready || !owner.verifiedProfile) throw Error('Load the matching Kandi performance first');
+    const token = ++owner.derivativeGeneration;
+    const info = await validateFinishedMotion(bytes, report, owner.scene);
+    if (!current(owner) || token !== owner.derivativeGeneration) return null;
+    const loaded = await owner.runtime.createStandaloneRigMotion(bytes, {
+      profile: owner.verifiedProfile, profileSha256: owner.scene.expectedProfile.fingerprint,
+      nativeFactory: owner.nativeFactory, signal: owner.controller.signal,
+    });
+    if (!current(owner) || token !== owner.derivativeGeneration) { loaded.dispose(); return null; }
+    owner.transport.pause();
+    const originalPip = owner.derivative?.originalPip ?? owner.originalTransport.pip();
+    owner.derivative?.loaded.dispose();
+    // The final clock pip is an exclusive stop marker, never a sampled pose.
+    // This preserves all N half-open samples and a period of N pips on repeat.
+    owner.derivative = {loaded, info, originalPip, repeat: false, repeatCount: 0, transports: {
+      finished: new PipTransport(info.first, info.last + 1, () => performance.now(), 1 / info.pipSeconds),
+      original: new PipTransport(info.sourceFirstPip, info.sourceEndPip + 1),
+    }};
+    rhythmReview.reset(); selectDerivativeMode(owner, 'finished');
+    $('resource-note').textContent = 'Original source and separate finished clip retained. Both use the same native sampler and calibrated Kandi skin.';
+    return info;
+  },
+  onMode(mode) { if (session?.derivative) selectDerivativeMode(session, mode); },
+  onRepeat(value) { if (session?.derivative) session.derivative.repeat = value; },
+  onClear() { if (session) clearDerivative(session); },
+});
 function frame() {
   if (pageClosed) return;
   const owner = session;
   if (owner?.ready) {
+    const wasPlaying = owner.transport.playing;
     let pip = owner.transport.pip();
     const loop = rhythmReview.currentLoop();
-    if (loop && pip >= Math.min(loop.endExclusive, owner.scene.endPip)) {
+    if (owner.derivative) {
+      const range = playbackRange(owner);
+      if (pip > range.last && owner.derivative.repeat && wasPlaying) {
+        owner.derivative.repeatCount++;
+        owner.transport.seek(range.first); owner.transport.play(); pip = range.first;
+      } else pip = Math.min(pip, range.last);
+    } else if (loop && pip >= Math.min(loop.endExclusive, owner.scene.endPip)) {
       owner.transport.seek(loop.first);
       pip = loop.first;
     }
@@ -351,7 +435,7 @@ $('unload-scene').addEventListener('click', () => unload());
 $('cancel-load').addEventListener('click', () => unload());
 $('play-toggle').addEventListener('click', togglePlay);
 $('restart').addEventListener('click', () => {
-  if (!session?.ready) return; seek(rhythmReview.currentLoop()?.first ?? session.scene.startPip); session?.transport.play(); updateTransport();
+  if (!session?.ready) return; seek(rhythmReview.currentLoop()?.first ?? playbackRange(session).first); session?.transport.play(); updateTransport();
 });
 $('seek').addEventListener('input', event => { rhythmReview.clearLoop(); seek(Number(event.target.value)); });
 $('speed').addEventListener('change', event => { session?.transport?.setSpeed(Number(event.target.value)); updateTransport(); });
@@ -382,6 +466,12 @@ window.meshDemo = Object.freeze({
       disposedGeometries: stats.disposedGeometries, pendingRequests: stats.pendingRequests + (owner?.pending ? 1 : 0),
       nativeSampleCalls: stats.nativeSampleCalls, loadedCacheIds: owner?.active ? [owner.active.id] : [],
       rhythmAnalysis: rhythmReview.diagnostics(),
+      finishedMotionReview: derivativeReview.diagnostics(),
+      finishedMotion: owner?.derivative ? {repairId: owner.derivative.info.repair.repair_id,
+        profileSha256: owner.derivative.loaded.motion.profileSha256,
+        startPip: owner.derivative.loaded.motion.startPip, sampleCount: owner.derivative.loaded.motion.sampleCount,
+        repeatCount: owner.derivative.repeatCount,
+        numericalChecksPassed: true, visualReviewVerified: false} : null,
       disposed: !owner, error: $('error').hidden ? null : $('error').textContent,
       build: config.build,
     };

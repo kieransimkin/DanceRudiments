@@ -155,6 +155,25 @@ and each caller's abort only cancels that caller's wait. When no waiters remain,
 the request can be cancelled. `unload(id)` invalidates that clip and releases its
 native instance; `dispose()` releases everything owned by that loader.
 
+For an explicitly selected local `dancerudiments.rig-motion` document, use
+`createStandaloneRigMotion(bytes, {profile, profileSha256, nativeFactory, signal})`.
+It returns `{motion, dispose}` with the same native sampling methods, channel
+decoder, finite/normalized/discrete/quaternion checks, signed 32-bit pip bounds
+and 64 MiB / 8,388,608-value limits as a package clip. It neither fetches files
+nor repeats the recording. Call `dispose()` on teardown; an aborted native
+construction also disposes a late result.
+
+The target `profile` must already be verified, such as a profile loaded from a
+hash-pinned package. The embedded profile must match it structurally, including
+rest-basis and source metadata, as well as declaring its SHA-256. This avoids
+trusting a copied fingerprint or attempting to reproduce Python's canonical
+floating-point JSON in JavaScript. The helper checks representation and rig
+compatibility; the caller must separately validate source identity, correction
+provenance and claimed numerical results. The
+[Kandi finished-loop review](mesh-demos.md#review-a-finished-loop-on-kandi)
+provides that application-level binding while keeping original and corrected
+recordings separate.
+
 The general browser loader retains requested clips until explicitly unloaded.
 The complete [page example](../examples/motion-packages/page-motion.mjs) maintains
 **one current chunk**, cancels obsolete requests on seeking, ignores late

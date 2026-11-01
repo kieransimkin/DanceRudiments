@@ -144,75 +144,50 @@ def _waveform(audio_path, count=1200):
 
 
 def _motion_to_frames(path, max_frames=240):
-    """Bake only a tiny synthetic rig stick skeleton for portable visual review.
+    """Bake bounded source-joint diagnostics with the shared offline evaluator.
 
-    This is NOT a retarget, production skinned-mesh render, or a new player.
-    Normalised Recording rows are decoded with their exact numbered profile.
+    Exact typed Recording/profile validation and portable carrier semantics are
+    required. Unsupported control rigs retain a clearly labelled channel graph;
+    invalid portable geometry is rejected rather than silently defaulted.
     """
     import numpy as np
-    d = json.loads(path.read_text())
-    if d.get('format') != 'dancerudiments.rig-motion' or d.get('profile_sha256') is None:
-        raise ValueError(f'Not a typed rig preview: {path}')
-    profile, recording = d['profile'], d['recording']
-    channels = profile['channels']
-    rows = recording['samples']
-    if not rows or any(len(row) != len(channels) for row in rows):
-        raise ValueError('Invalid sampled motion dimensions')
-    skeleton = profile.get('source', {}).get('skeleton', [])
-    points, edges = [], []
-    if skeleton:
-        names = [bone['name'] for bone in skeleton]
-        name_indices = {name: i for i, name in enumerate(names)}
-        if len(names) != len(name_indices) or len(names) > 120:
-            raise ValueError('Unexpected skeleton size or duplicate name')
-        rest = [np.asarray(b['rest_matrix'], dtype=float).reshape(4,4) for b in skeleton]
-        parents = [name_indices.get(b['parent'], -1) if b['parent'] is not None else -1
-                   for b in skeleton]
-        if any(p >= i for i,p in enumerate(parents)):
-            raise ValueError('Skeleton must declare parent-before-child order')
-        neutral = profile['source'].get('omitted_neutral_groups', [])
-        omitted = {(g['bone'],g['data_path']): g['values'] for g in neutral}
-        groups = {}
-        for i,c in enumerate(channels):
-            key = (c['bone'], c['data_path'])
-            groups.setdefault(key,{})[c['array_index']] = i
-        minima=np.array([c['minimum'] for c in channels]); widths=np.array([c['maximum']-c['minimum'] for c in channels])
-        steps = np.unique(np.linspace(0, len(rows)-1, min(max_frames, len(rows)), dtype=int))
-        for k in steps:
-            physical = minima + (np.asarray(rows[k],dtype=float)+1.)*widths/2
-            worlds=[]; positions=[]
-            for i,bone in enumerate(skeleton):
-                name = bone['name']
-                def values(path, default):
-                    idx = groups.get((name,path))
-                    if idx is None:
-                        return np.asarray(omitted.get((name,path),default),dtype=float)
-                    if set(idx) != set(range(len(default))):
-                        raise ValueError('Incomplete transform vector in rig profile')
-                    return np.asarray([physical[idx[j]] for j in range(len(default))])
-                pos=values('location',(0,0,0)); q=values('rotation_quaternion',(1,0,0,0))
-                scale=values('scale',(1,1,1)); q=q/max(1e-12,np.linalg.norm(q))
-                w,x,y,z=q
-                cross=np.array([[0,-z,y],[z,0,-x],[-y,x,0.]])
-                rotation=np.eye(3)+2*w*cross+2*cross@cross
-                basis=np.eye(4); basis[:3,:3]=rotation@np.diag(scale); basis[:3,3]=pos
-                p=parents[i]
-                matrix= (rest[i] @ basis if p<0 else worlds[p] @ np.linalg.inv(rest[p]) @ rest[i] @ basis)
-                worlds.append(matrix); positions.append([round(float(v),4) for v in matrix[:3,3]])
-            points.append(positions)
-        edges=[[parents[i],i] for i in range(len(parents)) if parents[i]>=0]
+    from dancerudiments_authoring.motion import load_rig_motion
+    from dancerudiments_authoring.motion_import import RigCapture
+    from dancerudiments_authoring.world_motion import evaluate_world_motion, UnsupportedWorldMotion
+    if type(max_frames) is not int or max_frames < 1:
+        raise ValueError('Preview frame budget must be a positive integer')
+    motion = load_rig_motion(path)
+    profile, recording = motion.profile, motion.recording
+    rows = recording.samples
+    steps = np.unique(np.linspace(0,len(rows)-1,min(max_frames,len(rows)),dtype=int)).tolist()
+    capture = RigCapture(profile,
+        tuple(recording.clock.time_seconds(k) for k in steps),
+        tuple(profile.decode(rows[k]) for k in steps))
+    unavailable = None
+    try:
+        world = evaluate_world_motion(capture)
+    except UnsupportedWorldMotion as error:
+        unavailable = str(error)
+        world = None
+    if world is not None:
+        if len(world.bone_names) > 120:
+            raise ValueError('Portable wireframe exceeds its 120-bone preview budget')
+        points = np.round(world.positions,4).tolist()
+        names = list(world.bone_names)
+        edges = [[parent,i] for i,parent in enumerate(world.parents) if parent >= 0]
     else:
-        # Valid Rigify profile without a portable bone rest skeleton: chart its
-        # normalised control values instead of inventing a wrong skeleton.
-        steps = range(0,len(rows),max(1,math.ceil(len(rows)/max_frames)))
-        indices=[i for i,c in enumerate(channels) if c.get('interpolation')!='step'][:12]
+        # Unknown constraint/control semantics get no fabricated bone poses.
+        names = []
+        indices=[i for i,c in enumerate(profile.channels) if c.interpolation!='step'][:12]
         points=[[[round(float(rows[k][j]),4),i/3,0] for i,j in enumerate(indices)] for k in steps]
         edges=[[i,i+1] for i in range(max(0,len(indices)-1))]
-    return dict(name=recording['name'],profile_sha256=d['profile_sha256'],
-                frame_count=len(points),bones=[b['name'] for b in skeleton] if skeleton else [],
+    return dict(name=recording.name,profile_sha256=profile.fingerprint,
+                frame_count=len(points),bones=names,
                 links=edges,xyz=points,
+                frame_relative_pips=[int(k) for k in steps],
                 beats=len(rows)/64,raw_sample_count=len(rows),
-                skeleton_kind='source_portable_fk' if skeleton else 'channel_graph_only')
+                skeleton_kind='source_portable_fk' if world is not None else 'channel_graph_only',
+                world_motion_unavailable_reason=unavailable)
 
 
 def _motion_library(job_root, *, max_motions=MAX_VISUAL_MOTIONS):
@@ -226,7 +201,13 @@ def _motion_library(job_root, *, max_motions=MAX_VISUAL_MOTIONS):
     if document.get('format') != 'dancerudiments.source-motion-loop-job':
         raise ValueError('Expected a complete source-first motion loop job')
     full=document.get('full_motion_clips', [])[:1]
-    loops=document.get('loopable_clips',document.get('previews', []))[:max_motions-len(full)]
+    untouched=document.get('loopable_clips',document.get('previews', []))
+    corrected=document.get('repaired_loop_clips', [])
+    loops=[]
+    for index in range(max(len(untouched),len(corrected))):
+        if index < len(untouched): loops.append(untouched[index])
+        if index < len(corrected): loops.append(corrected[index])
+    loops=loops[:max_motions-len(full)]
     candidates=[('full_length',entry) for entry in full]+[('loopable',entry) for entry in loops]
     whole_fit=document.get('full_motion_fit') or {}
     hypotheses=whole_fit.get('tempo_hypotheses') or []
@@ -252,10 +233,16 @@ def _motion_library(job_root, *, max_motions=MAX_VISUAL_MOTIONS):
                     confidence_interpretation='uncalibrated_kinematic_fit_not_probability',
                     source_tempo_hypotheses=hypotheses,
                     original_source_sha256=document.get('source_original_sha256'),
+                    source_capture_sha256=entry.get('corrected_capture_file_sha256',
+                                                     document.get('source_capture_sha256')),
+                    repaired=bool(entry.get('repaired',False)),
+                    numerical_repeat_seam_verified=bool(entry.get('numerical_repeat_seam_verified',False)),
                     rig_type_uri=document.get('type_uri'),
                     requires_review=True,
                     source_start_seconds=entry.get('source_start_seconds',
                                                   entry.get('sampled_bounds_seconds',[0])[0]),
+                    source_clock_start_seconds=(0. if entry.get('repaired') else
+                        entry.get('source_start_seconds',entry.get('sampled_bounds_seconds',[0])[0])),
                     source_end_seconds=entry.get('source_end_seconds',
                                                 entry.get('sampled_bounds_seconds',[0,0])[-1]),
                     audio_beat_alignment_verified=False)
@@ -438,7 +425,40 @@ def _rank_matches(song, motions, audio_report, max_pairs=18):
     return selection[:max_pairs]
 
 
-def build(stemlab_root, motion_job, output, *, fail_on_song_error=False):
+def _alignment_reviews(paths, motions, songs, jobs):
+    """Bind optional timing reports to actual source bytes and displayed media."""
+    from stemlab.analysis.motion_alignment import (
+        read_document, document_hash, create_alignment_revision)
+    if len(paths)>16:
+        raise ValueError('Select at most sixteen explicit timing reports')
+    motion_hashes={m.get('source_capture_sha256') for m in motions}
+    song_hashes={s['source_sha256'] for s in songs}
+    known_captures={}
+    for job in jobs:
+        capture=job/'source.capture.json'
+        if capture.is_file(): known_captures[_hash(capture)]=capture
+        for capture in (job/'repaired-loops').glob('*.capture.json'):
+            if capture.is_file() and not capture.is_symlink(): known_captures[_hash(capture)]=capture
+    reviews=[]
+    for path in paths:
+        report,digest=read_document(path)
+        if report.get('format')!='stemlab.motion-alignment.v1' or report.get('source_bytes_verified') is not True:
+            raise ValueError('Select a source-verified StemLab motion alignment report')
+        source=report.get('motion_source',{}).get('sha256')
+        if source not in motion_hashes or source not in known_captures:
+            raise ValueError('Timing report motion differs from the displayed source capture')
+        if report.get('audio_source',{}).get('sha256') not in song_hashes:
+            raise ValueError('Timing report audio differs from the bundled master')
+        for candidate in report.get('candidates',[]):
+            # Validate candidate mapping without accepting or writing a review.
+            create_alignment_revision(report,report_sha256=digest,
+                candidate_id=candidate['candidate_id'],reviewer='preview-validation',decision='needs_review')
+        reviews.append(dict(report=report,report_sha256=digest,
+                            report_content_sha256=document_hash(report)))
+    return reviews
+
+
+def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignment_reports=()):
     import soundfile as sf
     from stemlab.analysis.loops import analyze_loops, LoopConfig
     from stemlab.types import BeatResult
@@ -508,6 +528,7 @@ def build(stemlab_root, motion_job, output, *, fail_on_song_error=False):
                 entry.update(status='analysis_failed',error=str(exc),grid=None,
                              pairs=[],waveform=None,accepted_loops=[],exploratory_loops=[])
             songs.append(entry)
+        reviews=_alignment_reviews(alignment_reports,motions,songs,jobs) if alignment_reports else []
         data=dict(format='dancerudiments.song-motion-loop-preview',schema_version=1,
                   stemlab_source_checkout=str(root/'src/stemlab/analysis/loops.py'),
                   source_motion_job_sha256=job_hashes[0],
@@ -515,14 +536,18 @@ def build(stemlab_root, motion_job, output, *, fail_on_song_error=False):
                   media_policy='No MP3/WAV/cover/audio samples copied to the artifact; local exact-hash audio selection only.',
                   beat_status='model_or_detector_estimate_not_approved',
                   audio_loop_status='StemLab exploratory candidates; not verified seamless or vocal-clear',
-                  motion_model_status='synthetic fixture for pipeline verification; not the Kandi Boom skinned mesh',
+                  motion_model_status='source-rig preview; final Kandi Boom skin is reviewed in the mesh gallery',
+                  alignment_reviews=reviews,
                   songs=songs,motions=motions,errors=errors)
         raw=json.dumps(data,ensure_ascii=True,separators=(',',':'),allow_nan=False)
         (stage/'report.json').write_text(json.dumps(data,indent=2,allow_nan=False)+'\n')
         # Embed data: local file:// pages cannot fetch arbitrary JSON under CORS.
         template=VIEWER.read_text(encoding='utf-8')
-        html=template.replace('%%PREVIEW_DATA%%',raw.replace('<','\\u003c')).replace('%%BUILD_SOURCE%%','CI source-first loop analysis')
-        if '%%PREVIEW_DATA%%' in html:
+        timing_script=(VIEWER.parent/'alignment-review.js').read_text(encoding='utf-8')
+        html=(template.replace('%%PREVIEW_DATA%%',raw.replace('<','\\u003c'))
+              .replace('%%TIMING_REVIEW_SCRIPT%%',timing_script)
+              .replace('%%BUILD_SOURCE%%','CI source-first loop analysis'))
+        if '%%PREVIEW_DATA%%' in html or '%%TIMING_REVIEW_SCRIPT%%' in html:
             raise AssertionError('Missing report injection')
         (stage/'index.html').write_text(html,encoding='utf-8')
         stage.rename(output)
@@ -538,10 +563,12 @@ def main(argv=None):
                         help='Completed source-first job; repeat for additional local rig motions (max 8)')
     parser.add_argument('--output-dir',type=Path,required=True)
     parser.add_argument('--require-all-songs',action='store_true')
+    parser.add_argument('--alignment-report',type=Path,action='append',default=[],
+                        help='Source-verified StemLab audio/motion timing report for phase review')
     opts=parser.parse_args(argv)
     try:
         result=build(opts.stemlab_root,opts.motion_job,opts.output_dir,
-                     fail_on_song_error=opts.require_all_songs)
+                     fail_on_song_error=opts.require_all_songs,alignment_reports=opts.alignment_report)
     except (ValueError,RuntimeError,OSError) as exc:
         parser.error(str(exc))
     print(json.dumps({'output':str(opts.output_dir),'songs':[{k:v.get(k) for k in

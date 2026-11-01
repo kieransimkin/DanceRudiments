@@ -9,6 +9,12 @@ on:
       - 'tools/evaluate_real_rig_motions.py'
       - 'python/dancerudiments_authoring/full_motion_analysis.py'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/world_motion.py'
+      - 'python/dancerudiments_authoring/loop_repair.py'
+      - 'tools/source_motion_options.py'
+      - 'tests/python/test_source_motion_completion.py'
+      - 'tests/python/test_world_motion.py'
+      - 'tests/python/test_loop_repair.py'
       - 'tools/mesh_demo_sources.json'
       - 'tests/python/test_real_motion_benchmark.py'
 
@@ -33,7 +39,7 @@ jobs:
         with:
           repository: kieransimkin/stemlab
           # Exact source snapshot whose rig-motion analyser is integration-tested.
-          ref: e4b440e585748a5177b228e0a50e747787ec9762
+          ref: bd25b6e1736bba30924f770ec2c5d17640005432
           path: .cache/stemlab-source
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -61,10 +67,17 @@ jobs:
         # This *does* download the two explicitly selected CMU source files under
         # existing source-specific terms. Data is used only during the job.
         run: |
+          python - <<'PY_OPTIONS'
+          import json
+          from pathlib import Path
+          Path('.cache/loop-repair-options.json').write_text(json.dumps({
+              'contact_policy':'root_stabilize','require_contacts':False}))
+          PY_OPTIONS
           python tools/evaluate_real_rig_motions.py \
             --cache-root .cache/real-motion-sources \
             --output-dir .cache/real-motion-summary \
-            --download --min-full-confidence 0.70 --max-previews 2
+            --download --min-full-confidence 0.70 --max-previews 2 \
+            --repair-loops --max-repairs 6 --repair-options .cache/loop-repair-options.json
           python - <<'PY'
           import json
           from pathlib import Path
@@ -72,6 +85,8 @@ jobs:
           assert r['analysed_scene_count']==2 and r['failed_scene_count']==0,r
           assert {i['scene_id'] for i in r['scenes']}=={'boxbot','prism'}
           assert all(i['source_sha256'] and i['profile_sha256'] for i in r['scenes'])
+          assert all(i['world_motion_supported'] for i in r['scenes'])
+          assert r['total_corrected_loops'] >= 1, 'Pinned sources produced no bounded compiled loop derivative'
           assert not any(i['beat_alignment_confirmed'] or i['loop_seam_approved'] for i in r['scenes'])
           print('Evidence only:',[(i['scene_id'],i['bpm_estimated'],
                 i['bpm_confidence_percent'],i['preview_loop_count']) for i in r['scenes']])

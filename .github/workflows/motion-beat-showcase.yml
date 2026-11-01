@@ -9,6 +9,12 @@ on:
       - 'tools/build_motion_beat_showcase.py'
       - 'tests/python/test_motion_beat_showcase.py'
       - 'python/dancerudiments_authoring/source_loop_analysis.py'
+      - 'python/dancerudiments_authoring/world_motion.py'
+      - 'python/dancerudiments_authoring/loop_repair.py'
+      - 'tools/source_motion_options.py'
+      - 'tests/python/test_source_motion_completion.py'
+      - 'tests/python/test_world_motion.py'
+      - 'tests/python/test_loop_repair.py'
       - 'python/dancerudiments_authoring/full_motion_analysis.py'
       - 'motion-packages/cmu-dance-sources.json'
       - 'docs/motion-beat-showcase.md'
@@ -34,7 +40,7 @@ jobs:
         with:
           repository: kieransimkin/stemlab
           # Pinned compatibility snapshot. No ML weights or model downloads.
-          ref: 321febc6b6768b2e2de2f5b35f0882432bb4de9f
+          ref: bd25b6e1736bba30924f770ec2c5d17640005432
           path: .cache/stemlab-source
           persist-credentials: false
       - uses: actions/setup-python@v6
@@ -96,7 +102,7 @@ jobs:
               with Image.open(f) as img:
                   assert img.n_frames>=8 and img.size==(420,380), f
           doc=(root/'index.html').read_text('utf8')
-          assert 'beat-finding' in doc and 'CMU Graphics Lab' in doc
+          assert 'beat-finding' in doc.lower() and 'CMU Graphics Lab' in doc
           assert all(f.name in doc for f in files)
           assert 'non-looping motion studies' in doc
           print('Selected candidate loops:', data['selected_loop_candidate_count'],

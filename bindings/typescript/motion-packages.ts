@@ -107,6 +107,13 @@ export type MotionPackageLoader = Readonly<{
   unload(id: string): void;
   dispose(): void;
 }>;
+export type StandaloneRigMotionOptions = Readonly<{
+  /** Already verified target profile, for example from a loaded motion package. */
+  profile: MotionRigProfile;
+  profileSha256: string;
+  nativeFactory: NativeMotionRecordingFactory;
+  signal?: AbortSignal;
+}>;
 
 const MAX_JSON_BYTES = 64 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 8 * 1024 * 1024;
@@ -347,6 +354,81 @@ function validateRecording(value: unknown, clip: MotionPackageClip, manifest: Mo
     samples: Object.freeze(v.samples as number[][]), provenance: jsonObject(v.provenance, "recording provenance")});
 }
 
+function nativeMotionHandle(recording: MotionRecording, profile: MotionRigProfile,
+  profileSha256: string, clip: MotionPackageClip, native: NativeMotionRecording):
+  {handle: LoadedRigMotion; dispose(): void} {
+  const decode = decoder(profile), first = clip.start_pip, count = clip.sample_count;
+  let live: NativeMotionRecording | undefined = native;
+  const sampleNormalized = (pip: number): readonly number[] => {
+    if (!live) throw Error("Rig motion was unloaded/disposed");
+    integer(pip, MIN_PIP, MAX_PIP, "pip");
+    if (pip < first || pip - first >= count) throw Error("Pip outside non-looping rig motion");
+    const row = live.sample(pip);
+    if (row.length !== recording.dimensions.length || Array.from(row).some(value => !Number.isFinite(value) || Math.abs(value) > 1))
+      throw Error("Native recording returned invalid dimensions/values");
+    return Object.freeze(Array.from(row));
+  };
+  const handle: LoadedRigMotion = Object.freeze({id: clip.id, profile, profileSha256,
+    dimensions: recording.dimensions, clock: recording.clock, startPip: first, sampleCount: count,
+    metadata: clip.metadata ?? Object.freeze({}), get disposed() { return !live; }, sampleNormalized,
+    sample: (pip: number) => decode(sampleNormalized(pip))});
+  return {handle, dispose() { const previous = live; live = undefined; previous?.dispose(); }};
+}
+
+function sameJson(left: MotionJson, right: MotionJson): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+  if (Array.isArray(left) || Array.isArray(right))
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((v, i) => sameJson(v, right[i]));
+  const a = left as MotionJsonObject, b = right as MotionJsonObject;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every(key => Object.prototype.hasOwnProperty.call(b, key) && sameJson(a[key], b[key]));
+}
+
+/** Explicitly load a local typed recording through the same validators, unit
+ * decoder and caller-supplied native sampler as a package clip. The target
+ * profile must already have a verified identity. The embedded profile must
+ * match it structurally as well as declaring its hash; a claimed hash alone is
+ * insufficient. This does not approve provenance, timing or loop corrections.
+ */
+export async function createStandaloneRigMotion(bytes: Uint8Array,
+  options: StandaloneRigMotionOptions): Promise<Readonly<{motion: LoadedRigMotion; dispose(): void}>> {
+  if (!(bytes instanceof Uint8Array) || !bytes.byteLength || bytes.byteLength > MAX_JSON_BYTES)
+    throw Error("Standalone rig motion must be 1..64 MiB of UTF-8 JSON");
+  if (!options || !SHA.test(options.profileSha256) || typeof options.nativeFactory !== "function")
+    throw Error("A verified target profile and native recording factory are required");
+  const signal = options.signal ?? new AbortController().signal;
+  checkAbort(signal);
+  const v = object(parseJson(bytes), "rig motion");
+  fields(v, ["format", "schema_version", "type_uri", "profile_sha256", "profile", "recording"], [], "rig motion");
+  const uri = typeUri(v.type_uri);
+  if (v.format !== "dancerudiments.rig-motion" || v.schema_version !== 1
+      || v.profile_sha256 !== options.profileSha256 || uri !== options.profile.type_uri)
+    throw Error("Standalone rig motion target profile identity mismatch");
+  const dims = dimensions(options.profile.channels.map(channel => channel.name));
+  // Internal validation context only: no virtual package is fetched or persisted.
+  const manifest = {type_uri: uri, profile_sha256: options.profileSha256, dimensions: dims} as MotionPackageManifest;
+  const profile = validateProfile(v.profile, manifest);
+  const expected = validateProfile(options.profile, manifest);
+  if (!sameJson(profile as unknown as MotionJson, expected as unknown as MotionJson))
+    throw Error("Standalone embedded profile differs from the verified target profile");
+  const raw = object(v.recording, "recording"), clock = object(raw.clock, "recording clock");
+  if (!Array.isArray(raw.samples)) throw Error("Standalone recording needs sample rows");
+  const count = integer(raw.samples.length, 1, Math.floor(MAX_VALUES / dims.length), "sample_count");
+  const first = integer(clock.start_pip, MIN_PIP, MAX_PIP - count, "start_pip");
+  const clip = {id: identifier(raw.name, "recording name"), start_pip: first, sample_count: count} as MotionPackageClip;
+  const recording = validateRecording(raw, clip, manifest, profile);
+  checkAbort(signal);
+  const native = await options.nativeFactory(recording, {signal});
+  if (!native || typeof native.sample !== "function" || typeof native.dispose !== "function") {
+    native?.dispose?.();
+    throw Error("Native recording factory returned an invalid handle");
+  }
+  if (signal.aborted) { native.dispose(); throw abortError(); }
+  const loaded = nativeMotionHandle(recording, profile, options.profileSha256, clip, native);
+  return Object.freeze({motion: loaded.handle, dispose: loaded.dispose});
+}
+
 function abortError(): Error { return new DOMException("Motion loading was aborted", "AbortError"); }
 function checkAbort(signal: AbortSignal): void { if (signal.aborted) throw abortError(); }
 
@@ -521,23 +603,7 @@ export function createMotionPackageLoader(options: MotionPackageLoaderOptions): 
           throw Error("Native recording factory returned an invalid handle");
         }
         if (signal.aborted) { native.dispose(); throw abortError(); }
-        const count = clip.sample_count, first = clip.start_pip, clock = recording.clock;
-        const decode = decoder(profile);
-        let live: NativeMotionRecording | undefined = native;
-        const sampleNormalized = (pip: number): readonly number[] => {
-          if (!live) throw Error("Rig motion was unloaded/disposed");
-          integer(pip, MIN_PIP, MAX_PIP, "pip");
-          if (pip < first || pip - first >= count) throw Error("Pip outside non-looping rig motion");
-          const row = live.sample(pip);
-          if (row.length !== manifest.dimensions.length || Array.from(row).some(value => !Number.isFinite(value) || Math.abs(value) > 1))
-            throw Error("Native recording returned invalid dimensions/values");
-          return Object.freeze(Array.from(row));
-        };
-        const handle: LoadedRigMotion = Object.freeze({id, profile, profileSha256: manifest.profile_sha256,
-          dimensions: manifest.dimensions, clock, startPip: first, sampleCount: count,
-          metadata: clip.metadata ?? Object.freeze({}), get disposed() { return !live; }, sampleNormalized,
-          sample: (pip: number) => decode(sampleNormalized(pip))});
-        return {handle, dispose() { const previous = live; live = undefined; previous?.dispose(); }};
+        return nativeMotionHandle(recording, profile, manifest.profile_sha256, clip, native);
       }, dropClip);
       return loaded.handle;
     },

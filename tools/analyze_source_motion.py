@@ -23,6 +23,7 @@ from dancerudiments_authoring.source_loop_analysis import (
     analyse_source_capture, source_capture_from_bvh,
 )
 from import_motion_collection import preflight
+from source_motion_options import add_completion_arguments, completion_options
 
 
 def main(argv=None):
@@ -54,8 +55,10 @@ def main(argv=None):
                         help='Only analyse; do not export a complete BPM-matched Action')
     parser.add_argument('--verify-native', action='store_true',
                         help='Require installed C++ native sampler and compare converted pip samples')
+    add_completion_arguments(parser)
     args = parser.parse_args(argv)
     try:
+        options = completion_options(args)
         if not args.source.is_file():
             raise FileNotFoundError(f'Source file does not exist: {args.source}')
         output = args.output_dir.resolve()
@@ -96,9 +99,11 @@ def main(argv=None):
             max_bpm=args.max_bpm, target_bpm=args.target_bpm,
             max_previews=args.max_previews, verify_native=args.verify_native,
             full_motion_confidence_threshold=args.min_full_confidence,
-            export_full_motion=not args.no_full_motion)
+            export_full_motion=not args.no_full_motion, **options)
         print(json.dumps(dict(output=str(output), preview_count=result['preview_count'],
                               full_motion_count=result['full_motion_count'],
+                              repaired_loop_count=result['repaired_loop_count'],
+                              world_motion_supported=result['world_motion_supported'],
                               full_motion_confidence_percent=result['full_motion_fit']['confidence_percent'],
                               selected_source_bpm=result['full_motion_fit']['selected_bpm'],
                               source_original_sha256=raw_digest,

@@ -55,6 +55,32 @@ The `Rigify motion` workflow supplies that optional
 integration gate. Use synthetic fixtures; research catalogue entries do not
 authorize downloading or bundling third-party motion, models or media.
 
+## Source-world evidence, corrected loops and timing review
+
+Read `docs/source-motion-completion.md`, `docs/world-motion-analysis.md`,
+`docs/loop-repair.md` and `docs/song-loop-preview.md` for analysis changes. Use
+the canonical offline world evaluator; do not add another FK implementation to
+review tools or a second live sampler. World evidence must bind to the exact
+capture bytes, saved profile and original timestamps. Preserve family lineage,
+tempo ambiguity and explicit abstention.
+
+Keep corrected loop derivatives separate from raw sources/candidates. Before
+exporting numerical seam success, verify the final annotated compiled payload,
+all decoded rows, half-open native extent, wrap tangent and available contact
+constraints. Native parity failure aborts the action. Missing contacts and human
+musical/skin/seam review are separate from numerical success. Timing revisions
+must retain exact report/source hashes and never bridge missing source coverage.
+
+Run `python -m pytest` for the affected source, world, loop, rig and motion
+suites, including `test_source_motion_completion.py` and
+`test_song_alignment_review.py`; function-style tests must not be hidden by
+unittest-only discovery. Run `npm test`, the source song-preview browser gate,
+and Kandi's `--finished-motion`/`--repair-report` browser checks for review UI
+changes. Use a project-owned fresh `NUMBA_CACHE_DIR` for audio preview jobs.
+The source integration workflow may pin an exact companion feature commit for
+tests; publish that commit before starting dependent remote CI. This exception
+does not change release dependencies or authorise deployment.
+
 ## Optional motion packages
 
 Read `docs/motion-packages.md` and `docs/blender-motion-import.md` for changes to

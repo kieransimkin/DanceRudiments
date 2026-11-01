@@ -21,12 +21,15 @@ sys.path.insert(0, str(ROOT / 'python'))
 from dancerudiments_authoring.motion_import import load_capture
 from dancerudiments_authoring.source_loop_analysis import analyse_source_capture
 from import_motion_collection import preflight, slug
+from source_motion_options import add_completion_arguments, completion_options
 
 SHA = re.compile(r'^[a-f0-9]{64}$')
 
 
 def analyse_batch(index_path, output_root, *, max_previews=4, min_full_confidence=.70,
-                  target_bpm=None, verify_native=False, max_actions=100):
+                  target_bpm=None, verify_native=False, max_actions=100,
+                  world_space=True, tempo_strategy='consensus', repair_loops=False,
+                  max_repairs=4, repair_options=None):
     index_path = Path(index_path).expanduser().resolve()
     root = index_path.parent
     output_root = Path(output_root).expanduser().absolute()
@@ -55,7 +58,7 @@ def analyse_batch(index_path, output_root, *, max_previews=4, min_full_confidenc
                   extraction_index_sha256=hashlib.sha256(index_path.read_bytes()).hexdigest(),
                   source_file_sha256=source['sha256'],
                   source_file_details=source, actions=[], failures=[],
-                  full_motion_shortlist=[], loopable_shortlist=[],
+                  full_motion_shortlist=[], loopable_shortlist=[], repaired_loop_shortlist=[],
                   full_motion_confidence_threshold=min_full_confidence,
                   timing_status='kinematic_estimate_not_musically_verified')
     seen_paths, seen_bindings = set(), set()
@@ -90,7 +93,9 @@ def analyse_batch(index_path, output_root, *, max_previews=4, min_full_confidenc
                     original_source_sha256=source['sha256'],
                     max_previews=max_previews, target_bpm=target_bpm,
                     full_motion_confidence_threshold=min_full_confidence,
-                    verify_native=verify_native)
+                    verify_native=verify_native, world_space=world_space,
+                    tempo_strategy=tempo_strategy, repair_loops=repair_loops,
+                    max_repairs=max_repairs, repair_options=repair_options)
                 output=folder.relative_to(stage).as_posix()
                 item=dict(identity, relative_output=output,
                           source_capture_sha256=result['source_capture_sha256'],
@@ -99,7 +104,8 @@ def analyse_batch(index_path, output_root, *, max_previews=4, min_full_confidenc
                           confidence_percent=result['full_motion_fit']['confidence_percent'],
                           selected_bpm=result['full_motion_fit']['selected_bpm'],
                           full_motion_count=result['full_motion_count'],
-                          loopable_clip_count=result['loopable_clip_count'])
+                          loopable_clip_count=result['loopable_clip_count'],
+                          repaired_loop_count=result['repaired_loop_count'])
                 report['actions'].append(item)
                 for full in result['full_motion_clips']:
                     report['full_motion_shortlist'].append(dict(item,
@@ -108,6 +114,10 @@ def analyse_batch(index_path, output_root, *, max_previews=4, min_full_confidenc
                     report['loopable_shortlist'].append(dict(item,
                         filename=loop['filename'], score=loop['score'],
                         beats=loop['source_beats']))
+                for loop in result['repaired_loop_clips']:
+                    report['repaired_loop_shortlist'].append(dict(item,
+                        filename=loop['filename'], score=loop['score'], beats=loop['source_beats'],
+                        repair_report_file=loop['repair_report_file']))
             except (ValueError, KeyError, RuntimeError, OSError) as exc:
                 report['failures'].append(dict(identity, error=str(exc)))
         report['analysed_action_count']=len(report['actions'])
@@ -115,6 +125,7 @@ def analyse_batch(index_path, output_root, *, max_previews=4, min_full_confidenc
         report['truncated']=len(inputs)>max_actions
         report['full_motion_count']=len(report['full_motion_shortlist'])
         report['loopable_clip_count']=len(report['loopable_shortlist'])
+        report['repaired_loop_count']=len(report['repaired_loop_shortlist'])
         report['full_motion_shortlist'].sort(key=lambda x:-x['confidence_percent'])
         report['loopable_shortlist'].sort(key=lambda x:-x['score'])
         (stage/'index.json').write_text(json.dumps(report,indent=2,allow_nan=False)+'\n',encoding='utf-8')
@@ -133,15 +144,17 @@ def main(argv=None):
     parser.add_argument('--target-bpm',type=float)
     parser.add_argument('--max-actions',type=int,default=100)
     parser.add_argument('--verify-native',action='store_true')
+    add_completion_arguments(parser)
     a=parser.parse_args(argv)
     try:
         d=analyse_batch(a.index,a.output_root,max_previews=a.max_previews,
               min_full_confidence=a.min_full_confidence,target_bpm=a.target_bpm,
-              max_actions=a.max_actions,verify_native=a.verify_native)
+              max_actions=a.max_actions,verify_native=a.verify_native, **completion_options(a))
     except (ValueError,RuntimeError,OSError) as exc:
         parser.error(str(exc))
     print(json.dumps(dict(actions=d['analysed_action_count'],
         full_motions=d['full_motion_count'], loops=d['loopable_clip_count'],
+        repaired_loops=d['repaired_loop_count'],
         failures=d['failed_action_count'],truncated=d['truncated']),indent=2))
     return 2 if d['failures'] or d['truncated'] else 0
 

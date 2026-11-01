@@ -430,7 +430,7 @@ def write_gallery(directory, rows, selections, *, mirror_commit):
     a{{color:#94ded5}}.caution{{color:#f1bd9e;font-size:13px}}
     .tag{{text-transform:uppercase;letter-spacing:.05em;font-size:12px;color:#95d4c8}}
     </style></head><body><main><h1>Beat-finding on real rig movement</h1>
-    <p>Source-hash-checked CMU motions analysed with DanceRudiments and StemLab.
+    <p>Source-hash-checked CMU Graphics Lab motions analysed with DanceRudiments and StemLab.
     This build contains <strong>{loops} unapproved loop candidates</strong> and
     <strong>{studies} non-looping motion studies</strong>. Where the beat-and-seam
     evidence did not support a loop, the gallery displays an active source excerpt

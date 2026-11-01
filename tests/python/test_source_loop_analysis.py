@@ -7,7 +7,6 @@ import json
 import math
 import os
 from pathlib import Path
-import sys
 import tempfile
 import types
 import unittest
@@ -63,6 +62,7 @@ def fake_stemlab(*, score=.9, pose_only=False, missing_grid=False,
         return dict(format='stemlab.rig-motion-analysis', schema_version=1,
             source_kind='capture', source_file_sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest(),
             type_uri=data['type_uri'], profile_sha256=data['profile_sha256'],
+            source_range_seconds=[data['frame_times_seconds'][0], data['frame_times_seconds'][-1]],
             recommended_tempo=dict(bpm=120., beat_zero_seconds=.0, score=.95),
             estimated_beat_map=None if missing_grid else dict(format='dancerudiments.beat-map',
                 schema_version=1, pips_per_beat=64, interpolation='linear',
@@ -85,10 +85,17 @@ def fake_stemlab(*, score=.9, pose_only=False, missing_grid=False,
     return {'stemlab': a, 'stemlab.analysis': b, 'stemlab.analysis.rig_motion': c}
 
 
+def patch_stemlab(modules):
+    """Replace only the analysis boundary, preserving imported optional modules."""
+    analyser = modules['stemlab.analysis.rig_motion']
+    return mock.patch('dancerudiments_authoring.source_loop_analysis._stemlab',
+                      return_value=(analyser.analyze_rig_capture, analyser.write_rig_analysis))
+
+
 class SourceFirstLoopTests(unittest.TestCase):
     def test_capture_to_loop_compiles_after_stemlab_and_keeps_time_identity(self):
         original = fixture()
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(sys.modules, fake_stemlab()):
+        with tempfile.TemporaryDirectory() as directory, patch_stemlab(fake_stemlab()):
             path = Path(directory) / 'analysis'
             report = analyse_source_capture(original, path, min_bpm=100, max_bpm=140,
                                            target_bpm=124, max_previews=2)
@@ -114,15 +121,14 @@ class SourceFirstLoopTests(unittest.TestCase):
                 analyse_source_capture(original, path)
 
     def test_no_implicit_tempo_for_pose_only_candidate(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(sys.modules, fake_stemlab(pose_only=True)):
+        with tempfile.TemporaryDirectory() as directory, patch_stemlab(fake_stemlab(pose_only=True)):
             report = analyse_source_capture(fixture(), Path(directory)/'analysis')
             self.assertEqual(report['preview_count'], 0)
             self.assertEqual(report['rejected_candidates'][0]['reason'], 'not_an_unverified_beat_grid_loop')
             self.assertEqual(list((Path(directory)/'analysis'/'previews').glob('*.json')), [])
 
     def test_missing_stemlab_beat_map_cannot_promote_loop_to_beat_grid(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
-                sys.modules, fake_stemlab(missing_grid=True)):
+        with tempfile.TemporaryDirectory() as directory, patch_stemlab(fake_stemlab(missing_grid=True)):
             report = analyse_source_capture(fixture(), Path(directory)/'analysis')
             self.assertEqual(report['preview_count'], 0)
             self.assertEqual(report['rejected_candidates'][0]['reason'], 'missing_source_grid_evidence')
@@ -130,8 +136,8 @@ class SourceFirstLoopTests(unittest.TestCase):
 
     def test_invalid_pose_or_root_drift_is_never_compiled(self):
         for metric in ({'pose_mismatch': .85}, {'root_drift': .50}):
-            with self.subTest(metric=metric), tempfile.TemporaryDirectory() as directory, mock.patch.dict(
-                    sys.modules, fake_stemlab(**metric)):
+            with self.subTest(metric=metric), tempfile.TemporaryDirectory() as directory, patch_stemlab(
+                    fake_stemlab(**metric)):
                 report = analyse_source_capture(fixture(), Path(directory)/'analysis')
                 self.assertEqual(report['preview_count'], 0)
                 self.assertEqual(report['rejected_candidates'][0]['reason'],
@@ -139,7 +145,7 @@ class SourceFirstLoopTests(unittest.TestCase):
                 self.assertFalse(list((Path(directory)/'analysis'/'previews').glob('*.json')))
 
     def test_invalid_bpm_or_previews_rejected_without_mutation(self):
-        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(sys.modules, fake_stemlab()):
+        with tempfile.TemporaryDirectory() as directory, patch_stemlab(fake_stemlab()):
             folder = Path(directory)/'output'
             for params in ({'target_bpm': 0}, {'min_bpm': 180, 'max_bpm': 100},
                            {'max_previews': 13}):

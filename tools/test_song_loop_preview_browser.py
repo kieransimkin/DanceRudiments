@@ -14,10 +14,11 @@ from pathlib import Path
 import threading
 
 
-def inspect(page_path: Path, audio_path: Path, output_dir: Path):
+def inspect(page_path: Path, audio_path: Path, output_dir: Path, *, require_timing_review=False):
     from playwright.sync_api import sync_playwright
     page_path=page_path.resolve();site=page_path.parent
     report=json.loads((site/'report.json').read_text())
+    timing_result=None
     output_dir.mkdir(parents=True,exist_ok=True)
     if len(report['songs'])!=3:
         raise AssertionError('Expected all three distinct StemLab song masters')
@@ -62,6 +63,43 @@ def inspect(page_path: Path, audio_path: Path, output_dir: Path):
             page.locator('#audiofile').set_input_files(str(audio_path.resolve()))
             page.get_by_text('Exact master verified locally.',exact=False).wait_for(timeout=30000)
             assert page.locator('#audio').get_attribute('src').startswith('blob:')
+            if require_timing_review:
+                from stemlab.analysis.motion_alignment import validate_alignment_revision
+                entry=next(e for e in report['alignment_reviews']
+                           if e['report']['audio_source']['sha256']==report['songs'][truth]['source_sha256'])
+                motion=next(m for m in report['motions']
+                            if m.get('source_capture_sha256')==entry['report']['motion_source']['sha256'])
+                page.select_option('#motion',motion['id'])
+                assert page.locator('#timing-candidate option').count()==len(entry['report']['candidates'])
+                assert not page.locator('#timing-enable').is_checked()
+                assert page.locator('#timing-save').is_enabled()
+                page.locator('#timing-enable').check()
+                page.locator('#timing-reviewer').fill('Automated UI test — not a musical approval')
+                # A small explicit phase edit, constrained to actual source coverage.
+                phase=page.evaluate('''entry => {
+                  for(const delta of [.01,-.01,0])try{
+                    DanceRudimentsTimingReview.shiftedSegments(entry,0,delta);return delta;
+                  }catch{}
+                  throw Error('No valid phase correction');
+                }''',entry)
+                page.locator('#timing-offset').fill(str(phase))
+                first_audio=entry['report']['candidates'][0]['mapping_segments'][0]['anchors'][0]['audio_seconds']+phase
+                page.locator('#timing-beat-one').fill(str(first_audio))
+                page.select_option('#timing-meter','4/4')
+                with page.expect_download() as saved:
+                    page.locator('#timing-save').click()
+                revision_path=output_dir/'automated-test-timing-revision.json'
+                saved.value.save_as(revision_path)
+                revision=json.loads(revision_path.read_text())
+                validate_alignment_revision(entry['report'],revision,report_sha256=entry['report_sha256'])
+                assert revision['beat_one_audio_seconds']==first_audio
+                assert revision['meter']==[4,4]
+                assert not revision['loop_seams_verified'] and not revision['retargeting_verified']
+                assert page.evaluate('motionPhase(-1)') is None
+                timing_result=dict(status='passed',candidate_count=len(entry['report']['candidates']),
+                    phase_correction_seconds=phase,source_identity_checked=True,
+                    coverage_gap_no_extrapolation=True,revision_validated_by_stemlab=True,
+                    review_is_automated_test_only=True)
             page.locator('#silent').click()
             page.wait_for_timeout(550)
             assert page.locator('#silent').inner_text().startswith('■')
@@ -87,6 +125,7 @@ def inspect(page_path: Path, audio_path: Path, output_dir: Path):
     finally:
         server.shutdown();server.server_close()
     return dict(status='passed',songs=[s['id'] for s in report['songs']],errors=[],
+                timing_review=timing_result,
                 screenshots=['song-loop-desktop.png','song-loop-mobile.png'])
 
 
@@ -95,8 +134,11 @@ def main(argv=None):
     ap.add_argument('--site',type=Path,required=True)
     ap.add_argument('--truth-audio',type=Path,required=True)
     ap.add_argument('--output-dir',type=Path,required=True)
+    ap.add_argument('--require-timing-review',action='store_true',
+                    help='Exercise supplied exact-source timing evidence and validate the saved test revision')
     a=ap.parse_args(argv)
-    status=inspect(a.site/'index.html',a.truth_audio,a.output_dir)
+    status=inspect(a.site/'index.html',a.truth_audio,a.output_dir,
+                   require_timing_review=a.require_timing_review)
     (a.output_dir/'browser-report.json').write_text(json.dumps(status,indent=2)+'\n')
     print(json.dumps(status,indent=2))
 

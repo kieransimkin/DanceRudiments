@@ -1,15 +1,17 @@
 /** A UI clock only. Poses are always read by the existing native sampler. */
 export const MOTION_TIME_RATES = Object.freeze({half: 0.5, normal: 1, double: 2});
 export class PipTransport {
-  constructor(first, last, now = () => performance.now()) {
+  constructor(first, last, now = () => performance.now(), pipsPerSecond = 64) {
     if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || last < first)
       throw Error('Invalid inclusive motion bounds');
-    this.first = first; this.last = last; this.now = now;
+    if (!Number.isFinite(pipsPerSecond) || pipsPerSecond <= 0)
+      throw Error('Invalid motion clock rate');
+    this.first = first; this.last = last; this.now = now; this.pipsPerSecond = pipsPerSecond;
     this.anchorPip = first; this.anchorTime = now(); this.speed = 1; this.playing = false;
     this.timeMode = 'normal';
   }
   position(time = this.now()) {
-    const value = this.anchorPip + (this.playing ? Math.max(0, time - this.anchorTime) * .064 * this.speed : 0);
+    const value = this.anchorPip + (this.playing ? Math.max(0, time - this.anchorTime) * this.pipsPerSecond / 1000 * this.speed : 0);
     if (value >= this.last) {
       this.anchorPip = this.last; this.anchorTime = time; this.playing = false;
       return this.last;

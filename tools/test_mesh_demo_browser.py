@@ -65,7 +65,8 @@ def local_server(root):
         thread.join(timeout=5)
 
 
-def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, base_url=None):
+def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, base_url=None,
+         finished_motion=None, repair_report=None):
     from playwright.sync_api import sync_playwright
 
     site = Path(site_dir).resolve()
@@ -103,6 +104,22 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                       runtime_influence_limit=target['runtimeInfluenceLimit']),
                   source_timing='time-only; musical BPM and phase unverified',
                   rendering='Chromium WebGL 2; ANGLE SwiftShader software renderer')
+    if bool(finished_motion) != bool(repair_report):
+        raise ValueError('Provide both a finished motion and its matching repair report')
+    finished = None
+    if finished_motion:
+        from dancerudiments_authoring.motion import load_rig_motion
+        motion_path, repair_path = Path(finished_motion).resolve(), Path(repair_report).resolve()
+        parsed = load_rig_motion(motion_path)
+        evidence = json.loads(repair_path.read_text(encoding='utf-8'))
+        finished = dict(motion=parsed, player=parsed.player(), evidence=evidence,
+                        motion_path=motion_path, repair_path=repair_path)
+        report['finished_motion_review'] = dict(
+            motion=file_identity(motion_path, motion_path.name),
+            repair_report=file_identity(repair_path, repair_path.name),
+            numerical_gate=evidence.get('compiled_verification', {}).get('passed') is True,
+            target_visual_review_verified=False, musical_alignment_verified=False,
+            status='NOT_RUN')
 
     def check(condition, description):
         if not condition:
@@ -299,6 +316,77 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
                     page.screenshot(path=str(output / name), full_page=True)
                     report['screenshots'].append(name)
                 page.set_viewport_size(dict(width=1440, height=1000))
+                if finished and finished['evidence'].get('original_source_sha256') == scene['sourceSha256']:
+                    review = page.get_by_role('region', name='Finished loop target review')
+                    original = snapshot()
+                    original_calibration = original['characterDiagnostics']
+                    before_requests = len(requests)
+                    review.get_by_label('Choose finished rig motion JSON').set_input_files(str(finished['motion_path']))
+                    review.get_by_label('Choose matching loop repair report').set_input_files(str(finished['repair_path']))
+                    review.get_by_role('button', name='Load finished clip', exact=True).click()
+                    page.wait_for_function('''meshDemo.debugSnapshot().finishedMotionReview.loaded ||
+                        Array.from(document.querySelectorAll('[aria-label="Finished loop target review"] [role=alert]')).some(x=>!x.hidden)''', timeout=30000)
+                    loaded = snapshot()
+                    check(loaded['finishedMotionReview']['loaded'] is True,
+                          f'{sid}: matched local finished motion passes source/profile/correction validation: '
+                          f'{review.locator("[role=alert]").text_content()}')
+                    check(loaded['activeNativeHandles'] == 2 and not loaded['playing'],
+                          f'{sid}: local derivative owns one separate native handle and begins paused')
+                    calibration_keys = ('calibrated', 'retargetReferenceMaxAimError',
+                        'retargetReferenceMaxOffsetDegrees', 'retargetReferenceOffsetsDegrees')
+                    check(loaded['finishedMotion']['profileSha256'] == scene['expectedProfile']['fingerprint']
+                          and all(loaded['characterDiagnostics'][key] == original_calibration[key]
+                                  for key in calibration_keys),
+                          f'{sid}: finished motion reuses the exact source profile and original Kandi calibration')
+                    count = len(finished['motion'].recording.samples)
+                    corrected_vertices, corrected_checks = [], []
+                    for pip in sorted({0, count//4, count//2, count-1}):
+                        state = seek(pip)
+                        normalized = maximum_error(state['nativeNormalizedSample'],
+                                                   finished['motion'].recording.samples[pip])
+                        physical = maximum_error(state['physicalSample'], finished['player'].sample(pip))
+                        check(normalized == 0 and physical <= 1e-9,
+                              f'{sid}: finished pip {pip} matches the independent Python-native correction')
+                        corrected_checks.append(dict(pip=pip, normalized_max_error=normalized,
+                                                     physical_max_error=physical))
+                        corrected_vertices.append(state['representativeDeformedVertices'])
+                    changed = max(maximum_error(frame, corrected_vertices[0]) for frame in corrected_vertices[1:])
+                    check(changed > 1e-5, f'{sid}: finished native poses deform the actual Kandi target skin')
+                    check(len(requests) == before_requests,
+                          f'{sid}: local correction import and playback fetch no additional assets')
+                    review.get_by_label('Repeat finished loop for visual review').check()
+                    seek(count-2)
+                    page.locator('#play-toggle').click()
+                    page.wait_for_function('meshDemo.debugSnapshot().finishedMotion.repeatCount >= 2', timeout=30000)
+                    page.locator('#play-toggle').click()
+                    check(snapshot()['finishedMotionReview']['repeat'] is True
+                          and snapshot()['finishedMotion']['visualReviewVerified'] is False,
+                          f'{sid}: explicit repetition crosses the half-open boundary without granting visual approval')
+                    seek(count//4)
+                    page.locator('#reset-view').click()
+                    name = f'{prefix}-{sid}-finished-loop.png'
+                    page.screenshot(path=str(output/name), full_page=True)
+                    report['screenshots'].append(name)
+                    review.get_by_role('button', name='Compare original', exact=True).click()
+                    first_source = math.ceil(finished['evidence']['source_start_seconds']*64-1e-8)
+                    page.wait_for_function('(pip)=>meshDemo.debugSnapshot().currentPip===pip && meshDemo.debugSnapshot().pendingRequests===0', arg=first_source)
+                    compared = snapshot()
+                    source = recordings[sid][compared['loadedChunkId']]
+                    check(compared['finishedMotionReview']['mode'] == 'original'
+                          and maximum_error(compared['nativeNormalizedSample'],
+                              source['samples'][first_source-source['clock']['start_pip']]) == 0,
+                          f'{sid}: comparison samples the preserved original source window')
+                    review.get_by_role('button', name='Finished clip', exact=True).click()
+                    page.wait_for_function('meshDemo.debugSnapshot().currentPip===0')
+                    review.get_by_role('button', name='Clear clip', exact=True).click()
+                    page.wait_for_function('(pip)=>{const s=meshDemo.debugSnapshot();return s.currentPip===pip && '
+                        '!s.finishedMotionReview.loaded && s.activeNativeHandles===1 && s.pendingRequests===0;}', arg=original['currentPip'])
+                    check(maximum_error(snapshot()['nativeNormalizedSample'], original['nativeNormalizedSample']) == 0,
+                          f'{sid}: clearing releases the derivative and restores the exact original pose')
+                    report['finished_motion_review'].update(status='PASS', scene_id=sid,
+                        native_pose_checks=corrected_checks, skinned_vertex_max_change=changed,
+                        original_comparison_verified=True, original_restored=True,
+                        separate_native_handle_disposed=True, explicit_repeat_verified=True)
                 scenes.append(dict(id=sid, source_sha256=scene['sourceSha256'], profile_sha256=scene['expectedProfile']['fingerprint'],
                     start_pip=scene['startPip'], end_pip=scene['endPip'], sample_count=scene['sampleCount'],
                     vertex_count=state['vertexCount'], weighted_vertex_count=state['weightedVertexCount'],
@@ -317,6 +405,9 @@ def test(site_dir, output_dir, prefix=None, chromium=None, gallery_only=False, b
             check(page.locator('#play-toggle').is_disabled() and page.locator('#seek').is_disabled(),
                   'Unloaded native recordings cannot be sampled through the controls')
             scenes[-1]['explicit_unload_verified'] = True
+            if finished:
+                check(report['finished_motion_review']['status'] == 'PASS',
+                      'The supplied finished correction was exercised on its matching Kandi source scene')
             check(not errors, 'No unhandled browser exceptions')
             check(not blocked, 'The gallery uses only same-origin bundled assets')
             report['network_paths'] = sorted(set(requests))
@@ -347,8 +438,13 @@ def main(argv=None):
     parser.add_argument('--chromium', type=Path)
     parser.add_argument('--gallery-only', action='store_true', help='Inspect only /meshes/ locally; this receipt cannot seal a release site')
     parser.add_argument('--url', help='Optionally inspect an already deployed base URL against the same local expected files')
+    parser.add_argument('--finished-motion', type=Path,
+                        help='Explicit local corrected .motion.json to exercise on its matching Kandi source scene')
+    parser.add_argument('--repair-report', type=Path,
+                        help='Matching numerically checked .repair.json; required with --finished-motion')
     args = parser.parse_args(argv)
-    report = test(args.site_dir, args.output_dir, args.prefix, args.chromium, args.gallery_only, args.url)
+    report = test(args.site_dir, args.output_dir, args.prefix, args.chromium, args.gallery_only, args.url,
+                  args.finished_motion, args.repair_report)
     print(f'{len(report["checks"])} browser checks passed; {len(report["scenes"])} real skinned characters verified')
 
 

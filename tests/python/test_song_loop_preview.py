@@ -16,6 +16,41 @@ sys.modules[spec.name]=preview
 spec.loader.exec_module(preview)
 
 
+def _write_motion_fixture(path, *, samples=64, portable=True, reverse=False, mutate_source=None):
+    from dancerudiments_authoring._validation import canonical_json
+    from dancerudiments_authoring.motion import RigMotion, write_rig_motion
+    from dancerudiments_authoring.recording import Recording, RecordingClock
+    from dancerudiments_authoring.rigs import RigChannel, RigProfile
+    channels=tuple(RigChannel(i+1,f'root_{axis}','root','location',i,
+                             'blender_unit',-1.,1.,0.) for i,axis in enumerate('xyz'))
+    source={}
+    if portable:
+        skeleton=[dict(name=name,parent=parent,length=1.,rest_matrix=
+                       [1,0,0,0,0,1,0,0,0,0,1,z,0,0,0,1])
+                  for name,parent,z in [('root',None,0),('child','root',1)]]
+        if reverse:
+            skeleton.reverse()
+        omitted=[dict(bone=name,data_path=path,values=values)
+                 for name in ('root','child')
+                 for path,values in [('rotation_quaternion',[1,0,0,0]),('scale',[1,1,1])]]
+        omitted.append(dict(bone='child',data_path='location',values=[0,0,0]))
+        source=dict(adapter='dancerudiments.skeletal-source-v1',skeleton=skeleton,
+                    object_motion_root='root',scene_unit_scale_length=1.,
+                    carrier_inheritance='FULL; local location; inherit rotation',
+                    coordinate_system='Blender right-handed +Z up, +Y forward',
+                    omitted_neutral_groups=omitted)
+    if mutate_source:
+        mutate_source(source)
+    profile=RigProfile('syn://type/danceflow/motion/skeletal/source/synthetic/song_preview',
+                       'synthetic',channels,source_json=canonical_json(source))
+    rows=tuple(((i/max(1,samples-1))*2-1,0.,0.) for i in range(samples))
+    recording=Recording('source_four',profile.dimensions,rows,
+                        RecordingClock(60.,'synthetic source-time fixture'))
+    motion=RigMotion(recording,profile)
+    write_rig_motion(path,motion)
+    return motion
+
+
 class SongLoopPreviewTests(unittest.TestCase):
     def test_grid_is_strict_about_music_phase(self):
         good=[i*.5 for i in range(20)]
@@ -162,17 +197,7 @@ class SongLoopPreviewTests(unittest.TestCase):
     def test_fk_source_preview_preserves_64_pip_samples(self):
         with tempfile.TemporaryDirectory() as temp:
             p=Path(temp)/'sample.motion.json'
-            def bone(name,parent,z):
-                return {'name':name,'parent':parent,'rest_matrix':
-                        [1,0,0,0,0,1,0,0,0,0,1,z,0,0,0,1]}
-            data={'format':'dancerudiments.rig-motion','profile_sha256':'a'*64,
-                  'profile':{'channels':[
-                     {'name':f'root_{a}','bone':'root','data_path':'location','array_index':i,
-                      'minimum':-1,'maximum':1} for i,a in enumerate('xyz')],
-                     'source':{'skeleton':[bone('root',None,0),bone('child','root',1)],
-                               'omitted_neutral_groups':[]}},
-                  'recording':{'name':'source_four','samples':[[(i/63)*2-1, 0, 0] for i in range(64)]}}
-            p.write_text(json.dumps(data))
+            motion=_write_motion_fixture(p)
             output=preview._motion_to_frames(p, max_frames=8)
             self.assertEqual(output['frame_count'],8)
             self.assertEqual(output['beats'],1)
@@ -180,6 +205,38 @@ class SongLoopPreviewTests(unittest.TestCase):
             self.assertEqual(output['skeleton_kind'],'source_portable_fk')
             self.assertAlmostEqual(output['xyz'][-1][0][0],1)
             self.assertAlmostEqual(output['xyz'][-1][1][2],1)
+            self.assertEqual(output['profile_sha256'],motion.profile.fingerprint)
+            self.assertEqual(output['frame_relative_pips'],[0,9,18,27,36,45,54,63])
+            self.assertIsNone(output['world_motion_unavailable_reason'])
+
+    @unittest.skipUnless(importlib.util.find_spec('numpy'),'NumPy needed for offline FK sample')
+    def test_fk_preview_keeps_blender_bone_order_and_refuses_missing_geometry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            p=Path(temp)/'reordered.motion.json'
+            _write_motion_fixture(p,reverse=True)
+            output=preview._motion_to_frames(p,max_frames=8)
+            self.assertEqual(output['bones'],['child','root'])
+            self.assertEqual(output['links'],[[1,0]])
+            self.assertEqual(output['xyz'][-1],[[1.,0.,1.],[1.,0.,0.]])
+            bad=Path(temp)/'missing.motion.json'
+            _write_motion_fixture(bad,mutate_source=lambda s:s['omitted_neutral_groups'].pop())
+            with self.assertRaisesRegex(ValueError,'Missing explicit transform'):
+                preview._motion_to_frames(bad)
+            invalid_parent=Path(temp)/'missing-parent.motion.json'
+            _write_motion_fixture(invalid_parent,
+                mutate_source=lambda s:s['skeleton'][1].update(parent='missing'))
+            with self.assertRaisesRegex(ValueError,'Missing skeleton parent'):
+                preview._motion_to_frames(invalid_parent)
+
+    @unittest.skipUnless(importlib.util.find_spec('numpy'),'NumPy needed for offline FK sample')
+    def test_unknown_control_semantics_are_an_explicit_channel_graph(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'controls.motion.json'
+            _write_motion_fixture(path,mutate_source=lambda s:s.pop('carrier_inheritance'))
+            output=preview._motion_to_frames(path,max_frames=8)
+            self.assertEqual(output['skeleton_kind'],'channel_graph_only')
+            self.assertEqual(output['bones'],[])
+            self.assertIn('Blender evaluation',output['world_motion_unavailable_reason'])
 
     @unittest.skipUnless(importlib.util.find_spec('soundfile') and importlib.util.find_spec('numpy'),
                          'Small synthetic audio requires soundfile and NumPy')
@@ -204,9 +261,7 @@ class SongLoopPreviewTests(unittest.TestCase):
             (src.parent/'types.py').write_text('''class BeatResult:\n    def __init__(self, **kwargs): self.__dict__.update(kwargs)\n''')
             job=Path(temp)/'job';job.mkdir();(job/'previews').mkdir()
             motion=job/'previews'/'short.motion.json'
-            motion.write_text(json.dumps({'format':'dancerudiments.rig-motion','profile_sha256':'a'*64,
-                'profile':{'channels':[],'source':{}},
-                'recording':{'name':'sway','samples':[[] for _ in range(256)]}}))
+            _write_motion_fixture(motion,samples=256,portable=False)
             entry={'filename':'previews/short.motion.json','recording_sha256':preview._hash(motion),
                 'source_bpm_estimated':120,'source_start_seconds':1,
                 'source_end_seconds':3,'score':.9}

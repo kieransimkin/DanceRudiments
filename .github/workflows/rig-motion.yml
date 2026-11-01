@@ -47,13 +47,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libx11-6 libxxf86vm1 libxi6 libxfixes3 libxrender1 libsm6 libgl1 libegl1
       - name: Install this native package and the pinned official bpy runtime
-        run: python -m pip install '.[motion-import]' bpy==5.2.2
+        run: python -m pip install '.[motion-import]' bpy==5.2.2 'pytest>=8,<10' 'Pillow>=11,<13'
       - name: Validate profiles, interchange, clock and native playback
         run: |
-          python -m unittest discover -s tests/python -p 'test_motion*.py' -v
-          python -m unittest discover -s tests/python -p 'test_rig*.py' -v
-          python -m unittest discover -s tests/python -p 'test_bvh_import.py' -v
-          python -m unittest discover -s tests/python -p 'test_acquire*.py' -v
+          python -m pytest -q tests/python/test_motion*.py tests/python/test_rig*.py
+          python -m pytest -q tests/python/test_bvh_import.py tests/python/test_acquire*.py
+          python -m pytest -q tests/python/test_world_motion.py tests/python/test_loop_repair.py
       - name: Exercise the installed CLI and synthetic timed motion
         run: |
           dancerudiments-rig profile human --output generated/human.profile.json

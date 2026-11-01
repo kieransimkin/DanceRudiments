@@ -7,10 +7,9 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest import mock
 
 from dancerudiments_authoring.motion_import import write_capture
-from test_source_loop_analysis import fixture
+from test_source_loop_analysis import fixture, patch_stemlab
 from test_full_motion_confidence import fake_rhythmic_stemlab
 
 TOOLS=Path(__file__).resolve().parents[2]/'tools'
@@ -37,7 +36,7 @@ def inputs(directory, *, mismatched=False):
 
 class BlenderBatchTests(unittest.TestCase):
     def test_full_action_and_independent_loop_are_preserved_with_source_sha(self):
-        with tempfile.TemporaryDirectory() as dir, mock.patch.dict(sys.modules,fake_rhythmic_stemlab()):
+        with tempfile.TemporaryDirectory() as dir, patch_stemlab(fake_rhythmic_stemlab()):
             index=inputs(dir);out=Path(dir)/'results'
             result=batch.analyse_batch(index,out)
             self.assertEqual(result['full_motion_count'],1)
@@ -50,7 +49,7 @@ class BlenderBatchTests(unittest.TestCase):
             self.assertTrue(index.is_file())
 
     def test_index_profile_disagreement_rejects_action(self):
-        with tempfile.TemporaryDirectory() as dir, mock.patch.dict(sys.modules,fake_rhythmic_stemlab()):
+        with tempfile.TemporaryDirectory() as dir, patch_stemlab(fake_rhythmic_stemlab()):
             index=inputs(dir,mismatched=True)
             result=batch.analyse_batch(index,Path(dir)/'results')
             self.assertEqual(result['full_motion_count'],0)
@@ -58,7 +57,7 @@ class BlenderBatchTests(unittest.TestCase):
             self.assertIn('rig profile', result['failures'][0]['error'])
 
     def test_path_traversal_is_rejected_without_accessing_adjacent_files(self):
-        with tempfile.TemporaryDirectory() as dir, mock.patch.dict(sys.modules,fake_rhythmic_stemlab()):
+        with tempfile.TemporaryDirectory() as dir, patch_stemlab(fake_rhythmic_stemlab()):
             index=inputs(dir);d=json.loads(index.read_text())
             d['captures'][0]['capture']='../secret.capture.json'
             index.write_text(json.dumps(d))
