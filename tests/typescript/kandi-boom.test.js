@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import {
   KANDI_RETARGET_AIM_CHILD, KANDI_RETARGET_MAP, calibrationRelativeQuaternion,
   copyFbxTextureTransform, retargetAimCorrection,
+  sourcePoseEvaluator, sourceRetargetConfiguration,
 } from '../../tools/mesh_demo_assets/kandi-boom.js';
 
 test('Kandi Boom production retarget map covers the deforming target chains', () => {
@@ -76,4 +77,32 @@ test('production gallery imports Kandi Boom and does not present procedural fixt
   assert.match(html, /Kandi Boom/);
   assert.doesNotMatch(html, />Boxbot</);
   assert.doesNotMatch(html, />Prism</);
+});
+
+test('portable source evaluator composes rest matrices before local TRS in hierarchy order',()=>{
+  const rest=new THREE.Matrix4().makeRotationZ(Math.PI/2);rest.setPosition(10,0,0);
+  const childRest=new THREE.Matrix4().makeTranslation(0,2,0);
+  const rig={channels:[{},{},{}],joints:[
+    {name:'child',parentIndex:1,localRestMatrix:childRest.clone().transpose().toArray(),positionChannelIndices:[0,1,2]},
+    {name:'root',parentIndex:-1,localRestMatrix:rest.clone().transpose().toArray()},
+  ]};
+  const result=sourcePoseEvaluator(rig).evaluate([1,0,0]);
+  const actual=new THREE.Vector3().setFromMatrixPosition(result[0]);
+  assert.ok(actual.distanceTo(new THREE.Vector3(8,1,0))<1e-12);
+  const legacy=sourcePoseEvaluator({channels:[{},{},{}],joints:[
+    {name:'root',parentIndex:-1,offset:[2,3,4],positionChannelIndices:[0,1,2]}]}).evaluate([1,2,3]);
+  assert.deepEqual(new THREE.Vector3().setFromMatrixPosition(legacy[0]).toArray(),[3,5,7]);
+  assert.throws(()=>sourcePoseEvaluator({...rig,joints:[{...rig.joints[0],parentIndex:0},rig.joints[1]]}),/parent index/);
+  assert.throws(()=>sourcePoseEvaluator(rig).evaluate([1,NaN,3]),/finite/);
+});
+
+test('generic Kandi sources require a complete explicit map and a declared unit orientation',()=>{
+  const map=Object.fromEntries(Object.keys(KANDI_RETARGET_MAP).map((key,index)=>[key,`bone${index}`]));
+  const rig={joints:Object.values(map).map(name=>({name})),retargetMap:map,
+    sourceToTargetQuaternion:[1,0,0,0],sourceHeightAxis:1,restBounds:{size:[1,8,3]}};
+  const config=sourceRetargetConfiguration(rig);assert.equal(config.sourceHeight,8);
+  assert.equal(config.map.Hips,'bone0');assert.equal(config.sourceToTarget.w,1);
+  assert.throws(()=>sourceRetargetConfiguration({...rig,retargetMap:{...map,Hips:'missing'}}),/complete/);
+  assert.throws(()=>sourceRetargetConfiguration({...rig,sourceToTargetQuaternion:[2,0,0,0]}),/unit quaternion/);
+  assert.throws(()=>sourceRetargetConfiguration({...rig,sourceHeightAxis:3}),/height axis/);
 });

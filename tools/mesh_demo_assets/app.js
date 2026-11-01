@@ -4,6 +4,7 @@ import {createKandiBoomCharacter} from './kandi-boom.js';
 import {PipTransport} from './transport.js';
 import {createRhythmReview} from './rhythm-review.js';
 import {createDerivativeReview, validateFinishedMotion} from './derivative-review.js';
+import {createLoopWorkspace} from './loop-workspace.js';
 
 // The builder checks these targets against the reviewed source-rig pins. They
 // are independent of the package manifest fetched when the user loads a scene.
@@ -14,6 +15,7 @@ const stats = {pendingRequests: 0, activeNativeHandles: 0, disposedNativeHandles
   disposedGeometries: 0, nativeSampleCalls: 0};
 let selected = config.scenes[0], session, generation = 0, renderer, controls, camera, world;
 let animationFrame, pageClosed = false, initError;
+let loopWorkspace = null;
 const sceneName = () => config.character.name;
 const copy = {
   boxbot: {title: 'Kandi Boom takes the salsa floor.', description: 'Kandi Boom retargets a complete captured salsa performance while keeping the original source timing.', code: 'CMU 60_01', caption: '01 / KANDI BOOM / SALSA'},
@@ -41,9 +43,12 @@ for (const [value, label] of [
   if (option) option.textContent = label;
 }
 function metadata() {
-  const text = copy[selected.id];
+  const text = copy[selected.id] ?? {title:selected.title || 'Review an imported Action on Kandi.',
+    description:selected.description || 'Inspect the selected original motion and its separately corrected loop.',
+    code:selected.sourceTitle || selected.id,caption:'LOCAL MOTION REVIEW · KANDI BOOM'};
   $('scene-select').value = selected.id;
   document.querySelectorAll('[data-scene]').forEach(button => {
+    button.hidden = !scenes.has(button.dataset.scene);
     const active = button.dataset.scene === selected.id;
     button.classList.toggle('active', active); button.setAttribute('aria-pressed', String(active));
   });
@@ -52,11 +57,11 @@ function metadata() {
   $('source-code').textContent = text.code;
   $('source-duration').textContent = `${selected.sourceDurationSeconds.toFixed(2)} seconds`;
   $('stage-caption').textContent = text.caption;
-  $('timing-label').textContent = `Original ${selected.sourceFps.toFixed(2).replace(/\.00$/, '')} fps capture. Musical tempo and beat alignment are unverified. The calibration first frame is retained.`;
+  $('timing-label').textContent = `Original ${selected.sourceFps.toFixed(2).replace(/\.00$/, '')} fps capture. ${selected.calibrationLabel || 'Musical tempo and beat alignment are unverified. The calibration first frame is retained.'}`;
   $('source-link').href = selected.sourceUrl; $('source-link').title = selected.sourceTitle;
   $('licence-link').href = selected.noticePath;
-  $('attribution').textContent = `${config.character.name} · ${config.character.series}. ${selected.attribution} BVH conversion: Bruce Hahne / cgspeed.`;
-  $('load-scene').replaceChildren(document.createTextNode(`Load & play ${sceneName(selected)} `));
+  $('attribution').textContent = `${config.character.name} · ${config.character.series}. ${selected.attribution}${copy[selected.id] ? ' BVH conversion: Bruce Hahne / cgspeed.' : ''}`;
+  $('load-scene').replaceChildren(document.createTextNode(`${config.reviewWorkspace?'Load':'Load & play'} ${sceneName(selected)} `));
   const arrow = document.createElement('span'); arrow.setAttribute('aria-hidden', 'true'); arrow.textContent = '↗'; $('load-scene').append(arrow);
   const characterBytes = Object.values(config.character.assets).reduce((total, item) => total + item.byte_length, 0);
   $('load-size').textContent = `${(selected.compressedClipBytes / 1024 / 1024).toFixed(2)} MiB motion · ${(characterBytes / 1024 / 1024).toFixed(1)} MiB Kandi target · loaded on request`;
@@ -66,7 +71,9 @@ function metadata() {
 }
 function updateTransport() {
   const ready = Boolean(session?.ready), playing = Boolean(session?.transport?.playing);
-  $('play-toggle').disabled = !ready; $('restart').disabled = !ready; $('seek').disabled = !ready;
+  const audioDriven = Boolean(loopWorkspace?.active());
+  $('play-toggle').disabled = !ready || audioDriven; $('restart').disabled = !ready || audioDriven;
+  $('seek').disabled = !ready || audioDriven; $('speed').disabled = audioDriven;
   $('unload-scene').disabled = !session;
   $('play-toggle').setAttribute('aria-label', playing ? 'Pause' : 'Play');
   $('play-icon').innerHTML = playing ? '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>' : '<path d="m8 5 11 7-11 7z"/>';
@@ -82,7 +89,8 @@ function updateTransport() {
       : session.transport.timeMode === 'double' ? 'Double-time source motion · 2×'
       : session.transport.timeMode === 'normal' ? 'Original source motion · 1×'
       : `Source-motion preview · ${session.transport.speed}×`;
-    $('timing-status').textContent = session.derivative
+    $('timing-status').textContent = audioDriven ? 'Master audio clock · use the loop review controls'
+      : session.derivative
       ? `${session.derivativeMode === 'finished' ? 'Finished clip · numerical checks passed' : 'Original window comparison'} · ${session.transport.speed}× · visual / musical review pending`
       : rhythmReview.currentLoop() ? `Unverified loop · ${rateLabel}` : rateLabel;
     status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === range.last ? 'Performance complete' : 'Paused', playing);
@@ -137,7 +145,7 @@ function initializeStage() {
 }
 async function trackedFetch(url, options = {}) {
   stats.pendingRequests++;
-  try { return await fetch(url, {...options, credentials: 'omit'}); }
+  try { return await fetch(url, {...options, credentials: config.reviewWorkspace ? 'same-origin' : 'omit'}); }
   finally { stats.pendingRequests--; }
 }
 async function verifiedAsset(path, sha256, limit, signal) {
@@ -167,6 +175,7 @@ function releaseChunk(owner) {
 }
 function unload({clearError = true} = {}) {
   generation++;
+  loopWorkspace?.detached();
   rhythmReview.reset();
   derivativeReview.reset();
   const previous = session; session = null;
@@ -192,9 +201,17 @@ function applyPose(owner) {
   if (pip < motion.startPip || pip >= motion.startPip + motion.sampleCount || owner.lastPip === pip) return;
   const physical = motion.sample(pip); // Native C++/WASM sampling, then channel-unit decoding.
   if (!owner.character.isCalibrated()) {
-    if (pip !== owner.scene.startPip || owner.scene.calibrationFrameCount !== 1)
-      throw Error('Kandi Boom must be calibrated from the retained converter T-pose');
-    owner.character.calibrateChannels(motion.profile, physical);
+    if (owner.calibrationPose) {
+      if (owner.calibrationPose.profile_sha256 !== owner.scene.expectedProfile.fingerprint ||
+          !/^[a-f0-9]{64}$/.test(owner.calibrationPose.source_capture_sha256 || '') ||
+          !Number.isFinite(owner.calibrationPose.source_time_seconds))
+        throw Error('Explicit source calibration identity differs from the selected profile');
+      owner.character.calibrateChannels(motion.profile, owner.calibrationPose.values);
+    } else {
+      if (pip !== (owner.scene.calibrationPip ?? owner.scene.startPip) || owner.scene.calibrationFrameCount !== 1)
+        throw Error('Kandi Boom must be calibrated from its declared source calibration pose');
+      owner.character.calibrateChannels(motion.profile, physical);
+    }
   }
   owner.character.applyChannels(motion.profile, physical); owner.physicalSample = Array.from(physical);
   owner.lastPip = pip;
@@ -261,6 +278,7 @@ async function loadSelected() {
     ]);
     if (!current(owner)) return;
     const rig = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(rigBytes));
+    owner.calibrationPose = rig.calibrationPose ?? null;
     const targetRig = JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(targetRigBytes));
     const expected = owner.scene.expectedProfile;
     if (rig.sceneId !== owner.scene.id || rig.quaternionOrder !== 'wxyz' ||
@@ -309,7 +327,7 @@ async function loadSelected() {
     owner.transport.setSpeed(Number($('speed').value));
     // Establish source root-motion zero at the retained calibration frame, then
     // frame the real Kandi skin using a moving pose before returning to start.
-    await sampleAt(owner, owner.scene.startPip);
+    await sampleAt(owner, owner.calibrationPose ? owner.scene.startPip : (owner.scene.calibrationPip ?? owner.scene.startPip));
     if (!current(owner)) return;
     await sampleAt(owner, Math.min(owner.scene.startPip + 64, owner.scene.endPip));
     if (!current(owner)) return;
@@ -321,7 +339,7 @@ async function loadSelected() {
     resetCamera(); owner.ready = true;
     rhythmReview.attach(owner.scene, owner.chunks);
     derivativeReview.attach();
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) owner.transport.play();
+    if (!loopWorkspace && !matchMedia('(prefers-reduced-motion: reduce)').matches) owner.transport.play();
     $('loading-state').hidden = true; $('mesh-label').textContent = `${owner.character.stats.vertexCount.toLocaleString()} Kandi vertices`;
     $('resource-note').textContent = 'One selected motion chunk in memory. Switching performances unloads Kandi and the previous recording.';
     updateTransport();
@@ -336,6 +354,7 @@ function choose(id) {
   status('Ready when you are');
 }
 function togglePlay() {
+  if (loopWorkspace?.active()) return;
   if (!session?.ready) return;
   const transport = session.transport;
   if (transport.playing) transport.pause();
@@ -376,7 +395,12 @@ function clearDerivative(owner) {
 }
 const derivativeReview = createDerivativeReview({
   sidebar: document.querySelector('.sidebar'),
-  async onLoad(bytes, report) {
+  onLoad: loadFinishedMotion,
+  onMode(mode) { if (session?.derivative) selectDerivativeMode(session, mode); },
+  onRepeat(value) { if (session?.derivative) session.derivative.repeat = value; },
+  onClear() { if (session) clearDerivative(session); },
+});
+async function loadFinishedMotion(bytes, report) {
     const owner = session;
     if (!owner?.ready || !owner.verifiedProfile) throw Error('Load the matching Kandi performance first');
     const token = ++owner.derivativeGeneration;
@@ -399,30 +423,50 @@ const derivativeReview = createDerivativeReview({
     rhythmReview.reset(); selectDerivativeMode(owner, 'finished');
     $('resource-note').textContent = 'Original source and separate finished clip retained. Both use the same native sampler and calibrated Kandi skin.';
     return info;
+}
+loopWorkspace = createLoopWorkspace({sidebar:document.querySelector('.sidebar'),config,host:{
+  async prepare(document) {
+    if (!scenes.has(document.scene_id)) throw Error('This workspace has no matching source scene');
+    if (selected.id !== document.scene_id) choose(document.scene_id);
+    if (!session?.ready) await loadSelected();
+    if (!session?.ready) throw Error('The source rig and Kandi assets could not be loaded');
+    session.transport.pause();updateTransport();
   },
-  onMode(mode) { if (session?.derivative) selectDerivativeMode(session, mode); },
-  onRepeat(value) { if (session?.derivative) session.derivative.repeat = value; },
-  onClear() { if (session) clearDerivative(session); },
-});
+  loadFinished:loadFinishedMotion,
+  mode(value) { if(session?.derivative) selectDerivativeMode(session,value); },
+  pause() { session?.transport?.pause();updateTransport(); },
+  audioPose(value) {
+    const owner=session;if(!owner?.ready||!owner.derivative)return;
+    owner.transport.pause();owner.character.group.visible=Boolean(value);
+    if(!value)return;
+    const range=playbackRange(owner),pip=owner.derivativeMode==='finished'?value.pip:
+      Math.max(range.first,Math.min(range.last,Math.floor(value.source_seconds*64)));
+    if(pip<range.first||pip>range.last)return;
+    owner.transport.seek(pip);void sampleAt(owner,pip).catch(error=>fail(error,owner));
+  },
+}});
+if(loopWorkspace)document.querySelectorAll('.rhythm-review').forEach(panel=>{panel.hidden=true;});
 function frame() {
   if (pageClosed) return;
   const owner = session;
   if (owner?.ready) {
-    const wasPlaying = owner.transport.playing;
-    let pip = owner.transport.pip();
-    const loop = rhythmReview.currentLoop();
-    if (owner.derivative) {
-      const range = playbackRange(owner);
-      if (pip > range.last && owner.derivative.repeat && wasPlaying) {
-        owner.derivative.repeatCount++;
-        owner.transport.seek(range.first); owner.transport.play(); pip = range.first;
-      } else pip = Math.min(pip, range.last);
-    } else if (loop && pip >= Math.min(loop.endExclusive, owner.scene.endPip)) {
-      owner.transport.seek(loop.first);
-      pip = loop.first;
+    if(!loopWorkspace?.frame()) {
+      const wasPlaying = owner.transport.playing;
+      let pip = owner.transport.pip();
+      const loop = rhythmReview.currentLoop();
+      if (owner.derivative) {
+        const range = playbackRange(owner);
+        if (pip > range.last && owner.derivative.repeat && wasPlaying) {
+          owner.derivative.repeatCount++;
+          owner.transport.seek(range.first); owner.transport.play(); pip = range.first;
+        } else pip = Math.min(pip, range.last);
+      } else if (loop && pip >= Math.min(loop.endExclusive, owner.scene.endPip)) {
+        owner.transport.seek(loop.first);
+        pip = loop.first;
+      }
+      try { void sampleAt(owner, pip).catch(error => fail(error, owner)); }
+      catch (error) { fail(error, owner); }
     }
-    try { void sampleAt(owner, pip).catch(error => fail(error, owner)); }
-    catch (error) { fail(error, owner); }
     updateTransport();
   }
   controls?.update(); if (renderer && world && camera) renderer.render(world, camera);
@@ -442,7 +486,7 @@ $('speed').addEventListener('change', event => { session?.transport?.setSpeed(Nu
 $('reset-view').addEventListener('click', resetCamera);
 $('stage').addEventListener('keydown', event => { if (event.code === 'Space') { event.preventDefault(); togglePlay(); } });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && session?.ready) { session.transport.pause(); updateTransport(); }
+  if (document.hidden && session?.ready) { session.transport.pause(); loopWorkspace?.pause(); updateTransport(); }
 });
 window.meshDemo = Object.freeze({
   debugSnapshot() {
@@ -454,6 +498,7 @@ window.meshDemo = Object.freeze({
       playing: Boolean(owner?.transport?.playing), nativeNormalizedSample: owner?.normalizedSample?.slice() ?? null,
       physicalSample: owner?.physicalSample?.slice() ?? null,
       skinnedMeshCount: character?.stats.skinnedMeshCount ?? 0, vertexCount: character?.stats.vertexCount ?? 0,
+      characterVisible: Boolean(character?.group.visible),
       boneCount: character?.stats.boneCount ?? 0, weightedVertexCount: character?.stats.weightedVertexCount ?? 0,
       blendedVertexCount: character?.stats.blendedVertexCount ?? 0,
       representativeDeformedVertices: character?.representativeVertices() ?? [],
@@ -467,6 +512,7 @@ window.meshDemo = Object.freeze({
       nativeSampleCalls: stats.nativeSampleCalls, loadedCacheIds: owner?.active ? [owner.active.id] : [],
       rhythmAnalysis: rhythmReview.diagnostics(),
       finishedMotionReview: derivativeReview.diagnostics(),
+      loopWorkspace:loopWorkspace?.diagnostics()??null,
       finishedMotion: owner?.derivative ? {repairId: owner.derivative.info.repair.repair_id,
         profileSha256: owner.derivative.loaded.motion.profileSha256,
         startPip: owner.derivative.loaded.motion.startPip, sampleCount: owner.derivative.loaded.motion.sampleCount,
@@ -477,10 +523,32 @@ window.meshDemo = Object.freeze({
     };
   },
 });
+if(config.scenes.some(scene=>!copy[scene.id])){
+  $('scene-select').replaceChildren(...config.scenes.map(scene=>{
+    const option=document.createElement('option');option.value=scene.id;option.textContent=scene.title||scene.id;return option;
+  }));
+}
+if(config.reviewWorkspace){
+  document.querySelector('.sidebar>.section-label').hidden=true;
+  $('scene-cards').hidden=true;
+  document.title='Local loop review · DanceRudiments';
+  document.querySelector('meta[name="description"]').content='Review one imported Action on Kandi Boom, finish a selected loop, and save timing and visual decisions.';
+  const emphasis=document.createElement('em');emphasis.textContent='Finish its loop.';
+  $('page-title').replaceChildren('Review one Action.',document.createElement('br'),emphasis);
+  document.querySelector('.intro-copy').textContent='Audition the original motion and corrected phrase on Kandi Boom. Set the timing to your exact audio, then save your review.';
+  const mark=document.createElement('span');document.querySelector('.eyebrow').replaceChildren(mark,' LOCAL LOOP REVIEW. KANDI BOOM.');
+  document.querySelector('.wordmark-light').textContent='Loop Review';
+  document.querySelector('.wordmark').href='#page-title';
+  document.querySelector('.back-link').textContent='Local review session';document.querySelector('.back-link').href='#page-title';
+  document.querySelector('.source-note strong').textContent='Exact source. Separate decisions.';
+  document.querySelector('.about-strip p').textContent='Kandi Boom uses the declared source rig and calibration. The original motion, corrected loop and saved review remain separately identified.';
+  const credits=$('licence-link');credits.textContent='Source credits and terms ↗';
+  document.querySelector('.about-strip p:last-child').replaceChildren('Local source and exact audio master',document.createElement('br'),credits);
+}
 metadata(); $('build-version').textContent = `DanceRudiments ${config.build.version} · ${config.build.commit.slice(0, 7)}`;
 let disposeStage;
 try { disposeStage = initializeStage(); animationFrame = requestAnimationFrame(frame); }
 catch (error) { initError = Error(`This preview needs WebGL 2. ${error.message}`); showError(initError); status('3D rendering unavailable'); }
 window.addEventListener('pagehide', () => {
-  pageClosed = true; cancelAnimationFrame(animationFrame); unload(); disposeStage?.();
+  pageClosed = true; cancelAnimationFrame(animationFrame); loopWorkspace?.dispose(); unload(); disposeStage?.();
 }, {once: true});

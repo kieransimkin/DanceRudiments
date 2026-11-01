@@ -45,8 +45,12 @@ jobs:
       # build creates a wheel from the sdist too, checking source inclusion.
       - run: python -m build
       - run: python -m pip install --no-index --find-links dist dancerudiments
+      - name: Verify base-wheel imports before installing optional authoring dependencies
+        run: python -c "import dancerudiments as d; import dancerudiments_authoring; assert len(d.catalogue()) == 1731"
+      - name: Install optional dependencies for the complete authoring test suite
+        run: python -m pip install 'dancerudiments[motion-import]' 'pytest>=8,<10' 'Pillow>=11,<13'
       - name: Test installed authoring package and actual native extension
-        run: python -m unittest discover -s tests/python -v
+        run: python -m pytest tests/python -q
         env:
           DANCERUDIMENTS_REQUIRE_NATIVE: "1"
       - name: Exercise installed console entry point and reproducible outputs

@@ -81,6 +81,42 @@ The source integration workflow may pin an exact companion feature commit for
 tests; publish that commit before starting dependent remote CI. This exception
 does not change release dependencies or authorise deployment.
 
+### Explicit loop review and promotion
+
+Read `docs/loop-review.md` for changes to saved selections, the local authoring
+workspace or reviewed optional packages. Reuse `compile_repaired_loop` for both
+automatic proposals and explicit boundaries, and keep all live samples in the
+existing native player. Timing revisions bind the original capture bytes;
+visual review separately binds the exact corrected motion, target assets, saved
+calibration and retarget implementation. A boundary/beat/timing/target change
+must invalidate prior acceptance. Preserve drafts, immutable revisions and
+optimistic write conflicts. Automated test workspaces and exported fixtures
+must never claim human musical/visual approval.
+Use process-lifetime file locking for workspace mutations, so interruption
+releases the lock without deleting or stealing another writer's lock file.
+
+Keep the local server on loopback, with capability headers, origin/host checks,
+port-specific asset cookies, bounded JSON and an explicit asset allowlist. Do
+not expose arbitrary paths/commands or change the public gallery's pinned scene
+policy. Validate portable source rest transforms with the canonical world
+evaluator before preparing a scene; do not guess bone maps or calibration poses.
+
+Run the loop-review Python/workspace suites, the shared timing/Kandi JS tests and
+`tools/test_loop_review_browser.py` on an automated-test workspace for relevant
+changes. Verify package ZIP/reload/native parity and stale-review rejection.
+The broad authoring CI installs its optional authoring dependencies after the
+base-wheel smoke check and uses pytest. Source dependency pins must be available
+on the official remote. PyPI publication checks out the exact source before
+size validation; an external project-quota failure must remain visible and must
+not trigger deletion or replacement of immutable releases.
+
+The source-first workflow installs the exact npm dependencies and requires
+Python/JavaScript portable-rig parity. Build its full-character fixture with
+`tools/build_loop_review_test_fixture.py`, using synthetic motion, WAV and timing
+annotations with the checked-in Kandi assets. Upload receipts, screenshots and
+the explicitly test-only package; do not upload the full workspace or real
+source/audio assets as part of that fixture's evidence.
+
 ## Optional motion packages
 
 Read `docs/motion-packages.md` and `docs/blender-motion-import.md` for changes to

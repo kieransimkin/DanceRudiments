@@ -31,10 +31,13 @@ jobs:
         run: |
           python -m pip install .
           python -c "from dancerudiments_authoring.collections import initial_pack; p=initial_pack(); assert len(p.patterns)==28; assert len(p.to_native().catalogue())==1731"
+      # Keep the preceding base-wheel check free of optional authoring dependencies.
+      - name: Install optional dependencies for the complete authoring test suite
+        run: python -m pip install 'dancerudiments[motion-import]' 'pytest>=8,<10' 'Pillow>=11,<13'
       - name: Authoring and native extension tests
         env:
           DANCERUDIMENTS_REQUIRE_NATIVE: '1'
-        run: python -m unittest discover -s tests/python -v
+        run: python -m pytest tests/python -q
       - name: Browser checks
         run: |
           python -m pip install playwright

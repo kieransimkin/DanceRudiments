@@ -347,6 +347,37 @@ claiming musical alignment. The [optional-package guide](docs/motion-packages.md
 describes formats, hosting, exact profile compatibility, source conventions,
 native playback and separate package licences.
 
+### Review, finish and export imported loops
+
+The [local loop-review workspace](docs/loop-review.md) joins original Action
+captures, StemLab timing decisions and the actual Kandi mesh. It supports source
+in/out and beat-count edits, bounded re-finishing, phase/manual timing anchors,
+audio-clock audition, original/corrected comparison, separate seam/feet/skin
+verdicts, saved drafts and review reload. Changed motion, timing or target
+identity invalidates the earlier approval. Explicit source bone maps and saved
+calibration poses support evaluated portable humanoid Actions beyond the two
+public demo scenes; unevaluated constrained controls remain unsupported.
+For imports with a neutral object parent, bounded foot stabilization accepts an
+explicit moving ancestor such as `root_bone="Hips"` when the saved hierarchy
+supports it. Correction uses the actual parent/rest transform and preserves the
+original profile and all local/world correction limits.
+
+`python tools/review_motion_loop.py prepare --help` documents the source-checkout
+workflow; `serve WORKSPACE` opens its local Kandi panel. Accepted results export
+through `MotionPackageBuilder` with the exact native samples, source provenance
+and bounded audio mapping. `load_reviewed_loop` replays that mapping through the
+existing native player. Audio, original capture samples and target assets are
+excluded from the optional package. Automated test reviews remain explicitly
+unapproved. These are development capabilities pending stable publication.
+
+Source-first CI requires native/StemLab checks and Python/JavaScript source-rig
+parity, then builds a deterministic full-character workspace with
+`tools/build_loop_review_test_fixture.py`. The dedicated
+`tools/test_loop_review_browser.py` gate exercises finishing, draft/review reload,
+audio-clock playback, stale writes, package ZIP/reload and resource disposal on
+desktop and mobile. Its movement, WAV and timing annotations are synthetic;
+saved decisions and exports remain labelled automated test fixtures.
+
 ## Curve and event authoring
 
 The optional **Python authoring tools** compile LFOs, segmented curves, sampled
@@ -750,6 +781,14 @@ rig-motion examples and optional source-plan documentation, for the canonical
 author music link. Third-party `sources/` documentation retains its original
 attribution. Release jobs also check the actual archives; passing source checks
 does not establish package publication or registry availability.
+
+The Initial collection and Curve/event jobs verify the installed base wheel
+before adding the optional `motion-import` extra, pytest and Pillow, then run
+`tests/python` through pytest so function-style tests are discovered. Source
+integration pins must identify published compatible commits. The PyPI publisher
+checks out its exact release source before applying distribution-size budgets.
+An official GitHub/PyPI mismatch remains a publication failure; preserve existing
+releases and follow the [partial-publication recovery guide](https://github.com/kieransimkin/stemlab/blob/main/docs/released-viewers.md).
 
 Tagged Pages deployments require an allowed **Tag** rule in the existing
 `github-pages` environment, in addition to any allowed `main` branch rule.

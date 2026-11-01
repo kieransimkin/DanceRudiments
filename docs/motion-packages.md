@@ -12,6 +12,15 @@ Blender import/retarget bridge. Neither is a browser runtime dependency.
 
 These APIs are development source until a matching stable release is published.
 
+For a finished phrase with saved timing and target-mesh decisions, use the
+[local loop-review workspace](loop-review.md). Its export is an ordinary optional
+motion package with the exact corrected native recording, source profile and
+licence. The clip metadata retains the source-to-audio anchors and separate
+seam, feet and skin verdicts. Audio and target geometry are excluded.
+`load_reviewed_loop` uses that saved mapping with the existing native player;
+the recording's nominal source BPM alone does not reproduce a variable audio
+mapping. Automated test packages remain explicitly unapproved fixtures.
+
 ## Contents and identity
 
 An independent package directory contains:

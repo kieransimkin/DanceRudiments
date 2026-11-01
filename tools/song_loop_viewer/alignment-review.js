@@ -9,32 +9,52 @@
     return reviews.filter(x=>x.report?.audio_source?.sha256===song?.source_sha256&&
       x.report?.motion_source?.sha256===motion?.source_capture_sha256);
   }
-  function shiftedSegments(entry,candidateIndex,offset=0){
-    require(finite(offset)&&Math.abs(offset)<=30,'Phase correction must be within ±30 seconds.');
-    const report=entry.report,candidate=report.candidates?.[candidateIndex];
-    require(report.format==='stemlab.motion-alignment.v1'&&candidate,'Choose a valid timing candidate.');
-    const segments=clone(candidate.mapping_segments);
+  function validateSegments(segments,report){
     require(Array.isArray(segments)&&segments.length>0&&segments.length<=256,'Missing bounded mapping.');
     let lastMotion=-Infinity,lastAudio=-Infinity;
     for(const segment of segments){
       require(Array.isArray(segment.anchors)&&segment.anchors.length>=2&&segment.anchors.length<=6000,'Invalid timing anchors.');
       for(const anchor of segment.anchors){
         require(finite(anchor.motion_seconds)&&finite(anchor.audio_seconds),'Nonfinite timing anchor.');
-        anchor.audio_seconds+=offset;
         require(anchor.motion_seconds>lastMotion&&anchor.audio_seconds>lastAudio,'Timing anchors must increase in both clocks.');
         lastMotion=anchor.motion_seconds;lastAudio=anchor.audio_seconds;
       }
       const first=segment.anchors[0],last=segment.anchors.at(-1);
-      segment.motion_seconds_range=[first.motion_seconds,last.motion_seconds];
-      segment.audio_seconds_range=[first.audio_seconds,last.audio_seconds];
+      require(JSON.stringify(segment.motion_seconds_range)===JSON.stringify([first.motion_seconds,last.motion_seconds])&&
+        JSON.stringify(segment.audio_seconds_range)===JSON.stringify([first.audio_seconds,last.audio_seconds]),'Timing bounds must match their anchors.');
       for(const kind of ['motion','audio']){
         const [a,b]=segment[`${kind}_seconds_range`];
         require(report[`${kind}_source`].valid_segments_seconds.some(([lo,hi])=>lo<=a&&b<=hi),
           'Phase correction crosses a source boundary or a coverage gap.');
       }
-      if(offset!==0)segment.anchor_kind='user_phase_correction';
     }
     return segments;
+  }
+  function shiftedSegments(entry,candidateIndex,offset=0,manualAnchors=null){
+    require(finite(offset)&&Math.abs(offset)<=30,'Phase correction must be within ±30 seconds.');
+    const report=entry.report,candidate=report.candidates?.[candidateIndex];
+    require(report.format==='stemlab.motion-alignment.v1'&&candidate,'Choose a valid timing candidate.');
+    let segments=clone(candidate.mapping_segments);
+    validateSegments(segments,report);
+    if(manualAnchors!==null){
+      require(Array.isArray(manualAnchors)&&manualAnchors.length>=2&&manualAnchors.length<=2000,
+        'Manual mapping needs 2–2000 source-clock anchors.');
+      const anchors=manualAnchors.map(a=>({motion_seconds:a.motion_seconds,audio_seconds:a.audio_seconds}));
+      segments=[{motion_seconds_range:[anchors[0].motion_seconds,anchors.at(-1).motion_seconds],
+        audio_seconds_range:[anchors[0].audio_seconds,anchors.at(-1).audio_seconds],anchors,
+        anchor_kind:'user_confirmed_correspondences'}];
+      validateSegments(segments,report);
+    }
+    for(const segment of segments){
+      for(const anchor of segment.anchors){
+        anchor.audio_seconds+=offset;
+      }
+      const first=segment.anchors[0],last=segment.anchors.at(-1);
+      segment.motion_seconds_range=[first.motion_seconds,last.motion_seconds];
+      segment.audio_seconds_range=[first.audio_seconds,last.audio_seconds];
+      if(offset!==0)segment.anchor_kind='user_phase_correction';
+    }
+    return validateSegments(segments,report);
   }
   function inverseTime(segments,audioSeconds){
     require(finite(audioSeconds),'Audio time must be finite.');
@@ -57,16 +77,40 @@
        (motion.loopable?seconds>=end:seconds>end))return null;
     return (seconds-start)/duration;
   }
-  function makeRevision(entry,candidateIndex,{offset=0,reviewer,beatOne=null,meter=null}={}){
+  function validateSavedRevision(entry,revision){
+    require(revision?.format==='stemlab.motion-alignment-review.v1'&&revision.schema_version===1,
+      'Unknown saved timing review.');
+    require(revision.report_sha256===entry.report_sha256&&revision.report_content_sha256===entry.report_content_sha256&&
+      revision.motion_source_sha256===entry.report.motion_source.sha256&&
+      revision.audio_source_sha256===entry.report.audio_source.sha256,'Saved timing review belongs to different evidence.');
+    require(Number.isSafeInteger(revision.revision)&&revision.revision>=1&&
+      (revision.revision===1?revision.previous_revision_sha256===null:HASH.test(revision.previous_revision_sha256)),
+      'Invalid saved timing revision history.');
+    require(entry.report.candidates.some(c=>c.candidate_id===revision.candidate_id)&&
+      revision.decision==='accept_mapping'&&revision.mapping_status==='user_confirmed',
+      'Saved timing review has no accepted candidate.');
+    require(revision.loop_seams_verified===false&&revision.retargeting_verified===false,
+      'Timing review cannot approve seams or geometry.');
+    validateSegments(revision.mapping_segments,entry.report);
+    return clone(revision);
+  }
+  function makeRevision(entry,candidateIndex,{offset=0,reviewer,beatOne=null,meter=null,
+    manualAnchors=null,previousRevision=null,previousRevisionSha256=null}={}){
     require(HASH.test(entry.report_sha256)&&HASH.test(entry.report_content_sha256),'Report identity is missing.');
     require(typeof reviewer==='string'&&reviewer.trim().length>0&&reviewer.length<=160,'Enter your reviewer name.');
-    const report=entry.report,segments=shiftedSegments(entry,candidateIndex,offset);
+    const report=entry.report,segments=shiftedSegments(entry,candidateIndex,offset,manualAnchors);
+    let revision=1;
+    if(previousRevision!==null){
+      validateSavedRevision(entry,previousRevision);
+      require(HASH.test(previousRevisionSha256),'Previous timing revision identity is missing.');
+      revision=previousRevision.revision+1;
+    }
     if(beatOne!==null)require(finite(beatOne)&&report.audio_source.valid_segments_seconds.some(([a,b])=>a<=beatOne&&beatOne<=b),
       'Beat one must lie within the audio source.');
     if(meter!==null)require(Array.isArray(meter)&&meter.length===2&&Number.isInteger(meter[0])&&
       meter[0]>=1&&meter[0]<=32&&[1,2,4,8,16,32].includes(meter[1]),'Invalid meter.');
-    return {format:'stemlab.motion-alignment-review.v1',schema_version:1,revision:1,
-      previous_revision_sha256:null,report_sha256:entry.report_sha256,
+    return {format:'stemlab.motion-alignment-review.v1',schema_version:1,revision,
+      previous_revision_sha256:previousRevision===null?null:previousRevisionSha256,report_sha256:entry.report_sha256,
       report_content_sha256:entry.report_content_sha256,
       motion_source_sha256:report.motion_source.sha256,audio_source_sha256:report.audio_source.sha256,
       candidate_id:report.candidates[candidateIndex].candidate_id,decision:'accept_mapping',
@@ -133,5 +177,6 @@
       catch{return {active:true,value:null}}
     }};
   }
-  globalThis.DanceRudimentsTimingReview={matchingReviews,shiftedSegments,inverseTime,phaseForSource,makeRevision,mount};
+  globalThis.DanceRudimentsTimingReview={matchingReviews,validateSegments,shiftedSegments,inverseTime,phaseForSource,
+    validateSavedRevision,makeRevision,mount};
 })();

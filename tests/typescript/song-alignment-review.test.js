@@ -71,3 +71,26 @@ test('timing review does not infer beat one, meter, skin or loop approval',()=>{
   assert.throws(()=>review.makeRevision(entry,0,{reviewer:''}),/reviewer name/);
   assert.throws(()=>review.makeRevision(entry,0,{reviewer:'Test',beatOne:21}),/audio source/);
 });
+
+test('manual source-clock anchors and phase edits produce bounded review revisions',()=>{
+  const entry=evidence(),manual=[{motion_seconds:1,audio_seconds:3},{motion_seconds:2,audio_seconds:5},{motion_seconds:4,audio_seconds:8}];
+  const revision=review.makeRevision(entry,0,{reviewer:'Test reviewer',manualAnchors:manual,offset:.25});
+  assert.equal(review.inverseTime(revision.mapping_segments,5.25),2);
+  assert.equal(revision.mapping_segments[0].anchor_kind,'user_phase_correction');
+  assert.equal(manual[0].audio_seconds,3);
+  assert.throws(()=>review.makeRevision(entry,0,{reviewer:'Test',manualAnchors:[
+    {motion_seconds:3,audio_seconds:5},{motion_seconds:7,audio_seconds:8}]}),/coverage gap/);
+  assert.throws(()=>review.makeRevision(entry,0,{reviewer:'Test',manualAnchors:[
+    {motion_seconds:1,audio_seconds:5},{motion_seconds:2,audio_seconds:4}]}),/increase/);
+});
+
+test('reopening a timing review validates source identity and continues the revision chain',()=>{
+  const entry=evidence(),prior=review.makeRevision(entry,0,{reviewer:'Test reviewer'});
+  assert.deepEqual(review.validateSavedRevision(entry,prior),prior);
+  const next=review.makeRevision(entry,0,{reviewer:'Test reviewer',offset:.1,
+    previousRevision:prior,previousRevisionSha256:'f'.repeat(64)});
+  assert.equal(next.revision,2);assert.equal(next.previous_revision_sha256,'f'.repeat(64));
+  assert.throws(()=>review.makeRevision(entry,0,{reviewer:'Test',previousRevision:prior}),/identity is missing/);
+  assert.throws(()=>review.validateSavedRevision(entry,{...prior,motion_source_sha256:'f'.repeat(64)}),/different evidence/);
+  assert.throws(()=>review.validateSavedRevision(entry,{...prior,loop_seams_verified:true}),/seams or geometry/);
+});

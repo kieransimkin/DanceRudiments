@@ -229,11 +229,66 @@ def _full_action_recording(capture, fit, *, presentation_bpm, original_source_sh
                         sample_count=count, source_pips_per_beat=64)
 
 
+def compile_repaired_loop(capture, result, *, beats, name, original_sha256,
+                          target_bpm=None, verify_native=False):
+    """Compile one explicit correction through the shared half-open/native gates.
+
+    A numerical or compilation rejection returns ``(None, report)``. A native
+    parity error aborts the caller's transaction. No review approvals are added.
+    """
+    from .loop_repair import verify_compiled_loop_seam
+    attempt = dict(result.report)
+    if not result.accepted or result.capture is None:
+        return None, attempt
+    if type(beats) is not int or not 1 <= beats <= 32:
+        raise ScoreError('An explicitly finished loop needs 1..32 beats')
+    if attempt['sample_count'] != beats * 64 + 1:
+        raise ScoreError('Correction grid must have beats * 64 + 1 endpoint samples')
+    bpm = 60. * beats / attempt['period_seconds']
+    if not 30 <= bpm <= 300:
+        raise ScoreError('Explicit loop interpretation must be within 30..300 BPM')
+    source_map = BeatMap.from_bpm(str(bpm), beat_zero_seconds='0',
+        source='Explicit bounded loop derivative; estimated source tempo',
+        bpm_status='estimated', phase_status='estimated')
+    presentation = target_bpm if target_bpm is not None else bpm
+    clock = RecordingClock(float(presentation),
+        'Corrected loop derivative; musical alignment remains unverified',
+        'estimated', 0., 'estimated', 0)
+    try:
+        motion = compile_capture(result.capture, name=name, source_beat_map=source_map,
+                                 clock=clock, sample_count=beats*64)
+    except (ScoreError, ValueError) as exc:
+        attempt.update(accepted=False, status='compilation_rejected',
+                       rejection_reasons=['compiled_payload: '+str(exc)])
+        return None, attempt
+    motion = _annotate_motion(motion, motion_kind='repaired_loop_candidate',
+        original_source_sha256=original_sha256,
+        original_capture_sha256=capture.fingerprint,
+        corrected_capture_sha256=result.capture.fingerprint,
+        repair_id=attempt['repair_id'],
+        repair_method=attempt['method'], repair_source_bounds_seconds=[
+            attempt['source_start_seconds'], attempt['source_end_seconds']],
+        numerical_repeat_seam_verified=True, repeat_seam_verified=False,
+        suggested_loop_period_pips=beats*64,
+        suggested_loop_playback='repeat_after_manual_review',
+        musical_timing_verified=False, target_mesh_verified=False)
+    compiled_check = verify_compiled_loop_seam(motion, result.capture, attempt)
+    attempt['compiled_verification'] = compiled_check
+    if not compiled_check['passed']:
+        attempt['accepted'] = False
+        attempt['status'] = 'compiled_verification_rejected'
+        attempt['rejection_reasons'] = list(attempt.get('rejection_reasons', [])) + [
+            'compiled_payload: ' + reason for reason in compiled_check['rejection_reasons']]
+        return None, attempt
+    attempt['native_samples_verified'] = _native_check(motion) if verify_native else False
+    return motion, attempt
+
+
 def _finish_loop_candidates(capture, stage, fit, world, *, max_repairs,
                             options, target_bpm, verify_native, original_sha256):
     """Author bounded corrected derivatives separately from untouched candidates."""
     from .loop_repair import (LoopRepairOptions, contacts_from_world_report,
-                              propose_loop_repairs, verify_compiled_loop_seam)
+                              propose_loop_repairs)
     from .world_motion import source_valid_segments
     if options is None:
         options = LoopRepairOptions()
@@ -267,42 +322,13 @@ def _finish_loop_candidates(capture, stage, fit, world, *, max_repairs,
         motion_file = f'repaired-loops/{name}.motion.json'
         report_file = f'repaired-loops/{name}.repair.json'
         (stage / 'repaired-loops').mkdir(exist_ok=True)
-        source_map = BeatMap.from_bpm(str(bpm), beat_zero_seconds='0',
-            source='Explicit bounded loop derivative; estimated source tempo',
-            bpm_status='estimated', phase_status='estimated')
-        presentation = target_bpm if target_bpm is not None else bpm
-        clock = RecordingClock(float(presentation),
-            'Corrected loop derivative; musical alignment remains unverified',
-            'estimated', 0., 'estimated', 0)
-        try:
-            motion = compile_capture(result.capture, name=name, source_beat_map=source_map,
-                                     clock=clock, sample_count=beats*64)
-        except (ScoreError, ValueError) as exc:
-            attempt.update(accepted=False, status='compilation_rejected',
-                           rejection_reasons=['compiled_payload: '+str(exc)])
+        motion, attempt = compile_repaired_loop(capture, result, beats=beats, name=name,
+            original_sha256=original_sha256, target_bpm=target_bpm, verify_native=verify_native)
+        if motion is None:
             attempts.append(attempt)
             continue
-        motion = _annotate_motion(motion, motion_kind='repaired_loop_candidate',
-            original_source_sha256=original_sha256,
-            original_capture_sha256=capture.fingerprint,
-            corrected_capture_sha256=result.capture.fingerprint,
-            repair_id=attempt['repair_id'],
-            repair_method=attempt['method'], repair_source_bounds_seconds=[
-                attempt['source_start_seconds'], attempt['source_end_seconds']],
-            numerical_repeat_seam_verified=True, repeat_seam_verified=False,
-            suggested_loop_period_pips=beats*64,
-            suggested_loop_playback='repeat_after_manual_review',
-            musical_timing_verified=False, target_mesh_verified=False)
-        compiled_check = verify_compiled_loop_seam(motion, result.capture, attempt)
-        attempt['compiled_verification'] = compiled_check
-        if not compiled_check['passed']:
-            attempt['accepted'] = False
-            attempt['status'] = 'compiled_verification_rejected'
-            attempt['rejection_reasons'] = list(attempt.get('rejection_reasons', [])) + [
-                'compiled_payload: ' + reason for reason in compiled_check['rejection_reasons']]
-            attempts.append(attempt)
-            continue
-        native = _native_check(motion) if verify_native else False
+        native = attempt['native_samples_verified']
+        presentation = motion.recording.clock.bpm
         write_capture(stage / capture_file, result.capture)
         write_rig_motion(stage / motion_file, motion)
         attempt.update(native_samples_verified=native,

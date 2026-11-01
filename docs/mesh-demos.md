@@ -176,6 +176,24 @@ input hashes and still leaves visual/musical approval false. Synthetic loader,
 identity and clock tests run in `npm test` through
 `standalone-rig-motion.test.js` and `mesh-derivative-review.test.js`.
 
+## Save and export an imported Action review
+
+The source-checkout [loop-review workspace](loop-review.md) adds editable source
+boundaries and beat count, exact local audio audition, phase/manual timing
+anchors, persistent drafts, separate visual verdicts and optional package
+export. Run `python tools/review_motion_loop.py prepare --help`, then serve the
+prepared workspace with `python tools/review_motion_loop.py serve WORKSPACE`.
+It builds one explicitly supplied portable Action using the same Kandi renderer
+and native sampler. The public gallery keeps its pinned two-source build.
+
+Portable Blender carriers retain their full saved rest transforms, including
+neutral object parents. A complete explicit target-to-source bone map and an
+actual saved calibration frame are required; the existing CMU map is the
+default. Saved review identity binds the exact source, derivative, master,
+target rig and calibration implementation. Changing those inputs requires a
+new review. Automatic browser checks use permanent test-only workspaces and
+never provide human timing or visual approval.
+
 ## Validation
 
 The release workflow must pass all existing motion-package integrity tests plus

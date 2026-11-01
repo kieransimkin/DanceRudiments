@@ -176,9 +176,16 @@ With `contact_policy="validate"`, repaired foot trajectories are measured
 against those anchors. Excessive drift or speed rejects the result. With
 `contact_policy="root_stabilize"`, a bounded least-squares root translation
 tries to satisfy active anchors without modifying bone lengths or adding a new
-IK solver. World corrections are transformed through the saved root rest basis;
-rotated roots are supported. Unconstrained intervals interpolate the required
-root offset, and the offset is closed before applying it. Final residual slip,
+IK solver. The selected root needs all three translation channels and must be
+an ancestor of every supplied contact. An imported model may have a neutral
+synthetic object root with omitted translations; in that case, explicitly set
+`root_bone` to the actual moving ancestor (for example, `"Hips"` after verifying
+the saved hierarchy). The correction preserves the exact profile and does not
+invent channels or choose a bone by name. World corrections use the evaluated
+parent transform and saved parent/child rest basis, including parent rotation
+and scale. Both local and world correction magnitudes obey the root budget.
+Unconstrained intervals interpolate the required root offset, and the offset is
+closed before applying it. Final residual slip,
 speed, total correction and seam continuity are measured again.
 
 Two simultaneous feet that demand inconsistent root corrections are rejected

@@ -11,6 +11,13 @@ have separate catalogues. Analysis runs in original source seconds before any
 resampling. A repaired loop does not raise the source tempo confidence or approve
 its musical phase, target mesh or actual foot contact.
 
+The next authoring step is the [local loop-review workspace](loop-review.md):
+choose explicit boundaries and beat count, audition a source-bound audio
+mapping on Kandi, save timing and separate visual decisions, then export a
+standard optional package. Explicit finishing uses the same bounded repair and
+native verification as automatic candidates; it does not promote an ambiguous
+full Action or lower the 70% conversion threshold.
+
 Timestamp gaps greater than three times the capture's median sample interval
 split observed coverage, including when world-space analysis is disabled.
 Complete-Action export cannot fill those gaps. Raw and corrected loop windows

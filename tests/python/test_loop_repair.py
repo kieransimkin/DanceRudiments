@@ -335,6 +335,53 @@ class LoopContactTests(unittest.TestCase):
         self.assertTrue(result.accepted, result.report)
         self.assertLess(result.report["contacts"]["after"][0]["max_slip"], 1e-8)
 
+    def test_explicit_nested_root_uses_evaluated_parent_rotation_and_scale(self):
+        import numpy as np
+        from dancerudiments_authoring.world_motion import evaluate_world_motion
+        source = portable()
+        metadata = source.profile.source
+        metadata['skeleton'].insert(0, {'name': 'Object', 'parent': None,
+            'rest_matrix': np.eye(4).ravel().tolist(), 'length': .1, 'use_deform': False})
+        next(b for b in metadata['skeleton'] if b['name'] == 'Root')['parent'] = 'Object'
+        metadata['object_motion_root'] = 'Object'
+        metadata['omitted_neutral_groups'].append(
+            {'bone': 'Object', 'data_path': 'location', 'values': [0., 0., 0.]})
+        channels = list(source.profile.channels)
+        for path, defaults, bound in (('rotation_quaternion', (1., 0., 0., 0.), 1.),
+                                       ('scale', (1., 1., 1.), 2.)):
+            for axis, default in enumerate(defaults):
+                channels.append(RigChannel(len(channels)+1, f'object_{path}_{axis}',
+                    'Object', path, axis, 'unitless', -bound, bound, default,
+                    interpolation='quaternion' if path == 'rotation_quaternion' else 'linear',
+                    rotation_mode='QUATERNION' if path == 'rotation_quaternion' else ''))
+        profile = replace(source.profile, channels=tuple(channels), source_json=json.dumps(metadata))
+        # The wrapper rest frame is identity. Its evaluated pose rotates and
+        # scales the selected root, which a rest-only conversion cannot undo.
+        parent_pose = (math.cos(math.pi/8), 0., 0., math.sin(math.pi/8), 1.3, .75, 1.)
+        source = RigCapture(profile, source.frame_times_seconds,
+                            tuple((*row, *parent_pose) for row in source.frames))
+        contacts = (FootContact('LeftFoot', 0., 2.), FootContact('RightFoot', 0., 2.))
+        defaults = repair_loop(source, start_seconds=0, end_seconds=2, contacts=contacts,
+                              options=LoopRepairOptions(contact_policy='root_stabilize'))
+        self.assertIn('contact_stabilization_requires_complete_root_translation',
+                      defaults.report['rejection_reasons'])
+        result = repair_loop(source, start_seconds=0, end_seconds=2, contacts=contacts,
+            options=LoopRepairOptions(contact_policy='root_stabilize', root_bone='Root'))
+        self.assertTrue(result.accepted, result.report)
+        self.assertEqual(result.capture.profile.fingerprint, source.profile.fingerprint)
+        self.assertEqual(result.report['contacts']['correction_root_parent_bone'], 'Object')
+        world = evaluate_world_motion(result.capture)
+        for name in ('LeftFoot', 'RightFoot'):
+            foot = world.positions[:, world.bone_names.index(name)]
+            self.assertLess(float(np.linalg.norm(foot-foot[0], axis=1).max()), 1e-8)
+        self.assertGreater(result.report['contacts']['max_world_root_correction'],
+                           result.report['contacts']['max_root_correction'])
+        invalid = repair_loop(source, start_seconds=0, end_seconds=2, contacts=contacts,
+            options=LoopRepairOptions(contact_policy='root_stabilize', root_bone='LeftFoot'))
+        self.assertFalse(invalid.accepted)
+        self.assertIn('contact_stabilization_root_must_be_ancestor_of_all_contacts',
+                      invalid.report['rejection_reasons'])
+
     def test_missing_contact_evidence_and_unsupported_rig_fail_explicitly(self):
         result = repair_loop(portable(), start_seconds=0, end_seconds=2,
                              options=LoopRepairOptions(require_contacts=True))

@@ -4,7 +4,6 @@ import {FBXLoader} from 'three/addons/loaders/FBXLoader.js';
 const SOURCE_TO_TARGET = new THREE.Quaternion().setFromAxisAngle(
   new THREE.Vector3(1, 0, 0), -Math.PI / 2,
 );
-const SOURCE_TO_TARGET_INV = SOURCE_TO_TARGET.clone().invert();
 
 // CMU source skeleton -> Kandi Boom target skeleton. World-space deltas are
 // retargeted, so omitted convenience joints (Neck1, L/RHipJoint, fingers) are
@@ -94,9 +93,42 @@ async function textureFromBytes(bytes, {srgb = false} = {}) {
   }
 }
 
-function sourcePoseEvaluator(rig) {
+export function sourcePoseEvaluator(rig) {
   if (!Array.isArray(rig.joints) || !rig.joints.length || !Array.isArray(rig.channels))
     throw Error('Source motion rig is incomplete');
+  if (new Set(rig.joints.map(j => j.name)).size !== rig.joints.length)
+    throw Error('Source joint names must be unique');
+  const order = [], visits = new Uint8Array(rig.joints.length);
+  const restMatrices = rig.joints.map(joint => {
+    if (joint.localRestMatrix == null) {
+      if (!Array.isArray(joint.offset) || joint.offset.length !== 3 || !joint.offset.every(Number.isFinite))
+        throw Error('Source rest offset is invalid');
+      return null;
+    }
+    const row = Array.isArray(joint.localRestMatrix) ? joint.localRestMatrix.flat() : [];
+    if (row.length !== 16 || !row.every(Number.isFinite) ||
+        Math.abs(row[12])+Math.abs(row[13])+Math.abs(row[14])+Math.abs(row[15]-1)>1e-8)
+      throw Error('Source local rest matrix must be a finite affine row-major matrix');
+    const matrix = new THREE.Matrix4().fromArray(row).transpose();
+    if (Math.abs(matrix.determinant()) < 1e-12) throw Error('Source local rest matrix is singular');
+    return matrix;
+  });
+  for (const joint of rig.joints) for (const [field, width] of [
+    ['positionChannelIndices',3],['rotationChannelIndices',4],['scaleChannelIndices',3],
+  ]) if (joint[field] != null && (!Array.isArray(joint[field]) || joint[field].length !== width ||
+      joint[field].some(i => !Number.isSafeInteger(i) || i < 0 || i >= rig.channels.length)))
+    throw Error(`Source channel indices are invalid: ${joint.name}`);
+  function visit(index) {
+    if (visits[index] === 2) return;
+    if (visits[index] === 1) throw Error('Source hierarchy contains a cycle');
+    const parent = rig.joints[index].parentIndex;
+    if (!Number.isSafeInteger(parent) || parent < -1 || parent >= rig.joints.length || parent === index)
+      throw Error('Source parent index is invalid');
+    visits[index] = 1;
+    if (parent >= 0) visit(parent);
+    visits[index] = 2; order.push(index);
+  }
+  rig.joints.forEach((_, i) => visit(i));
   const matrices = rig.joints.map(() => new THREE.Matrix4());
   const local = new THREE.Matrix4(), position = new THREE.Vector3(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3();
   const evaluator = {
@@ -105,11 +137,14 @@ function sourcePoseEvaluator(rig) {
     evaluate(values) {
       if (!Array.isArray(values) && !(values instanceof Float32Array) && !(values instanceof Float64Array))
         throw Error('Source pose values are unavailable');
-      for (let i = 0; i < rig.joints.length; i++) {
+      if (values.length !== rig.channels.length || !values.every(Number.isFinite))
+        throw Error('Source pose values do not match the finite saved channels');
+      for (const i of order) {
         const joint = rig.joints[i];
-        position.fromArray(joint.offset); quaternion.identity(); scale.set(1, 1, 1);
+        if (restMatrices[i]) position.set(0,0,0); else position.fromArray(joint.offset);
+        quaternion.identity(); scale.set(1, 1, 1);
         if (joint.positionChannelIndices) for (let axis = 0; axis < 3; axis++)
-          position.setComponent(axis, joint.offset[axis] + values[joint.positionChannelIndices[axis]]);
+          position.setComponent(axis, (restMatrices[i] ? 0 : joint.offset[axis]) + values[joint.positionChannelIndices[axis]]);
         if (joint.rotationChannelIndices) {
           const [w, x, y, z] = joint.rotationChannelIndices.map(index => values[index]);
           if (Math.abs(Math.hypot(w, x, y, z) - 1) > .0002) throw Error(`Source quaternion is not unit length: ${joint.name}`);
@@ -117,6 +152,7 @@ function sourcePoseEvaluator(rig) {
         }
         if (joint.scaleChannelIndices) scale.fromArray(joint.scaleChannelIndices.map(index => values[index]));
         local.compose(position, quaternion, scale);
+        if (restMatrices[i]) local.premultiply(restMatrices[i]);
         matrices[i].copy(local);
         if (joint.parentIndex >= 0) matrices[i].premultiply(matrices[joint.parentIndex]);
       }
@@ -125,6 +161,25 @@ function sourcePoseEvaluator(rig) {
     },
   };
   return evaluator;
+}
+
+export function sourceRetargetConfiguration(rig) {
+  const supplied = rig.retargetMap ?? KANDI_RETARGET_MAP;
+  const keys = Object.keys(KANDI_RETARGET_MAP), names = new Set(rig.joints.map(j => j.name));
+  if (!supplied || typeof supplied !== 'object' || Array.isArray(supplied) ||
+      Object.keys(supplied).length !== keys.length || keys.some(key =>
+        typeof supplied[key] !== 'string' || !names.has(supplied[key])) ||
+      new Set(Object.values(supplied)).size !== keys.length)
+    throw Error('An exact, complete Kandi target-to-source retarget map is required');
+  const orientation = rig.sourceToTargetQuaternion ?? [SOURCE_TO_TARGET.w,SOURCE_TO_TARGET.x,SOURCE_TO_TARGET.y,SOURCE_TO_TARGET.z];
+  if (!Array.isArray(orientation) || orientation.length !== 4 || !orientation.every(Number.isFinite) ||
+      Math.abs(Math.hypot(...orientation)-1)>1e-8) throw Error('Source coordinate orientation must be an explicit unit quaternion');
+  const sourceToTarget = new THREE.Quaternion(orientation[1],orientation[2],orientation[3],orientation[0]);
+  const axis = rig.sourceHeightAxis ?? 2;
+  if (!Number.isInteger(axis) || axis<0 || axis>2 || !(Number(rig.restBounds?.size?.[axis])>0))
+    throw Error('Source motion rig height axis is invalid');
+  return {map:{...supplied},sourceToTarget,sourceToTargetInverse:sourceToTarget.clone().invert(),
+    sourceHeight:Number(rig.restBounds.size[axis])};
 }
 
 function profileMatches(rig, profile) {
@@ -268,10 +323,7 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
   }
 
   const source = sourcePoseEvaluator(sourceRig), sourceIndex = new Map(source.names.map((name, i) => [name, i]));
-  for (const sourceName of Object.values(KANDI_RETARGET_MAP)) if (!sourceIndex.has(sourceName))
-    throw Error(`Source motion rig is missing retarget joint ${sourceName}`);
-  const sourceHeight = Number(sourceRig.restBounds?.size?.[2]);
-  if (!(sourceHeight > 0)) throw Error('Source motion rig height is invalid');
+  const {map:retargetMap,sourceToTarget,sourceToTargetInverse,sourceHeight}=sourceRetargetConfiguration(sourceRig);
   const sourceToTargetUnits = modelSize.y / sourceHeight;
   const desiredWorld = new Map(), sourceCalibrationInverse = new Map(), retargetReferenceWorld = new Map();
   const retargetReferenceOffsetsDegrees = {};
@@ -295,7 +347,7 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
     ensureProfile(profile);
     const matrices = source.evaluate(values);
 
-    for (const sourceName of new Set(Object.values(KANDI_RETARGET_MAP))) {
+    for (const sourceName of new Set(Object.values(retargetMap))) {
       sourceQ.setFromRotationMatrix(matrices[sourceIndex.get(sourceName)]);
       sourceCalibrationInverse.set(sourceName, sourceQ.clone().invert());
     }
@@ -312,8 +364,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
       delete retargetReferenceOffsetsDegrees[key];
 
     for (const [targetName, targetChildName] of Object.entries(KANDI_RETARGET_AIM_CHILD)) {
-      const sourceName = KANDI_RETARGET_MAP[targetName];
-      const sourceChildName = KANDI_RETARGET_MAP[targetChildName];
+      const sourceName = retargetMap[targetName];
+      const sourceChildName = retargetMap[targetChildName];
       const sourceMatrix = matrices[sourceIndex.get(sourceName)];
       const sourceChildMatrix = matrices[sourceIndex.get(sourceChildName)];
       if (!sourceMatrix || !sourceChildMatrix)
@@ -321,7 +373,7 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
 
       sourcePosition.setFromMatrixPosition(sourceMatrix);
       sourceChildPosition.setFromMatrixPosition(sourceChildMatrix);
-      sourceAim.copy(sourceChildPosition).sub(sourcePosition).applyQuaternion(SOURCE_TO_TARGET);
+      sourceAim.copy(sourceChildPosition).sub(sourcePosition).applyQuaternion(sourceToTarget);
       targetAim.copy(restWorldPosition.get(targetChildName)).sub(restWorldPosition.get(targetName));
 
       retargetAimCorrection(targetAim, sourceAim, correctionQ);
@@ -339,8 +391,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
       retargetReferenceOffsetsDegrees[targetName] = offsetDegrees;
     }
 
-    sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get('Hips')]);
-    sourcePosition.applyQuaternion(SOURCE_TO_TARGET).multiplyScalar(sourceToTargetUnits);
+    sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get(retargetMap.Hips)]);
+    sourcePosition.applyQuaternion(sourceToTarget).multiplyScalar(sourceToTargetUnits);
     rootReference = sourcePosition.clone();
     calibrationCaptured = true;
   }
@@ -360,11 +412,11 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
     resetTarget(); desiredWorld.clear();
     root.updateMatrixWorld(true);
     for (const record of targetRig.bones) {
-      const bone = targetBones.get(record.name), sourceName = KANDI_RETARGET_MAP[record.name];
+      const bone = targetBones.get(record.name), sourceName = retargetMap[record.name];
       if (!sourceName) continue;
       sourceQ.setFromRotationMatrix(matrices[sourceIndex.get(sourceName)]);
       calibrationRelativeQuaternion(sourceQ, sourceCalibrationInverse.get(sourceName), sourceDeltaQ);
-      deltaQ.copy(SOURCE_TO_TARGET).multiply(sourceDeltaQ).multiply(SOURCE_TO_TARGET_INV).normalize();
+      deltaQ.copy(sourceToTarget).multiply(sourceDeltaQ).multiply(sourceToTargetInverse).normalize();
       const referenceQ = retargetReferenceWorld.get(record.name) || restWorld.get(record.name);
       const worldQ = deltaQ.multiply(referenceQ).normalize();
       desiredWorld.set(record.name, worldQ.clone());
@@ -377,8 +429,8 @@ export async function createKandiBoomCharacter(sourceRig, targetRig, assets,
     // Preserve target rest offsets. Global source translation drives an outer
     // motion root relative to the retained converter calibration frame, scaled
     // by the ratio of source and Kandi skeleton heights.
-    sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get('Hips')]);
-    sourcePosition.applyQuaternion(SOURCE_TO_TARGET).multiplyScalar(sourceToTargetUnits);
+    sourcePosition.setFromMatrixPosition(matrices[sourceIndex.get(retargetMap.Hips)]);
+    sourcePosition.applyQuaternion(sourceToTarget).multiplyScalar(sourceToTargetUnits);
     motionRoot.position.copy(sourcePosition).sub(rootReference);
     root.updateMatrixWorld(true); group.updateMatrixWorld(true);
     for (const mesh of meshes) mesh.skeleton?.update();

@@ -39,7 +39,7 @@ jobs:
         with:
           repository: kieransimkin/stemlab
           # Exact source snapshot whose rig-motion analyser is integration-tested.
-          ref: bd25b6e1736bba30924f770ec2c5d17640005432
+          ref: 98b61402e12aa69c1fb6f985439812f738f05805
           path: .cache/stemlab-source
           persist-credentials: false
       - uses: actions/setup-python@v6

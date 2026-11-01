@@ -427,8 +427,15 @@ def _stabilize_contacts(capture, rows, times, source_start, contacts, root, scal
     if reasons or not constraints:
         return rows, {"before": before}, reasons or ["no_contact_constraints"]
     indices = _groups(capture.profile, "location").get(root, {})
-    if set(indices) != {0, 1, 2} or root != world.bone_names[world.root_index]:
+    if set(indices) != {0, 1, 2} or root not in world.bone_names:
         return rows, {"before": before}, ["contact_stabilization_requires_complete_root_translation"]
+    root_index = world.bone_names.index(root)
+    for contact in contacts:
+        ancestor = world.bone_names.index(contact.bone)
+        while ancestor >= 0 and ancestor != root_index:
+            ancestor = world.parents[ancestor]
+        if ancestor != root_index:
+            return rows, {"before": before}, ["contact_stabilization_root_must_be_ancestor_of_all_contacts"]
     targets = {}
     for frame, deltas in constraints.items():
         mean = np.mean(deltas, axis=0)
@@ -438,10 +445,22 @@ def _stabilize_contacts(capture, rows, times, source_start, contacts, root, scal
     known = sorted(targets)
     shifts = np.column_stack([np.interp(np.arange(len(rows)), known,
                                        [targets[k][axis] for k in known]) for axis in range(3)])
-    # Express a world displacement in the saved root rest basis, never assume
-    # source axes or metres. Close the shift itself so adding it preserves C1.
-    rest = world.rest_matrices[world.root_index][:3, :3]
-    local = shifts @ np.linalg.inv(rest).T
+    # A model importer may place the moving skeleton underneath an omitted,
+    # neutral object root. An explicitly selected descendant is valid when it
+    # carries every contact. Its local translation basis includes the actual
+    # evaluated parent transform and the saved parent/child rest relationship;
+    # using only the child rest matrix loses parent rotation and scale.
+    parent = world.parents[root_index]
+    if parent < 0:
+        bases = np.broadcast_to(world.rest_matrices[root_index][:3, :3], (len(rows), 3, 3))
+    else:
+        bases = (world.world_matrices[:, parent] @ np.linalg.inv(world.rest_matrices[parent])
+                 @ world.rest_matrices[root_index])[:, :3, :3]
+    try:
+        local = np.linalg.solve(bases, shifts[:, :, None])[:, :, 0]
+    except np.linalg.LinAlgError:
+        return rows, {"before": before}, ["contact_stabilization_root_basis_singular"]
+    # Close the shift itself so adding it preserves the source-channel C1 seam.
     shift_rows = [[0.]*len(capture.profile.channels) for _ in rows]
     for row, delta in zip(shift_rows, local):
         for axis, channel in indices.items():
@@ -452,13 +471,19 @@ def _stabilize_contacts(capture, rows, times, source_start, contacts, root, scal
             row[group[0]] = 1.
     closed = _close_rows(capture.profile, shift_rows, options.blend_fraction)
     correction = max(_norm(row[i] for i in indices.values()) for row in closed)
-    if correction > options.max_contact_root_correction_fraction*scale:
-        return rows, {"before": before, "max_root_correction": correction}, ["contact_root_correction_limit"]
+    local_closed = np.array([[row[indices[axis]] for axis in range(3)] for row in closed])
+    world_correction = float(np.linalg.norm(
+        (bases @ local_closed[:, :, None])[:, :, 0], axis=1).max())
+    details = {"before": before, "anchors": anchors, "max_root_correction": correction,
+               "max_world_root_correction": world_correction, "correction_root_bone": root,
+               "correction_root_parent_bone": world.bone_names[parent] if parent >= 0 else None}
+    if max(correction, world_correction) > options.max_contact_root_correction_fraction*scale:
+        return rows, details, ["contact_root_correction_limit"]
     output = [list(row) for row in rows]
     for row, delta in zip(output, closed):
         for i in indices.values():
             row[i] += delta[i]
-    return output, {"before": before, "anchors": anchors, "max_root_correction": correction}, []
+    return output, details, []
 
 
 def repair_loop(capture, *, start_seconds, end_seconds, options=None, contacts=()):
