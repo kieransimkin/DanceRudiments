@@ -29,7 +29,7 @@ Build a wheel from the actual source archive, not just from a working tree:
 ```sh
 python -m build
 python tools/check_package_docs.py --archive dist/*.whl dist/*.tar.gz
-python tools/check_pypi_size.py dist --max-wheel-mib 8 --max-sdist-mib 12
+python tools/check_pypi_size.py dist
 ```
 
 Then install the wheel in a new environment and import the native catalogue,
@@ -37,6 +37,26 @@ world-motion, loop-repair and loop-review APIs. Verify that the complete 1,731
 entry catalogue and the 64-pip wrapping contract remain available. Run the
 normal native installed-consumer check to verify that C++ development files
 remain in their own distribution.
+
+## Measured release size policy
+
+The full catalogue's reduced Windows CP313 wheel measures 27.91 MiB and its
+source archive 35.23 MiB. The former 8/12 MiB thresholds were smaller than the
+intrinsic catalogue payload and could not describe a complete current package.
+The reviewed policy in `packaging/python-size-budget.json` sets explicit 32 MiB
+wheel, 40 MiB sdist and 620 MiB complete-release ceilings. This follows an actual
+reduction from 56.50/76.78 MiB; it does not qualify the old duplicated packages.
+
+All release jobs consume that same checked-in policy. Before publishing, the
+aggregate gate additionally requires exactly eighteen supported wheels and one
+source archive, all named for the exact release version. An incomplete matrix,
+foreign version, oversized file or excessive total fails. Archive-content and
+native/catalogue checks remain separate and mandatory. A future architecture or
+matrix change needs a reviewed policy update rather than an unbounded override.
+
+These local budgets do not grant PyPI storage. A project quota rejection still
+requires verified available capacity; retain existing immutable versions and
+request an administrator increase when necessary.
 
 ## Potential problems
 
