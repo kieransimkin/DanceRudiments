@@ -49,7 +49,7 @@ class AuditionTransportTests(unittest.TestCase):
             index=dict(format='dancerudiments.source-motion-collection-analysis',schema_version=1,truncated=False,actions=[action])
             path=root/'index.json'
             def save():path.write_text(json.dumps(index))
-            save();self.assertEqual(collection_jobs(path)[0],[job])
+            save();self.assertEqual(collection_jobs(path)[0],[job.resolve()])
             action['relative_output']='../escape';save()
             with self.assertRaisesRegex(ValueError,'escapes'):collection_jobs(path)
             action['relative_output']='action';action['profile_sha256']='c'*64;save()
