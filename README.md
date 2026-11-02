@@ -143,6 +143,23 @@ to compare candidates, adjust phase and save a separate timing decision. The
 browser requires the exact local audio master before saving; beat one and meter
 remain unconfirmed unless entered. See [timing review](docs/song-loop-preview.md#source-bound-timing-review).
 
+The [local collection audition](docs/song-loop-preview.md#local-collection-audition)
+compares a complete reviewed source collection with selected StemLab example
+songs. It loads bounded, hash-verified motion assets on demand, filters by source
+Action and plays supported calibrated sources on Kandi through the same native
+sampler. Original source-speed previews remain available even when no full
+Action clears the musical-fit gate. An explicit private-audio flag can include
+the selected example masters; the normal generated artifact remains audio-free.
+“Lots of movement” ranks measured body-scale-normalised joint activity ahead of
+tempo/seam preference, while retaining the actual speed ratio and all review
+limits. Quiet phrases are no longer rewarded simply for returning to a pose.
+
+![Actual local Kandi audition driven by a StemLab song clock](docs/images/collection-audition.png)
+
+*Development audition: actual native poses and Kandi skin, not an illustration
+or artist-approved musical match. Motion: CMU / NSF EIA-0196217; BVH: cgspeed;
+Kandi Boom: Bass Ben & Friends.*
+
 Kandi's mesh gallery accepts a local corrected `.motion.json` and matching
 `.repair.json`, verifies their identity and final compiled checks, then uses the
 same native player and calibrated source-to-Kandi adapter. Explicit repeat,

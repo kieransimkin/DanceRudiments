@@ -119,6 +119,28 @@ annotations with the checked-in Kandi assets. Upload receipts, screenshots and
 the explicitly test-only package; do not upload the full workspace or real
 source/audio assets as part of that fixture's evidence.
 
+## Private collection auditions
+
+Read `docs/song-loop-preview.md` before changing collection previews. Reuse the
+existing StemLab matcher, world-motion envelopes and native Kandi sampler; do not
+copy a timing, FK or motion engine. Keep the public two-scene gallery pinned.
+Collection skin playback requires an explicit local build mode, exact original
+source/profile hashes, a declared calibration frame and the reviewed bone map.
+Unsupported sources remain source-rig previews; never invent their calibration.
+
+Default generated song artifacts remain audio-free. Copy example masters only
+with `--local-example-audio`, keep that bundle private and serve it through the
+read-only loopback allowlist/capability route. Preserve host/origin checks,
+port-specific cookies, bounded asset reads and SHA-256 checks. Separate original
+source time from musically estimated full Actions and closed derivatives.
+
+Movement preference uses the existing world/root-relative speed envelopes,
+normalised by rest body scale, with the original tempo/seam score and playback
+ratio retained. Activity is an editorial ranking, not rhythm confidence, skin
+approval or proof of physical units. Test held versus moving poses and inspect
+the actual changing native samples and deformed skin in the isolated collection
+browser check. Keep real masters and mocap payloads out of fixtures and packages.
+
 ## Optional motion packages
 
 Read `docs/motion-packages.md` and `docs/blender-motion-import.md` for changes to

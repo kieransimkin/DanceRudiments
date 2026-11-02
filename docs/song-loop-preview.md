@@ -1,8 +1,113 @@
 # StemLab songs × source-first motion-loop review
 
-This is an **audio-free, generated CI review artifact**, not a released motion
+The default is an **audio-free, generated CI review artifact**, not a released motion
 package, new pattern catalogue, automatically verified music sync, or public
 music redistribution. DanceRudiments does not gain a StemLab runtime dependency.
+
+An explicitly requested private local collection audition can separately include
+selected example masters, as described below. Never publish that private bundle.
+
+## Local collection audition
+
+Use the complete index from `analyze_motion_collection.py` to compare reviewed
+source recordings with only the StemLab songs you select. Resolve and pin the
+latest official StemLab release first, then import that exact checkout's loop
+analyser. No new model or download is needed by the preview builder.
+
+```bash
+python tools/build_song_loop_preview.py --stemlab-root ../stemlab \
+  --collection-index .cache/collection/index.json \
+  --songs arcadians the-truth-is-a-virus --max-motions 1024 \
+  --lazy-motion-assets --local-example-audio --require-all-songs \
+  --output-dir .cache/private-audition
+python tools/build_collection_mesh_assets.py \
+  --collection-index .cache/collection/index.json \
+  --cache-root .cache/motion-sources --output-dir .cache/collection-mesh-assets
+node tools/build_loop_review_site.mjs --collection-audition \
+  --assets-dir .cache/collection-mesh-assets --output-dir .cache/collection-mesh-site
+python tools/compose_collection_audition.py --directory .cache/private-audition \
+  --collection-index .cache/collection/index.json \
+  --mesh-site .cache/collection-mesh-site --prefer-movement
+python tools/serve_song_loop_preview.py --directory .cache/private-audition
+```
+
+The original source cache must already contain the hash-pinned files acquired
+through `acquire_cmu_dance.py` and `acquire_space_xr.py`; those tools require an
+explicit download request. This adapter does not fetch sources or assume their
+redistribution rights. Use a new output directory for each build. The composer
+can refresh just the UI from retained analysis by passing only `--directory`.
+It never reruns audio inference or silently changes an accepted timing decision.
+
+Open the printed local capability URL. Choose a song, optionally filter a source
+Action, then press **Audition selected pairing**. The selected exact master is
+hash checked; the observed song beat clock drives the existing C++/WASM sampler
+and Kandi adapter. The speed label is relative to the source performance: `0.8×`
+means 20% slower, `1×` means unchanged and `1.2×` means 20% faster. The audio
+master itself is never time stretched. “Original source speed” plays the full
+observed source independently of inferred musical timing, including recordings
+with no ranked loop or qualifying complete-Action beat fit.
+
+The explicit `--collection-audition` site mode supports only sources with the
+declared original calibration and reviewed source-to-Kandi map. The reviewed CMU
+recipe has a converter-added calibration pose; the Space-XR recipe currently
+does not. Unsupported sources remain source-rig previews, with the calibration
+limitation visible. The released public gallery keeps its two pinned scenes.
+
+“Lots of movement” measures the exact native clips through the existing
+`analyze_world_motion` envelopes. The time-weighted mean of world-joint speed and
+root-relative joint speed is divided by the rest skeleton's body scale. This
+keeps travel and articulation inspectable and avoids comparing raw rig units.
+Its collection percentile contributes 75% of the preference score; the existing
+tempo/seam ranking contributes 25%. The interface can switch back to tempo/seam
+preference. Original scores, speeds, failed audio gates, corrected identities
+and numerical checks are retained. A percentile describes relative activity,
+not musical confidence or human approval. Neither ranking mode changes a clip,
+forces a tempo or records a review decision.
+
+![Actual development audition on Kandi, driven by a selected StemLab song](images/collection-audition.png)
+
+*Actual local candidate interface, captured using native playback; the automated
+check observed changing physical samples and deformed skin for both selected
+songs. It does not establish subjective sync, foot contact or seam acceptance.
+Kandi Boom: Bass Ben & Friends. Motion: CMU / NSF EIA-0196217. BVH: cgspeed.*
+
+Motion poses are lazy sidecars, bounded to 240 diagnostic frames and 120 joints;
+the complete finite native clip remains the playback authority. Each sidecar,
+native clip and optional master is length/SHA-256 checked. Only one diagnostic
+pose set stays retained in the viewer. Collection indexes are bounded to 128
+Actions and an explicit motion budget up to 1024; the ordinary self-contained
+mode retains its eight-motion budget. There is no catalogue-wide auto download.
+
+The private server binds only `127.0.0.1`, requires its capability cookie, checks
+Host/Origin, serves an explicit generated-file allowlist and has no write API.
+Keep it running only for the attended audition and stop it afterwards. The
+private masters, original captures and generated motion payloads do not belong
+in Git, base packages or public Pages. The default CI build remains audio-free.
+
+### Potential problems
+
+- A nearly still phrase can close very neatly. Retained activity after repair
+  measures preservation, not how much dancing a phrase contains. Use movement
+  preference and compare source speed rather than mistaking a clean seam for
+  an interesting dance.
+- A very active fast source may still play slowly against a slower song. Check
+  the explicit speed ratio and compare the original; activity preference does
+  not manufacture a different musical tempo.
+- Missing calibration is a precise skin-review limitation. Do not choose a
+  convenient frame or guess a different skeleton's bone map to remove it.
+- `file://` cannot load verified sidecars. Use the private server, preserve its
+  local capability and never substitute a public generic file server.
+- The automated collection browser check can retain screenshots and a muted
+  screen recording in a private QA folder. These are actual interface evidence;
+  no generated artwork is needed to explain this measured behaviour. Do not
+  upload private masters or a complete generated audition with that evidence.
+
+Run the Python song/transport tests, JavaScript motion-asset tests and
+`tools/test_song_collection_browser.py --directory AUDITION --output-dir NEW_QA`
+for an actual private collection. The browser check closes its own isolated
+context and server, verifies changing native samples and skin, original-only
+recordings, unsupported calibration and mobile overflow. Its screen recording
+is muted; attended musical/visual acceptance remains separate.
 
 The **Source-first motion loops** workflow in
 `.github/workflows/source-motion-loops.yml` now also checks out a **pinned exact

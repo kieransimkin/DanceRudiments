@@ -13,14 +13,20 @@
 <section class="box wide"><div class="controls">
 <label><span class="label">StemLab song master</span><select class="select" id="song" aria-label="Choose song"></select></label>
 <label><span class="label">Ranked audio + motion pairing</span><select class="select" id="candidate" aria-label="Choose candidate"></select></label>
+<label><span class="label">Source Action</span><select class="select" id="source" aria-label="Filter source Actions"><option value="">All source Actions</option></select></label>
 <label><span class="label">Browse rig motions independently</span><select class="select" id="motion" aria-label="Browse full Actions and loops"></select></label>
 <button id="silent">▶ Silent motion</button></div>
 <div class="meta" id="metrics" style="margin-top:14px"></div>
 <div class="media"><label class="small" for="audiofile">Load the original master locally</label><input id="audiofile" type="file" accept="audio/*,.mp3,.wav,.flac" aria-label="Original bundled song master"><audio controls id="audio" preload="none"></audio></div>
+<button id="load-example" hidden>Load selected example master</button>
+<button id="audition">▶ Audition selected pairing</button>
+<button id="original-source" hidden>▶ Original source speed</button>
+<label class="small" id="rank-control" hidden>Prefer <select class="select" id="rank-order"><option value="movement">Lots of movement</option><option value="tempo">Tempo and seam fit</option></select></label>
 <div class="note" id="media-status" aria-live="polite">No audio is embedded in the CI artifact. Choose a local master for hash-verified playback.</div>
 <div class="message" id="tempo-detail" role="status" aria-live="polite" style="margin-top:8px">Movement BPM interpretations are estimates; song beats and source phase are not confirmed synchronized.</div>
 </section>
 <section class="box wide"><div class="panel-head"><h2>Full-song waveform, beat grid and selected interval</h2><span class="small" id="cursor">00:00 / 00:00</span></div><canvas class="track" id="timeline" role="img" aria-label="Song waveform with model-estimated beats and selected loop region"></canvas><p class="small">Teal: beat timestamps. Amber: detected or provisional bar anchors. Pale region: selected audio cut pair. Click to seek after loading audio.</p></section>
+<section class="box wide" id="mesh-panel" hidden><h2>Kandi mesh audition</h2><div class="controls"><button id="load-mesh">Load Kandi for this source</button><button id="original-mesh">Preview original source time</button><button id="unload-mesh">Unload Kandi</button></div><p class="small" id="mesh-status" aria-live="polite">Load a declared source calibration to compare the actual skin with the song.</p><iframe id="mesh-frame" title="Native Kandi mesh audition" style="width:100%;height:560px;border:0" hidden></iframe><p class="small" id="mesh-credits"></p></section>
 <section class="box"><div class="panel-head"><h2>Rig motion preview</h2><span class="small" id="progress">0.00 beats</span></div><canvas id="skeleton" class="stage" role="img" aria-label="Projected source rig joint motion, not a skinned mesh or retarget verification"></canvas><p class="small" id="motion-caution">Projected source-bone wireframe, not the target Kandi Boom skin. Loop seam and retargeting remain unverified.</p></section>
 <section class="box"><h2>Analysis and provenance</h2><table><tbody id="provenance"></tbody></table><div id="no-data" class="no-data">No compatible source-motion candidate is available for this track.</div><div class="warn" id="warnings">Tempo and meter may be inferred; audition before accepting anything. No media is redistributed by this artifact.</div></section>
 <section class="box wide"><h2>StemLab candidate details</h2><p class="small mobile-hint">Swipe sideways to review metrical evidence and ranking details.</p><div class="ranking-scroll"><table><thead><tr><th>Source candidate</th><th>Rig candidate</th><th>Mode</th><th>Music cut</th><th>Metrical hypothesis</th><th class="num">Repeat</th><th class="num">Rate</th><th class="num">Ranking</th></tr></thead><tbody id="ranking"></tbody></table></div><p class="foot">The audio analyser runs in exploratory mode without a vocal-isolation stem; candidates may fail vocal and waveform seam gates. Matched motion is source time resampled at 64 pips/beat and is not approved as a closed rig loop or music-sync performance. Integration CI uses synthetic motion. Locally supplied third-party motions require separate permission before redistribution.</p></section>
@@ -41,49 +47,100 @@
 </main>
 <script type="application/json" id="preview-data">%%PREVIEW_DATA%%</script>
 <script>%%TIMING_REVIEW_SCRIPT%%</script>
+<script>%%MOTION_ASSET_SCRIPT%%</script>
 <script>
 'use strict';
 const DATA=JSON.parse(document.getElementById('preview-data').textContent);
 const byId=id=>document.getElementById(id);
 const songSelect=byId('song'), candidateSelect=byId('candidate'), motionSelect=byId('motion'), audio=byId('audio');
+const sourceSelect=byId('source');
 let selection=0, manualMotion=false, silent=false, silentStarted=0, localAudioURL=null, animationHandle=0, lastTime=0;
 const songs=DATA.songs, motions=new Map(DATA.motions.map(x=>[x.id,x]));
 const fmt=t=>Number.isFinite(t)?`${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}`:'—';
 const currentSong=()=>songs[selection];
-const currentPair=()=>manualMotion?null:(currentSong()?.pairs[Number(candidateSelect.value)]||null);
+const currentPair=()=>manualMotion||candidateSelect.value===''?null:(currentSong()?.pairs[Number(candidateSelect.value)]||null);
 const motionFor=()=>motions.get(motionSelect.value)||motions.get(currentPair()?.motion_id);
 const safe=t=>String(t??'—');
+let nativeEnabled=false,nativeReady=null,nativeGeneration=0,nativeMode='match';
+const meshFrame=byId('mesh-frame'),meshSources=new Map((DATA.mesh_audition?.scenes||[]).map(scene=>[scene.source_sha256,scene]));
+function nativeHost(){try{return meshFrame.contentWindow?.meshAudition;}catch{return null;}}
+async function syncNative(m){nativeReady=null;if(!nativeEnabled)return;const generation=++nativeGeneration;
+ const scene=meshSources.get(m?.original_source_sha256);
+ if(!scene){nativeHost()?.unload();meshFrame.hidden=true;byId('mesh-status').textContent='Source-rig audition is available. This source has no declared Kandi calibration/bone map.';return;}
+ meshFrame.hidden=false;const host=nativeHost();if(!host){byId('mesh-status').textContent='Loading the shared Kandi renderer…';return;}
+ byId('mesh-status').textContent='Verifying source, target and native motion…';
+ try{await host.prepare(scene.id);if(generation!==nativeGeneration||motionFor()!==m)return;
+ if(m.motion_kind==='source_time'){if(silent)host.original();nativeMode='original';byId('mesh-status').textContent='Original captured performance at source speed; musical mapping unverified.';return;}
+ const bytes=await globalThis.DanceRudimentsMotionAssets.verifiedAsset(m.native_asset);
+ if(generation!==nativeGeneration||motionFor()!==m)return;
+ const identity=await host.loadMotion(bytes,m.native_asset.sha256,m.profile_sha256);
+ if(identity.sampleCount!==m.raw_sample_count||identity.profileSha256!==m.profile_sha256)throw Error('Native clip identity differs from analysis');
+ if(generation!==nativeGeneration||motionFor()!==m)return;
+ nativeReady=m.id;nativeMode='match';byId('mesh-status').textContent='Song clock drives the existing native sampler. Inspect skin, feet and the repeated seam; no human approval is recorded.';
+ }catch(error){if(generation===nativeGeneration){nativeHost()?.unload();byId('mesh-status').textContent='Mesh audition blocked: '+error.message;}}}
+if(DATA.mesh_audition){byId('mesh-panel').hidden=false;byId('mesh-credits').textContent=DATA.mesh_audition.attribution;}
+meshFrame.addEventListener('load',()=>{if(nativeMode==='match')void syncNative(motionFor());});
+byId('load-mesh').addEventListener('click',()=>{nativeEnabled=true;nativeMode='match';meshFrame.hidden=false;
+ if(!meshFrame.getAttribute('src'))meshFrame.src=DATA.mesh_audition.src;else void syncNative(motionFor());});
+byId('unload-mesh').addEventListener('click',()=>{nativeGeneration++;nativeEnabled=false;nativeReady=null;nativeHost()?.unload();meshFrame.removeAttribute('src');meshFrame.hidden=true;byId('mesh-status').textContent='Kandi and native motion unloaded.';});
+byId('original-mesh').addEventListener('click',async()=>{audio.pause();silent=false;nativeReady=null;nativeMode='original';nativeGeneration++;
+ if(DATA.motions.some(m=>m.motion_kind==='source_time'&&m.original_source_sha256===(sourceSelect.value||motionFor()?.original_source_sha256))){byId('original-source').click();return;}
+ const scene=meshSources.get(sourceSelect.value||motionFor()?.original_source_sha256);
+ if(!scene){byId('mesh-status').textContent='This source lacks a declared Kandi calibration; inspect its source rig.';return;}
+ nativeEnabled=true;meshFrame.hidden=false;
+ try{if(!meshFrame.getAttribute('src')){meshFrame.src=DATA.mesh_audition.src;await new Promise(resolve=>meshFrame.addEventListener('load',resolve,{once:true}));}
+ await nativeHost().prepare(scene.id);nativeHost().original();byId('mesh-status').textContent='Original captured performance at source speed. This view is not declared beat matched.';
+ }catch(error){byId('mesh-status').textContent='Original mesh preview blocked: '+error.message;}});
 const timingReview=globalThis.DanceRudimentsTimingReview.mount({reviews:DATA.alignment_reviews||[],
  getSong:currentSong,getMotion:motionFor,canConfirm:()=>!!localAudioURL,
  onChange:()=>{silentStarted=performance.now();drawRig(motionPhase(lastTime));}});
 for(const [i,s] of songs.entries()){const o=document.createElement('option');o.value=i;o.textContent=`${s.title} — ${s.artist}`;songSelect.append(o)}
-for(const m of DATA.motions){const o=document.createElement('option');o.value=m.id;
- o.textContent=`${m.motion_kind==='full_length'?'FULL':'LOOP'} · ${m.name} · ${m.estimated_bpm.toFixed(1)} BPM${m.full_motion_confidence!=null?' · '+Math.round(m.full_motion_confidence*100)+'% fit':''}`;
- motionSelect.append(o)}
+for(const action of DATA.collection_coverage?.actions||[]){const o=document.createElement('option');o.value=action.source_sha256;o.textContent=meshSources.get(action.source_sha256)?.title||action.source_id+' / '+action.member.split('/').at(-1);sourceSelect.append(o)}
+function populateMotions(){motionSelect.replaceChildren();for(const m of DATA.motions){if(sourceSelect.value&&m.original_source_sha256!==sourceSelect.value)continue;const o=document.createElement('option');o.value=m.id;
+ o.textContent=`${m.source_label?m.source_label+' · ':''}${m.motion_kind==='source_time'?'ORIGINAL SOURCE SPEED':m.motion_kind==='full_length'?'FULL':m.repaired?'CORRECTED LOOP':'ORIGINAL LOOP'} · ${m.name}${m.motion_kind==='source_time'?'':` · ${m.estimated_bpm.toFixed(1)} BPM`}${m.full_motion_confidence!=null?' · '+Math.round(m.full_motion_confidence*100)+'% fit':''}`;
+ motionSelect.append(o)}}
+function rankedPairs(song){const entries=[...(song.pairs||[]).entries()];
+ if(byId('rank-order').value==='tempo')entries.sort((a,b)=>(b[1].tempo_seam_score??b[1].estimated_score)-(a[1].tempo_seam_score??a[1].estimated_score));
+ return entries;}
+let previewGeneration=0,loadedPreview=null;
+async function ensurePreview(m){if(!m?.preview_asset||m.xyz)return;const generation=++previewGeneration;
+ try{const bytes=await globalThis.DanceRudimentsMotionAssets.verifiedAsset(m.preview_asset);
+ const data=globalThis.DanceRudimentsMotionAssets.validatePreview(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(bytes)),m);
+ if(generation!==previewGeneration||motionFor()!==m)return;
+ if(loadedPreview&&loadedPreview!==m){delete loadedPreview.xyz;delete loadedPreview.frame_relative_pips;}
+ Object.assign(m,data);loadedPreview=m;drawRig(0);
+ }catch(error){if(generation===previewGeneration)byId('warnings').textContent='Motion preview blocked: '+error.message;}}
 function stat(name,value){let el=document.createElement('div');el.className='stat';let a=document.createElement('strong');a.textContent=value;let b=document.createElement('span');b.textContent=name;el.append(a,b);return el}
 function textCell(row,text,klass){let el=document.createElement('td');el.textContent=safe(text);if(klass)el.className=klass;row.append(el)}
 function provenance(label,value){const row=document.createElement('tr');textCell(row,label);textCell(row,value);byId('provenance').append(row)}
 function resetAudio(){audio.pause();audio.removeAttribute('src');audio.load();if(localAudioURL)URL.revokeObjectURL(localAudioURL);localAudioURL=null;byId('audiofile').value='';timingReview.status();}
-function updateSong(){resetAudio();silent=false;manualMotion=false;byId('silent').textContent='▶ Silent motion';
- const s=currentSong();byId('media-status').textContent='No audio embedded. Select the matching local master to unlock audio playback.';
- candidateSelect.replaceChildren();for(const [i,p] of (s.pairs||[]).entries()){const o=document.createElement('option');o.value=i;o.textContent=`#${i+1} · ${p.song_beats} music beats · ${p.motion_kind==='full_length'?'FULL ACTION':'LOOP'} · ${p.motion_repeats}× · ${p.metrical_factor!==1?'StemLab '+p.metrical_factor+'× tempo interpretation':'primary tempo'} · ${p.estimated_score.toFixed(3)}`;candidateSelect.append(o)}
- candidateSelect.disabled=!s.pairs?.length;
- motionSelect.value=(s.pairs?.[0]?.motion_id||DATA.motions[0]?.id||'');
+function updateSong(keepAudio=false){if(!keepAudio)resetAudio();populateMotions();silent=false;manualMotion=false;byId('silent').textContent='▶ Silent motion';
+ const s=currentSong();if(!keepAudio)byId('media-status').textContent='No audio embedded. Select the matching local master to unlock audio playback.';
+ candidateSelect.replaceChildren();for(const [i,p] of rankedPairs(s)){const m=motions.get(p.motion_id);if(sourceSelect.value&&m?.original_source_sha256!==sourceSelect.value)continue;const o=document.createElement('option');o.value=i;o.textContent=`${m?.source_label||m?.name||p.motion_id}${p.movement_percentile!=null?' · movement P'+Math.round(p.movement_percentile*100):''} · ${p.song_beats} music beats · ${m?.repaired?'CORRECTED LOOP':p.motion_kind==='full_length'?'FULL ACTION':'ORIGINAL LOOP'} · ${p.motion_repeats}× · ${p.playback_tempo_ratio.toFixed(2)}× source speed · ${p.metrical_factor!==1?'StemLab '+p.metrical_factor+'× tempo interpretation':'primary tempo'}`;candidateSelect.append(o)}
+ candidateSelect.disabled=!candidateSelect.options.length;
+ motionSelect.value=(currentPair()?.motion_id||motionSelect.options[0]?.value||'');
  byId('no-data').textContent='No music pairing passed the preview gates; select a full Action or loop directly from the rig catalogue.';
- byId('no-data').style.display=s.pairs?.length?'none':'block';
+ byId('no-data').style.display=candidateSelect.options.length?'none':'block';
+ byId('load-example').hidden=!s.local_audio;
+ byId('original-source').hidden=!DATA.collection_coverage;
+ byId('rank-control').hidden=!DATA.ranking_preference;
+ byId('audition').disabled=!candidateSelect.options.length;
  byId('metrics').replaceChildren(stat('Audio BPM / inferred',s.grid?s.grid.bpm.toFixed(2):'Unknown'),stat('Detected beats',String(s.grid?.beats?.length||0)),stat('Exploratory audio loops',String(s.audio_loop_counts?.exploratory||0)),stat('Full-length shortlist',String(DATA.motions.filter(m=>m.motion_kind==='full_length').length)),stat('Loopable candidates',String(DATA.motions.filter(m=>m.loopable).length)),stat('Motion matches',String(s.pairs?.length||0)));
  byId('provenance').replaceChildren();provenance('Audio identity',`${s.source_sha256?.slice(0,20)||'—'}…`);
  provenance('Source status',s.status);provenance('Beat evidence',s.grid?.beat_status);provenance('Bar phase',s.grid?.downbeat_status);
  provenance('Meter',s.grid?.meter_status);provenance('Sample rate',s.waveform?.sample_rate ? `${s.waveform.sample_rate} Hz`:'—');
  provenance('Master duration',fmt(s.waveform?.duration_seconds));provenance('Audio-loop gate','Exploratory (no vocal stem)');
  provenance('Motion-grid status','Source kinematics only · metrical interpretation requires review');
- byId('warnings').textContent=`${safe(s.grid?.tempo_ambiguity||'Beat and meter authority is limited to the labelled source.')} No audio is shipped. No candidate has verified audio or rig seams.`;
+ byId('warnings').textContent=`${safe(s.grid?.tempo_ambiguity||'Beat and meter authority is limited to the labelled source.')} ${s.local_audio?'Private local example master available.':'No audio is shipped.'} No candidate has human-approved audio or rig seams.`;
  updateCandidate();}
 function updateCandidate(){const p=currentPair();const m=motionFor();
- byId('motion-caution').textContent=m?`${m.name} · ${m.skeleton_kind==='source_portable_fk'?'Portable source skeleton':'Channel-motion diagnostic'} · ${m.raw_sample_count} native 64-pip samples · rig deformation not checked`:'No rig motion loaded.';
+ void ensurePreview(m);
+ nativeMode='match';void syncNative(m);
+ byId('motion-caution').textContent=m?`${m.name} · ${m.skeleton_kind==='source_portable_fk'?'Portable source skeleton':'Channel-motion diagnostic'} · ${m.motion_kind==='source_time'?`${m.frame_count} observed source poses; time-only preview`:`${m.raw_sample_count} native 64-pip samples`} · rig deformation not checked`:'No rig motion loaded.';
  byId('tempo-detail').textContent=p?`${p.metrical_interpretation==='source_primary'?'Source primary tempo':p.metrical_interpretation.replace('stemlab_','StemLab ').replace('_',' ')}: ${m.estimated_bpm.toFixed(1)} BPM source → ${p.interpreted_motion_bpm.toFixed(1)} BPM interpreted · ${p.motion_beats} musical beats per motion · song interval ${p.local_song_bpm.toFixed(1)} BPM mean · ${p.playback_tempo_ratio.toFixed(2)}× mean playback rate${p.local_tempo_warp_preview?' · variable grid (time-warp preview)':''}. Tempo interpretation and phase are NOT confirmed.`:'Browse source-rig motions independently; a full Action does not repeat automatically.';
- byId('ranking').replaceChildren();const s=currentSong();(s.pairs||[]).forEach((q,i)=>{const r=document.createElement('tr');if(i===Number(candidateSelect.value))r.style.background='#244357';
- textCell(r,q.loop_id);textCell(r,q.motion_kind==='full_length'?`Full ${Math.round(100*(q.full_motion_confidence||0))}% fit`:'Loopable');textCell(r,q.audio_source.replace('stemlab_',''));textCell(r,`${fmt(q.song_start_seconds)}–${fmt(q.song_end_seconds)}`);textCell(r,q.metrical_factor===1?'Primary source beat':`${q.metrical_factor}× (${q.interpreted_motion_bpm.toFixed(0)} BPM est.)`);textCell(r,`${q.motion_repeats}×`,'num');textCell(r,`${q.playback_tempo_ratio.toFixed(2)}×`,'num');textCell(r,q.estimated_score.toFixed(3),'num');byId('ranking').append(r)});
+ if(m?.movement_activity)byId('tempo-detail').textContent+=` Movement: ${m.movement_activity.combined_body_scales_per_second.toFixed(3)} body scales/second at source speed · collection percentile ${Math.round(m.movement_activity.collection_percentile*100)} (amount of motion, not confidence).`;
+ byId('ranking').replaceChildren();const s=currentSong();let shown=0;rankedPairs(s).forEach(([i,q])=>{if(sourceSelect.value&&motions.get(q.motion_id)?.original_source_sha256!==sourceSelect.value)return;if(shown++>=40)return;const r=document.createElement('tr');if(i===Number(candidateSelect.value))r.style.background='#244357';
+ textCell(r,q.loop_id);textCell(r,(motions.get(q.motion_id)?.source_label||q.motion_id)+(q.movement_percentile!=null?' · movement P'+Math.round(q.movement_percentile*100):''));textCell(r,q.audio_source.replace('stemlab_',''));textCell(r,`${fmt(q.song_start_seconds)}–${fmt(q.song_end_seconds)}`);textCell(r,q.metrical_factor===1?'Primary source beat':`${q.metrical_factor}× (${q.interpreted_motion_bpm.toFixed(0)} BPM est.)`);textCell(r,`${q.motion_repeats}×`,'num');textCell(r,`${q.playback_tempo_ratio.toFixed(2)}×`,'num');textCell(r,q.estimated_score.toFixed(3),'num');byId('ranking').append(r)});
  timingReview.refresh();drawTimeline();drawRig(0);}
 async function validateAudio(file){const s=currentSong();resetAudio();if(!file)return;
  if(!globalThis.crypto?.subtle){byId('media-status').textContent='SHA-256 unavailable in this browser; cannot verify master. Audio playback blocked.';return;}
@@ -97,6 +154,38 @@ async function validateAudio(file){const s=currentSong();resetAudio();if(!file)r
  timingReview.status();
 }
 byId('audiofile').addEventListener('change',e=>validateAudio(e.target.files?.[0]).catch(ex=>{byId('media-status').textContent=`Could not verify audio: ${ex.message}`}));
+async function loadExample(){const s=currentSong();byId('load-example').disabled=true;
+ try{const bytes=await globalThis.DanceRudimentsMotionAssets.verifiedAsset(s.local_audio);if(currentSong()!==s)return;
+ await validateAudio(new File([bytes],s.expected_filename,{type:'audio/mpeg'}));
+ }catch(error){byId('media-status').textContent='Example master blocked: '+error.message;}finally{byId('load-example').disabled=false;}}
+byId('load-example').addEventListener('click',loadExample);
+byId('audition').addEventListener('click',async()=>{const s=currentSong();
+ if(!candidateSelect.options.length)return;
+ if(!currentPair()){
+   const index=s.pairs.findIndex(pair=>pair.motion_id===motionSelect.value);
+   if(index<0){byId('media-status').textContent='This motion has no compatible song pairing. Use the source-speed or silent preview.';return;}
+   candidateSelect.value=String(index);
+ }
+ motionSelect.value=s.pairs[Number(candidateSelect.value)].motion_id;
+ manualMotion=false;silent=false;updateCandidate();
+ if(!localAudioURL&&s.local_audio)await loadExample();
+ if(currentSong()!==s||!localAudioURL)return;
+ const pair=currentPair();if(!pair)return;
+ audio.currentTime=pair.song_start_seconds;
+ if(DATA.mesh_audition)byId('load-mesh').click();
+ try{await audio.play();}catch(error){byId('media-status').textContent='Master verified. Press Play on the audio control: '+error.message;}
+});
+byId('original-source').addEventListener('click',()=>{
+ const source=sourceSelect.value||motionFor()?.original_source_sha256;
+ const original=DATA.motions.find(m=>m.motion_kind==='source_time'&&m.original_source_sha256===source);
+ if(!original)return;
+ audio.pause();manualMotion=true;silent=true;silentStarted=performance.now();motionSelect.value=original.id;
+ byId('silent').textContent='■ Stop silent preview';
+ if(DATA.mesh_audition){nativeEnabled=true;if(!meshFrame.getAttribute('src'))meshFrame.src=DATA.mesh_audition.src;}
+ updateCandidate();
+});
+sourceSelect.addEventListener('change',()=>{audio.pause();updateSong(true);const p=currentPair();if(localAudioURL&&p)audio.currentTime=p.song_start_seconds;});
+byId('rank-order').addEventListener('change',()=>{audio.pause();updateSong(true);const p=currentPair();if(localAudioURL&&p)audio.currentTime=p.song_start_seconds;});
 songSelect.addEventListener('change',()=>{selection=Number(songSelect.value);updateSong()});
 candidateSelect.addEventListener('change',()=>{manualMotion=false;const p=currentPair();
  if(p)motionSelect.value=p.motion_id;
@@ -147,8 +236,8 @@ function frame(now){animationHandle=requestAnimationFrame(frame);const pair=curr
  if(silent&&timingRange){time=Math.min(timingRange[1],timingRange[0]+(now-silentStarted)/1000);}
  else if(silent&&pair){const period=Math.max(.01,pair.song_end_seconds-pair.song_start_seconds);time=pair.song_start_seconds+(pair.motion_kind==='full_length'?Math.min(period,(now-silentStarted)/1000):((now-silentStarted)/1000%period));}
  else if(localAudioURL){time=audio.currentTime;if(!timingRange&&pair&&!audio.paused&&time>=pair.song_end_seconds){if(pair.motion_kind==='full_length'){audio.pause();time=pair.song_end_seconds}else{audio.currentTime=pair.song_start_seconds;time=audio.currentTime}}}
- lastTime=time;const phase=motionPhase(time);drawRig(phase);drawTimeline();const p=currentPair();const beat=p?(beatPosition(currentSong().grid?.beats,time)-p.start_beat_index):0;byId('progress').textContent=phase===null?'Outside reviewed coverage':timingRange?`${time.toFixed(3)} audio seconds`:p?`${Math.max(0,beat).toFixed(2)} music beats`:`${((motionFor()?.beats||0)*phase).toFixed(2)} motion beats`;}
+ lastTime=time;const phase=motionPhase(time);drawRig(phase);if(nativeEnabled&&nativeReady===motionFor()?.id)nativeHost()?.pose(phase);drawTimeline();const p=currentPair();const beat=p?(beatPosition(currentSong().grid?.beats,time)-p.start_beat_index):0;byId('progress').textContent=phase===null?'Outside reviewed coverage':timingRange?`${time.toFixed(3)} audio seconds`:p?`${Math.max(0,beat).toFixed(2)} music beats`:`${((motionFor()?.beats||0)*phase).toFixed(2)} ${motionFor()?.motion_kind==='source_time'?'source seconds':'motion beats'}`;}
 updateSong();animationHandle=requestAnimationFrame(frame);
-window.addEventListener('pagehide',()=>{cancelAnimationFrame(animationHandle);resetAudio()});
+window.addEventListener('pagehide',()=>{nativeGeneration++;nativeHost()?.unload();cancelAnimationFrame(animationHandle);resetAudio()});
 </script>
 </body></html>

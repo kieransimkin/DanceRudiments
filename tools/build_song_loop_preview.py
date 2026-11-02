@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import shutil
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -190,6 +191,72 @@ def _motion_to_frames(path, max_frames=240):
                 world_motion_unavailable_reason=unavailable)
 
 
+def motion_activity(path):
+    """Summarise the existing world-kinematics envelopes at the source clock.
+
+    Body-scale normalisation compares rigs without claiming metres or artistic
+    quality. Both world travel and articulated movement remain inspectable.
+    """
+    import numpy as np
+    from dancerudiments_authoring.motion import load_rig_motion
+    from dancerudiments_authoring.motion_import import RigCapture
+    from dancerudiments_authoring.world_motion import analyze_world_motion
+    motion=load_rig_motion(path);recording=motion.recording
+    capture=RigCapture(motion.profile,tuple(recording.clock.time_seconds(k) for k in range(len(recording.samples))),
+                       tuple(motion.profile.decode(row) for row in recording.samples))
+    evidence=analyze_world_motion(capture)
+    times=np.asarray(evidence['frame_times_seconds']);scale=evidence['body_scale']
+    duration=float(times[-1]-times[0])
+    if duration<=0:raise ValueError('Motion activity needs a finite observed interval')
+    def mean(name):
+        integrate=getattr(np,'trapezoid',None) or np.trapz
+        return float(integrate(np.asarray(evidence['envelopes'][name]),times)/duration/scale)
+    world,relative,root=mean('world_speed'),mean('root_relative_speed'),mean('root_speed')
+    return dict(world_body_scales_per_second=world,articulated_body_scales_per_second=relative,
+        root_body_scales_per_second=root,combined_body_scales_per_second=(world+relative)/2,
+        method='mean_existing_world_and_root_relative_speed_divided_by_rest_body_scale',
+        source_clock_bpm=recording.clock.bpm,physical_units_verified=False,human_approved=False)
+
+
+def rerank_activity(directory):
+    """Prefer active phrases using retained motion bytes, without audio inference."""
+    directory=Path(directory).resolve()
+    from serve_song_loop_preview import safe_asset
+    data=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+    active=[]
+    for motion in data['motions']:
+        descriptor=motion.get('native_asset')
+        if not descriptor:continue
+        path=safe_asset(directory,descriptor['path'])
+        if _hash(path)!=descriptor['sha256'] or path.stat().st_size!=descriptor['byte_length']:
+            raise ValueError('Motion bytes changed before activity ranking')
+        motion['movement_activity']=motion_activity(path)
+        active.append(motion)
+        if len(active)%40==0:print(json.dumps({'activity_motions':len(active)}),flush=True)
+    values=sorted(m['movement_activity']['combined_body_scales_per_second'] for m in active)
+    if not values:raise ValueError('Activity ranking needs hash-bound native motions')
+    from bisect import bisect_right
+    for motion in active:
+        activity=motion['movement_activity']
+        value=activity['combined_body_scales_per_second']
+        activity['collection_percentile']=(bisect_left(values,value)+bisect_right(values,value))/(2*len(values))
+    by_id={m['id']:m for m in active}
+    for song in data['songs']:
+        for pair in song['pairs']:
+            activity=by_id[pair['motion_id']]['movement_activity']
+            pair['tempo_seam_score']=pair.get('tempo_seam_score',pair['estimated_score'])
+            pair['movement_percentile']=activity['collection_percentile']
+            pair['movement_body_scales_per_second']=activity['combined_body_scales_per_second']
+            pair['performed_movement_body_scales_per_second']=pair['movement_body_scales_per_second']*pair['playback_tempo_ratio']
+            # Movement is the leading preference. Retain the existing score and
+            # speed as separate evidence; no clip or tempo is altered here.
+            pair['estimated_score']=round(.75*pair['movement_percentile']+.25*pair['tempo_seam_score'],5)
+        song['pairs'].sort(key=lambda p:(-p['estimated_score'],-p['tempo_seam_score'],p['motion_id'],p['song_start_seconds']))
+    data['ranking_preference']='high_movement_75_percent_existing_tempo_seam_25_percent'
+    render_report(data,directory)
+    return {'measured_motions':len(active),'ranking_preference':data['ranking_preference']}
+
+
 def _motion_library(job_root, *, max_motions=MAX_VISUAL_MOTIONS):
     """Read a completed source-first job, retaining its genuine BPM alternatives.
 
@@ -246,6 +313,7 @@ def _motion_library(job_root, *, max_motions=MAX_VISUAL_MOTIONS):
                     source_end_seconds=entry.get('source_end_seconds',
                                                 entry.get('sampled_bounds_seconds',[0,0])[-1]),
                     audio_beat_alignment_verified=False)
+        data['_native_source_path'] = str(path)
         motions.append(data)
     return motions
 
@@ -458,14 +526,158 @@ def _alignment_reviews(paths, motions, songs, jobs):
     return reviews
 
 
-def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignment_reports=()):
+def render_report(data,directory):
+    """Refresh only the UI from retained, exact-source analysis results."""
+    directory=Path(directory)
+    if data.get('format')!='dancerudiments.song-motion-loop-preview' or data.get('schema_version')!=1:
+        raise ValueError('Expected a source-bound song/motion report')
+    raw=json.dumps(data,ensure_ascii=True,separators=(',',':'),allow_nan=False)
+    html=(VIEWER.read_text(encoding='utf-8')
+        .replace('%%PREVIEW_DATA%%',raw.replace('<','\\u003c'))
+        .replace('%%TIMING_REVIEW_SCRIPT%%',(VIEWER.parent/'alignment-review.js').read_text(encoding='utf-8'))
+        .replace('%%MOTION_ASSET_SCRIPT%%',(VIEWER.parent/'motion-assets.js').read_text(encoding='utf-8'))
+        .replace('%%BUILD_SOURCE%%','Local reviewed-source collection' if data.get('collection_coverage') else 'CI source-first loop analysis'))
+    if any(marker in html for marker in ('%%PREVIEW_DATA%%','%%TIMING_REVIEW_SCRIPT%%','%%MOTION_ASSET_SCRIPT%%')):
+        raise AssertionError('Missing report injection')
+    (directory/'report.json').write_text(json.dumps(data,indent=2,allow_nan=False)+'\n',encoding='utf-8')
+    (directory/'index.html').write_text(html,encoding='utf-8')
+
+
+def attach_original_previews(directory,index_path):
+    """Add bounded source-time diagnostics without promoting low-confidence Actions.
+
+    These sparse observed poses use the canonical world evaluator, never the
+    song matcher. Full captures with gaps cannot become a continuous preview.
+    """
+    import numpy as np
+    from dataclasses import replace
+    from dancerudiments_authoring.motion_import import load_capture
+    from dancerudiments_authoring.world_motion import evaluate_world_motion, source_valid_segments
+    directory=Path(directory).resolve()
+    data=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+    if any(m.get('motion_kind')=='source_time' for m in data['motions']):
+        raise ValueError('Original source previews already attached')
+    jobs,index=collection_jobs(index_path)
+    if data['collection_coverage']['index_sha256']!=_hash(Path(index_path)):
+        raise ValueError('Original previews and music report use different collections')
+    for job,action in zip(jobs,index['actions']):
+        capture_path=job/'source.capture.json';capture=load_capture(capture_path)
+        document=json.loads((job/'job.json').read_text(encoding='utf-8'))
+        if (_hash(capture_path)!=document['source_capture_sha256']
+                or capture.profile.fingerprint!=action['profile_sha256']):
+            raise ValueError('Original source capture changed after analysis')
+        segments=source_valid_segments(capture)
+        if len(segments)!=1:
+            raise ValueError('Original source preview requires one observed continuous segment')
+        steps=np.unique(np.linspace(0,len(capture.frames)-1,min(240,len(capture.frames)),dtype=int)).tolist()
+        start,end=capture.frame_times_seconds[0],capture.frame_times_seconds[-1]
+        by_pip={}
+        for k in steps:by_pip.setdefault(round((capture.frame_times_seconds[k]-start)*64),k)
+        pips=list(by_pip);steps=list(by_pip.values())
+        observed=replace(capture,frame_times_seconds=tuple(capture.frame_times_seconds[k] for k in steps),
+                         frames=tuple(capture.frames[k] for k in steps))
+        world=evaluate_world_motion(observed)
+        identifier=f'motion-{len(data["motions"])+1}'
+        path=directory/'motion-assets'/(identifier+'.preview.json')
+        preview=dict(xyz=np.round(world.positions,4).tolist(),frame_relative_pips=pips)
+        path.write_text(json.dumps(preview,separators=(',',':'),allow_nan=False),encoding='utf-8')
+        data['motions'].append(dict(id=identifier,name=Path(action['member']).stem,
+            source_label=action['source_id']+' / '+Path(action['member']).stem,
+            motion_kind='source_time',loopable=False,estimated_bpm=60.,score=None,
+            original_source_sha256=action['source_sha256'],source_capture_sha256=_hash(capture_path),
+            profile_sha256=capture.profile.fingerprint,bones=list(world.bone_names),
+            links=[[p,i] for i,p in enumerate(world.parents) if p>=0],frame_count=len(steps),
+            raw_sample_count=pips[-1]+1,beats=(pips[-1]+1)/64,
+            source_start_seconds=start,source_end_seconds=end,source_clock_start_seconds=start,
+            skeleton_kind='source_portable_fk',timing_kind='time-only',requires_review=True,
+            audio_beat_alignment_verified=False,source_tempo_hypotheses=[],
+            preview_asset=dict(path=path.relative_to(directory).as_posix(),sha256=_hash(path),byte_length=path.stat().st_size)))
+    render_report(data,directory)
+    return {'original_source_previews':len(jobs)}
+
+
+def attach_mesh_site(directory,mesh_directory):
+    """Compose a sealed local mesh site; preserve every existing analysis byte."""
+    directory,mesh_directory=Path(directory).resolve(),Path(mesh_directory).resolve()
+    data=json.loads((directory/'report.json').read_text(encoding='utf-8'))
+    receipt=json.loads((mesh_directory/'build.json').read_text(encoding='utf-8'))
+    if receipt.get('format')!='dancerudiments.collection-audition-site.v1' or receipt.get('scope')!='local-read-only-audition':
+        raise ValueError('Expected an explicitly prepared local collection mesh site')
+    expected={a['source_sha256']:a['profile_sha256'] for a in data['collection_coverage']['actions']}
+    if any(expected.get(s['source_sha256'])!=s['profile_sha256'] for s in receipt['scenes']):
+        raise ValueError('Mesh site source/profile differs from the song collection')
+    destination=directory/'mesh'
+    if destination.exists():raise FileExistsError('Mesh attachment already exists')
+    for name,descriptor in receipt['files'].items():
+        relative=Path(name);unresolved=mesh_directory/relative;source=unresolved.resolve()
+        if relative.is_absolute() or '..' in relative.parts or not source.is_relative_to(mesh_directory):
+            raise ValueError('Mesh asset escapes source')
+        if any(p.is_symlink() for p in (unresolved,*unresolved.parents)) or source.stat().st_size!=descriptor['byte_length'] or _hash(source)!=descriptor['sha256']:
+            raise ValueError('Mesh asset differs from its build receipt')
+    destination.mkdir()
+    for name in [*receipt['files'],'build.json']:
+        target=destination/name;target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copyfile(mesh_directory/name,target)
+    data['mesh_audition']=dict(src='mesh/index.html',scenes=receipt['scenes'],
+        unavailable=receipt.get('unavailable',[]),build_sha256=_hash(destination/'build.json'),
+        attribution='Kandi Boom · Bass Ben & Friends. Motion: Carnegie Mellon University / NSF EIA-0196217. BVH conversion: Bruce Hahne / cgspeed.')
+    render_report(data,directory)
+    return data['mesh_audition']
+
+
+def collection_jobs(index_path):
+    """Resolve only source-bound successful Actions in a canonical collection."""
+    original=Path(index_path)
+    path=original.resolve()
+    if original.is_symlink() or path.stat().st_size > 4*1024*1024:
+        raise ValueError('Invalid or oversized collection index')
+    index=json.loads(path.read_text(encoding='utf-8'))
+    if (index.get('format')!='dancerudiments.source-motion-collection-analysis'
+            or index.get('schema_version')!=1 or index.get('truncated')
+            or not 1<=len(index.get('actions',[]))<=128):
+        raise ValueError('Expected a complete collection with 1..128 Actions')
+    jobs=[]
+    for action in index['actions']:
+        relative=Path(action['relative_output'])
+        job=(path.parent/relative).resolve()
+        unresolved=path.parent/relative
+        if (relative.is_absolute() or '..' in relative.parts or not job.is_relative_to(path.parent)
+                or any(p.is_symlink() for p in (unresolved,*unresolved.parents))):
+            raise ValueError('Collection Action escapes its source directory')
+        document=json.loads((job/'job.json').read_text(encoding='utf-8'))
+        if (document.get('source_original_sha256')!=action['source_sha256']
+                or document.get('profile_sha256')!=action['profile_sha256']):
+            raise ValueError('Collection Action source/profile identity differs')
+        jobs.append(job)
+    if len(set(jobs))!=len(jobs):raise ValueError('Duplicate collection Action directory')
+    return jobs,index
+
+
+def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignment_reports=(),
+          song_ids=None, max_motions=MAX_VISUAL_MOTIONS, lazy_motion_assets=False,
+          collection_index=None, local_example_audio=False):
     import soundfile as sf
     from stemlab.analysis.loops import analyze_loops, LoopConfig
     from stemlab.types import BeatResult
     root=Path(stemlab_root).resolve()
-    jobs=[Path(job).resolve() for job in (motion_job if isinstance(motion_job,(tuple,list)) else [motion_job])]
-    if not 1<=len(jobs)<=8 or len(set(jobs))!=len(jobs):
-        raise ValueError('Select 1..8 distinct source-first motion job directories')
+    if type(max_motions) is not int or not 1<=max_motions<=1024:
+        raise ValueError('Select 1..1024 bounded preview motions')
+    if max_motions>MAX_VISUAL_MOTIONS and not lazy_motion_assets:
+        raise ValueError('Large collections require lazy motion assets')
+    if local_example_audio and not lazy_motion_assets:
+        raise ValueError('Local example audio requires the explicit HTTP-served audition mode')
+    collection=None
+    if collection_index is not None:
+        if motion_job:raise ValueError('Use collection index or individual motion jobs')
+        jobs,collection=collection_jobs(collection_index)
+    else:
+        jobs=[Path(job).resolve() for job in (motion_job if isinstance(motion_job,(tuple,list)) else [motion_job])]
+        if not 1<=len(jobs)<=8 or len(set(jobs))!=len(jobs):
+            raise ValueError('Select 1..8 distinct source-first motion job directories')
+    selected_songs=SONGS if song_ids is None else tuple(song for song in SONGS if song[0] in song_ids)
+    if song_ids is not None and (not song_ids or len(set(song_ids))!=len(song_ids)
+            or len(selected_songs)!=len(song_ids)):
+        raise ValueError('Select distinct known example songs')
     output=Path(output).resolve()
     if output.exists() or output.is_symlink():
         raise FileExistsError(f'Choose a new output directory: {output}')
@@ -476,29 +688,53 @@ def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignme
     if Path(inspect.getfile(analyze_loops)).resolve() != (root/'src/stemlab/analysis/loops.py').resolve():
         raise ValueError('Imported StemLab analyser is not the requested source checkout')
     motions=[];seen_digests=set();job_hashes=[]
+    action_labels={action['source_sha256']:action for action in (collection or {}).get('actions',[])}
     for job in jobs:
         job_hashes.append(_hash(job/'job.json'))
-        for motion in _motion_library(job):
+        for motion in _motion_library(job,max_motions=32 if collection is not None else MAX_VISUAL_MOTIONS):
             signature=(motion.get('profile_sha256'),motion.get('original_source_sha256'),
                        motion.get('source_start_pip'),motion.get('raw_sample_count'),motion['name'])
             if signature in seen_digests:continue
             seen_digests.add(signature)
             motion['id']=f'motion-{len(motions)+1}'
+            action=action_labels.get(motion.get('original_source_sha256'))
+            if action:
+                motion['source_label']=action['source_id']+' / '+Path(action['member']).stem
             motions.append(motion)
-            if len(motions)>=MAX_VISUAL_MOTIONS:break
-        if len(motions)>=MAX_VISUAL_MOTIONS:break
+            if len(motions)>=max_motions:break
+        if len(motions)>=max_motions:break
     if not motions:
         raise ValueError('No native motion previews: source-first job must succeed first')
     output.parent.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.song-loop-preview-',dir=output.parent) as temp:
         stage=Path(temp)/'site';stage.mkdir()
         reports=stage/'reports';reports.mkdir()
+        for motion in motions:
+            native_source=motion.pop('_native_source_path',None)
+            if lazy_motion_assets:
+                if native_source is None:raise ValueError('Lazy motion requires its verified source recording')
+                native_path=Path(native_source)
+                assets=stage/'motion-assets';assets.mkdir(exist_ok=True)
+                preview={key:motion.pop(key) for key in ('xyz','frame_relative_pips')}
+                preview_path=assets/(motion['id']+'.preview.json')
+                preview_path.write_text(json.dumps(preview,separators=(',',':'),allow_nan=False),encoding='utf-8')
+                native_output=assets/(motion['id']+'.motion.json')
+                shutil.copyfile(native_path,native_output)
+                motion['preview_asset']=dict(path=preview_path.relative_to(stage).as_posix(),
+                    sha256=_hash(preview_path),byte_length=preview_path.stat().st_size)
+                motion['native_asset']=dict(path=native_output.relative_to(stage).as_posix(),
+                    sha256=_hash(native_output),byte_length=native_output.stat().st_size)
         songs=[]; errors=[]
-        for song_id, audio_rel, reference_rel in SONGS:
+        for song_id, audio_rel, reference_rel in selected_songs:
             audio=root/audio_rel;ref=root/reference_rel
             if not audio.is_file():
                 raise FileNotFoundError(f'Bundled song master missing: {audio_rel}')
             entry=_reference(root,song_id,audio,ref)
+            if local_example_audio:
+                audio_dir=stage/'audio';audio_dir.mkdir(exist_ok=True)
+                audio_copy=audio_dir/(song_id+'.mp3');shutil.copyfile(audio,audio_copy)
+                entry['local_audio']=dict(path=audio_copy.relative_to(stage).as_posix(),
+                    sha256=entry['source_sha256'],byte_length=entry['size_bytes'])
             try:
                 info=sf.info(str(audio))
                 grid=_beat_grid(root,entry,audio,info.duration)
@@ -521,7 +757,14 @@ def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignme
                              audio_loop_counts=dict(exploratory=result['exploratory_count'],
                                                     accepted=result['loop_count']),
                              pairs=[])
-                entry['pairs']=_rank_matches(entry,motions,result)
+                if collection is None:
+                    entry['pairs']=_rank_matches(entry,motions,result)
+                else:
+                    # Apply the same matcher to every motion: a global top-N
+                    # shortlist must not hide entire Actions from an audition.
+                    entry['pairs']=[pair for motion in motions
+                        for pair in _rank_matches(entry,[motion],result,max_pairs=3)]
+                    entry['pairs'].sort(key=lambda pair:(-pair['estimated_score'],pair['motion_id'],pair['song_start_seconds']))
                 entry['status']='candidate_previews' if entry['pairs'] else 'no_compatible_preview'
             except Exception as exc:
                 errors.append(dict(song_id=song_id,error=str(exc)))
@@ -533,23 +776,22 @@ def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignme
                   stemlab_source_checkout=str(root/'src/stemlab/analysis/loops.py'),
                   source_motion_job_sha256=job_hashes[0],
                   source_motion_job_sha256s=job_hashes,
-                  media_policy='No MP3/WAV/cover/audio samples copied to the artifact; local exact-hash audio selection only.',
+                  media_policy=('Explicit private local audition: selected example masters copied with exact source hashes; do not publish this bundle.'
+                    if local_example_audio else 'No MP3/WAV/cover/audio samples copied to the artifact; local exact-hash audio selection only.'),
                   beat_status='model_or_detector_estimate_not_approved',
                   audio_loop_status='StemLab exploratory candidates; not verified seamless or vocal-clear',
                   motion_model_status='source-rig preview; final Kandi Boom skin is reviewed in the mesh gallery',
                   alignment_reviews=reviews,
-                  songs=songs,motions=motions,errors=errors)
-        raw=json.dumps(data,ensure_ascii=True,separators=(',',':'),allow_nan=False)
-        (stage/'report.json').write_text(json.dumps(data,indent=2,allow_nan=False)+'\n')
-        # Embed data: local file:// pages cannot fetch arbitrary JSON under CORS.
-        template=VIEWER.read_text(encoding='utf-8')
-        timing_script=(VIEWER.parent/'alignment-review.js').read_text(encoding='utf-8')
-        html=(template.replace('%%PREVIEW_DATA%%',raw.replace('<','\\u003c'))
-              .replace('%%TIMING_REVIEW_SCRIPT%%',timing_script)
-              .replace('%%BUILD_SOURCE%%','CI source-first loop analysis'))
-        if '%%PREVIEW_DATA%%' in html or '%%TIMING_REVIEW_SCRIPT%%' in html:
-            raise AssertionError('Missing report injection')
-        (stage/'index.html').write_text(html,encoding='utf-8')
+                  songs=songs,motions=motions,errors=errors,
+                  lazy_motion_assets=bool(lazy_motion_assets),
+                  selected_motion_limit=max_motions,
+                  selection_may_be_truncated=len(motions)>=max_motions,
+                  collection_coverage=(dict(index_sha256=_hash(Path(collection_index)),
+                    actions=collection['actions'],failures=collection.get('failures',[]),
+                    duplicates=collection.get('duplicates',[]),
+                    source_action_count=len(collection['actions']),
+                    exported_motion_count=len(motions)) if collection is not None else None))
+        render_report(data,stage)
         stage.rename(output)
     if fail_on_song_error and errors:
         raise RuntimeError(f'{len(errors)} song(s) failed analysis; inspect {output / "report.json"}')
@@ -559,8 +801,18 @@ def build(stemlab_root, motion_job, output, *, fail_on_song_error=False, alignme
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stemlab-root',type=Path,required=True)
-    parser.add_argument('--motion-job',type=Path,required=True,action='append',
+    source=parser.add_mutually_exclusive_group(required=True)
+    source.add_argument('--motion-job',type=Path,action='append',default=[],
                         help='Completed source-first job; repeat for additional local rig motions (max 8)')
+    source.add_argument('--collection-index',type=Path,
+                        help='Complete canonical source collection index (max 128 Actions)')
+    parser.add_argument('--songs',nargs='+',choices=[song[0] for song in SONGS],
+                        help='Select only the requested example songs; defaults to all')
+    parser.add_argument('--max-motions',type=int,default=MAX_VISUAL_MOTIONS)
+    parser.add_argument('--lazy-motion-assets',action='store_true',
+                        help='Hash-verified per-motion assets; requires an HTTP-served preview')
+    parser.add_argument('--local-example-audio',action='store_true',
+                        help='Explicit PRIVATE local audition only: include the selected original example masters')
     parser.add_argument('--output-dir',type=Path,required=True)
     parser.add_argument('--require-all-songs',action='store_true')
     parser.add_argument('--alignment-report',type=Path,action='append',default=[],
@@ -568,7 +820,10 @@ def main(argv=None):
     opts=parser.parse_args(argv)
     try:
         result=build(opts.stemlab_root,opts.motion_job,opts.output_dir,
-                     fail_on_song_error=opts.require_all_songs,alignment_reports=opts.alignment_report)
+                     fail_on_song_error=opts.require_all_songs,alignment_reports=opts.alignment_report,
+                     song_ids=opts.songs,max_motions=opts.max_motions,
+                     lazy_motion_assets=opts.lazy_motion_assets,collection_index=opts.collection_index,
+                     local_example_audio=opts.local_example_audio)
     except (ValueError,RuntimeError,OSError) as exc:
         parser.error(str(exc))
     print(json.dumps({'output':str(opts.output_dir),'songs':[{k:v.get(k) for k in

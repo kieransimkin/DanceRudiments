@@ -23,17 +23,37 @@ async function files(root,prefix=''){
   }
   return result;
 }
-export async function buildLoopReviewSite(assetsDir,outputDir){
+export function validateCollectionScenes(config,inventory){
+  const ids=new Set();
+  for(const scene of config.scenes){
+    if(typeof scene.id!=='string'||!/^source-[a-f0-9]{64}$/.test(scene.id)||ids.has(scene.id)
+      ||scene.id!==`source-${scene.sourceSha256}`||!safe(scene.rigPath)||!safe(scene.manifestPath)
+      ||scene.sceneRigSha256!==inventory.files[scene.rigPath]?.sha256
+      ||scene.manifestSha256!==inventory.files[scene.manifestPath]?.sha256
+      ||config.auditionCalibrations?.[scene.id]?.source_rig_sha256!==scene.sceneRigSha256
+      ||config.auditionCalibrations[scene.id].target_rig_sha256!==config.auditionTargets?.[scene.id]?.rig_sha256
+      ||config.auditionTargets[scene.id].asset_sha256!==config.character.fbxAssetSha256
+      ||!/^[a-f0-9]{64}$/.test(scene.expectedProfile?.fingerprint||''))
+      throw Error('Collection source, rig or calibration identity differs');
+    ids.add(scene.id);
+  }
+}
+export async function buildLoopReviewSite(assetsDir,outputDir,{collectionAudition=false}={}){
   const source=await realpath(resolve(assetsDir)),output=resolve(outputDir);
   if(output===source||source.startsWith(output+sep)||output===ROOT)throw Error('Unsafe review-site output');
   try{await lstat(output);throw Error('Review-site output must be new');}catch(error){if(error.code!=='ENOENT')throw error;}
   const config=JSON.parse(await readFile(join(source,'config.json'),'utf8'));
   const inventory=JSON.parse(await readFile(join(source,'assets.json'),'utf8'));
-  if(config.reviewWorkspace!==true||config.scenes?.length!==1||inventory.format!=='dancerudiments.loop-review-assets.v1')
+  const validMode=collectionAudition
+    ? config.collectionAudition===true&&config.reviewWorkspace===false&&config.scenes?.length>=1&&config.scenes.length<=128
+    : config.reviewWorkspace===true&&config.scenes?.length===1;
+  if(!validMode||inventory.format!=='dancerudiments.loop-review-assets.v1')
     throw Error('An explicitly prepared review workspace is required');
-  if(sha(await readFile(join(ROOT,'tools/mesh_demo_assets/kandi-boom.js')))!==
-      config.reviewCalibrationEvidence?.retarget_implementation_sha256)
+  const retargetHash=sha(await readFile(join(ROOT,'tools/mesh_demo_assets/kandi-boom.js')));
+  const evidence=collectionAudition?config.scenes.map(scene=>config.auditionCalibrations?.[scene.id]):[config.reviewCalibrationEvidence];
+  if(evidence.some(item=>item?.retarget_implementation_sha256!==retargetHash))
     throw Error('Retarget implementation changed after the source calibration was prepared');
+  if(collectionAudition)validateCollectionScenes(config,inventory);
   const pkg=JSON.parse(await readFile(join(ROOT,'package.json'),'utf8')),versions={};
   for(const name of ['esbuild','three']){
     const actual=JSON.parse(await readFile(join(ROOT,'node_modules',name,'package.json'),'utf8')).version;
@@ -77,16 +97,18 @@ export async function buildLoopReviewSite(assetsDir,outputDir){
     const outputFiles={};for(const name of await files(stage)){
       const bytes=await readFile(join(stage,name));outputFiles[name]={sha256:sha(bytes),byte_length:bytes.length};
     }
-    const receipt={format:'dancerudiments.loop-review-site.v1',schema_version:1,...config.build,
-      scope:'local-authoring-only',scene_id:config.scenes[0].id,target:config.reviewTarget,files:outputFiles};
+    const receipt={format:collectionAudition?'dancerudiments.collection-audition-site.v1':'dancerudiments.loop-review-site.v1',schema_version:1,...config.build,
+      scope:collectionAudition?'local-read-only-audition':'local-authoring-only',scene_id:config.scenes[0].id,
+      target:config.reviewTarget,files:outputFiles,
+      ...(collectionAudition?{scenes:config.scenes.map(scene=>({id:scene.id,source_sha256:scene.sourceSha256,profile_sha256:scene.expectedProfile.fingerprint,title:scene.title})),unavailable:config.unavailable}: {})};
     await writeFile(join(stage,'build.json'),json(receipt));
     await rename(stage,output);
     return {output_dir:output,file_count:Object.keys(outputFiles).length+1,commit,working_tree_dirty:dirty};
   }finally{await rm(parent,{recursive:true,force:true});}
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){
-  const {values}=parseArgs({options:{'assets-dir':{type:'string'},'output-dir':{type:'string'}},strict:true});
+  const {values}=parseArgs({options:{'assets-dir':{type:'string'},'output-dir':{type:'string'},'collection-audition':{type:'boolean',default:false}},strict:true});
   if(!values['assets-dir']||!values['output-dir'])throw Error('--assets-dir and --output-dir are required');
-  buildLoopReviewSite(values['assets-dir'],values['output-dir']).then(result=>console.log(json(result)))
+  buildLoopReviewSite(values['assets-dir'],values['output-dir'],{collectionAudition:values['collection-audition']}).then(result=>console.log(json(result)))
     .catch(error=>{console.error(error.message);process.exitCode=1;});
 }
