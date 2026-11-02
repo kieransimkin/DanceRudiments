@@ -8,6 +8,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import re
 import tempfile
 
 DEFAULT_BUDGET = Path(__file__).resolve().parents[1] / 'packaging/python-size-budget.json'
@@ -15,7 +16,7 @@ DEFAULT_BUDGET = Path(__file__).resolve().parents[1] / 'packaging/python-size-bu
 
 def load_budget(path: Path = DEFAULT_BUDGET) -> dict:
     budget = json.loads(Path(path).read_text(encoding='utf-8'))
-    if budget.get('schema_version') != 1:
+    if type(budget.get('schema_version')) is not int or budget['schema_version'] != 1:
         raise ValueError('Unsupported Python size-budget schema')
     for name in ('max_wheel_mib', 'max_sdist_mib', 'max_total_mib'):
         value = budget.get(name)
@@ -23,13 +24,40 @@ def load_budget(path: Path = DEFAULT_BUDGET) -> dict:
             raise ValueError(name+' must be finite and positive')
     if type(budget.get('release_wheel_count')) is not int or budget['release_wheel_count'] < 1:
         raise ValueError('release_wheel_count must be a positive integer')
+    python_tags = budget.get('python_tags')
+    platforms = budget.get('platform_families')
+    if (not isinstance(python_tags, list) or not python_tags
+            or any(not isinstance(tag, str) or not re.fullmatch(r'cp3\d{1,2}', tag) for tag in python_tags)
+            or len(set(python_tags)) != len(python_tags)):
+        raise ValueError('python_tags must contain unique supported CPython tags')
+    if (not isinstance(platforms, list) or not platforms
+            or any(platform not in ('linux_x86_64', 'windows_x86_64', 'macos_arm64') for platform in platforms)
+            or len(set(platforms)) != len(platforms)
+            or len(python_tags)*len(platforms) != budget['release_wheel_count']):
+        raise ValueError('The platform/Python matrix must match release_wheel_count')
     if not isinstance(budget.get('rationale'), str) or not budget['rationale'].strip():
         raise ValueError('The size budget requires its reviewed rationale')
     return budget
 
 
+def wheel_identity(filename: str) -> tuple[str, str] | None:
+    """Read the actual ABI/platform tags, allowing auditwheel's compound tags."""
+    pieces = filename.removesuffix('.whl').rsplit('-', 3)
+    if len(pieces) != 4 or pieces[1] != pieces[2]:
+        return None
+    python, _, platform = pieces[1:]
+    if platform == 'win_amd64':
+        return python, 'windows_x86_64'
+    if re.fullmatch(r'macosx_\d+_\d+_arm64', platform):
+        return python, 'macos_arm64'
+    if all(re.fullmatch(r'manylinux_\d+_\d+_x86_64', tag) for tag in platform.split('.')):
+        return python, 'linux_x86_64'
+    return None
+
+
 def inspect(directory: Path, wheel_limit: float, sdist_limit: float, total_limit: float | None,
-            *, expected_wheels: int | None = None, expected_version: str | None = None) -> int:
+            *, expected_wheels: int | None = None, expected_version: str | None = None,
+            expected_matrix: set[tuple[str, str]] | None = None) -> int:
     for limit in (wheel_limit, sdist_limit, total_limit):
         if limit is not None and (type(limit) not in (int, float) or not math.isfinite(limit) or limit <= 0):
             raise ValueError('Size limits must be finite and positive')
@@ -45,6 +73,12 @@ def inspect(directory: Path, wheel_limit: float, sdist_limit: float, total_limit
         if len(wheels) != expected_wheels or len(sources) != 1:
             print(f'ERROR: release requires {expected_wheels} wheels and one sdist; '
                   f'found {len(wheels)} wheels and {len(sources)} sdists')
+            failed = True
+    if expected_matrix is not None:
+        identities = [wheel_identity(file.name) for file in files if file.suffix == '.whl']
+        if (None in identities or len(set(identities)) != len(identities)
+                or set(identities) != expected_matrix):
+            print('ERROR: missing, duplicated or unsupported Python/ABI/platform wheel identity')
             failed = True
     if expected_version is not None:
         for file in files:
@@ -103,7 +137,9 @@ def main() -> int:
                        args.max_sdist_mib if args.max_sdist_mib is not None else budget['max_sdist_mib'],
                        args.max_total_mib if args.max_total_mib is not None else budget['max_total_mib'],
                        expected_wheels=budget['release_wheel_count'] if args.release_set else None,
-                       expected_version=args.expected_version)
+                       expected_version=args.expected_version,
+                       expected_matrix={(python, platform) for python in budget['python_tags']
+                                        for platform in budget['platform_families']} if args.release_set else None)
     except (OSError, ValueError, TypeError) as error:
         p.error(str(error))
 

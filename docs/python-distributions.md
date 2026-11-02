@@ -50,7 +50,9 @@ reduction from 56.50/76.78 MiB; it does not qualify the old duplicated packages.
 All release jobs consume that same checked-in policy. Before publishing, the
 aggregate gate additionally requires exactly eighteen supported wheels and one
 source archive, all named for the exact release version. An incomplete matrix,
-foreign version, oversized file or excessive total fails. Archive-content and
+foreign version, duplicated ABI/platform pair, wrong architecture, oversized
+file or excessive total fails. Compound manylinux tags count as one Linux
+identity; a wheel's Python and ABI tags must agree. Archive-content and
 native/catalogue checks remain separate and mandatory. A future architecture or
 matrix change needs a reviewed policy update rather than an unbounded override.
 
