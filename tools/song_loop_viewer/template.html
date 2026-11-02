@@ -84,6 +84,7 @@ byId('load-mesh').addEventListener('click',()=>{nativeEnabled=true;nativeMode='m
  if(!meshFrame.getAttribute('src'))meshFrame.src=DATA.mesh_audition.src;else void syncNative(motionFor());});
 byId('unload-mesh').addEventListener('click',()=>{nativeGeneration++;nativeEnabled=false;nativeReady=null;nativeHost()?.unload();meshFrame.removeAttribute('src');meshFrame.hidden=true;byId('mesh-status').textContent='Kandi and native motion unloaded.';});
 byId('original-mesh').addEventListener('click',async()=>{audio.pause();silent=false;nativeReady=null;nativeMode='original';nativeGeneration++;
+ if(DATA.motions.some(m=>m.motion_kind==='source_time'&&m.original_source_sha256===(sourceSelect.value||motionFor()?.original_source_sha256))){byId('original-source').click();return;}
  const scene=meshSources.get(sourceSelect.value||motionFor()?.original_source_sha256);
  if(!scene){byId('mesh-status').textContent='This source lacks a declared Kandi calibration; inspect its source rig.';return;}
  nativeEnabled=true;meshFrame.hidden=false;
@@ -235,7 +236,7 @@ function frame(now){animationHandle=requestAnimationFrame(frame);const pair=curr
  if(silent&&timingRange){time=Math.min(timingRange[1],timingRange[0]+(now-silentStarted)/1000);}
  else if(silent&&pair){const period=Math.max(.01,pair.song_end_seconds-pair.song_start_seconds);time=pair.song_start_seconds+(pair.motion_kind==='full_length'?Math.min(period,(now-silentStarted)/1000):((now-silentStarted)/1000%period));}
  else if(localAudioURL){time=audio.currentTime;if(!timingRange&&pair&&!audio.paused&&time>=pair.song_end_seconds){if(pair.motion_kind==='full_length'){audio.pause();time=pair.song_end_seconds}else{audio.currentTime=pair.song_start_seconds;time=audio.currentTime}}}
- lastTime=time;const phase=motionPhase(time);drawRig(phase);if(nativeEnabled&&nativeReady===motionFor()?.id)nativeHost()?.pose(phase);drawTimeline();const p=currentPair();const beat=p?(beatPosition(currentSong().grid?.beats,time)-p.start_beat_index):0;byId('progress').textContent=phase===null?'Outside reviewed coverage':timingRange?`${time.toFixed(3)} audio seconds`:p?`${Math.max(0,beat).toFixed(2)} music beats`:`${((motionFor()?.beats||0)*phase).toFixed(2)} motion beats`;}
+ lastTime=time;const phase=motionPhase(time);drawRig(phase);if(nativeEnabled&&nativeReady===motionFor()?.id)nativeHost()?.pose(phase);drawTimeline();const p=currentPair();const beat=p?(beatPosition(currentSong().grid?.beats,time)-p.start_beat_index):0;byId('progress').textContent=phase===null?'Outside reviewed coverage':timingRange?`${time.toFixed(3)} audio seconds`:p?`${Math.max(0,beat).toFixed(2)} music beats`:`${((motionFor()?.beats||0)*phase).toFixed(2)} ${motionFor()?.motion_kind==='source_time'?'source seconds':'motion beats'}`;}
 updateSong();animationHandle=requestAnimationFrame(frame);
 window.addEventListener('pagehide',()=>{nativeGeneration++;nativeHost()?.unload();cancelAnimationFrame(animationHandle);resetAudio()});
 </script>
