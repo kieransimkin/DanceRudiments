@@ -34,10 +34,12 @@ if(DANCERUDIMENTS_BUILD_PYTHON)
     get_filename_component(DANCERUDIMENTS_MINGW_BIN "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(DANCERUDIMENTS_WINPTHREAD_DLL "${DANCERUDIMENTS_MINGW_BIN}/libwinpthread-1.dll")
     if(EXISTS "${DANCERUDIMENTS_WINPTHREAD_DLL}")
-      install(FILES "${DANCERUDIMENTS_WINPTHREAD_DLL}" DESTINATION .)
+      install(FILES "${DANCERUDIMENTS_WINPTHREAD_DLL}" DESTINATION . COMPONENT Python)
     endif()
   endif()
-  install(TARGETS dancerudiments_python LIBRARY DESTINATION . RUNTIME DESTINATION .)
+  install(TARGETS dancerudiments_python
+    LIBRARY DESTINATION . COMPONENT Python
+    RUNTIME DESTINATION . COMPONENT Python)
 endif()
 
 if(DANCERUDIMENTS_BUILD_WASM)
@@ -94,14 +96,14 @@ write_basic_package_version_file(
   VERSION "${PROJECT_VERSION}"
   COMPATIBILITY SameMajorVersion)
 install(TARGETS DanceRudiments EXPORT DanceRudimentsTargets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development)
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development)
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfig.cmake"
   "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfigVersion.cmake"
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments")
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments" COMPONENT Development)
 install(EXPORT DanceRudimentsTargets NAMESPACE DanceRudiments::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments)
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments" COMPONENT Development)
 
 # Export the ACTUAL catalogue used by the tag, never a handwritten JS mirror.
 if(DANCERUDIMENTS_BUILD_DEMO_TOOLS)
@@ -109,20 +111,23 @@ if(DANCERUDIMENTS_BUILD_DEMO_TOOLS)
   target_link_libraries(dancerudiments_export_demo PRIVATE DanceRudiments::DanceRudiments)
 endif()
 install(FILES collections/initial/THIRD_PARTY_NOTICES.md
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments")
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments" COMPONENT Documentation)
 install(FILES collections/initial/sources/d3-ease/LICENSE
-  DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments" RENAME D3-ease-LICENSE)
+  DESTINATION "${CMAKE_INSTALL_DATADIR}/DanceRudiments" RENAME D3-ease-LICENSE COMPONENT Documentation)
 
 # All native installs (including scikit-build wheels) retain the usage guide,
 # screenshots and author link. This does not install the large visualizer.
 set(DANCERUDIMENTS_DOC_DIR "${CMAKE_INSTALL_DATADIR}/DanceRudiments")
-install(FILES README.md AUTHORS.md DESTINATION "${DANCERUDIMENTS_DOC_DIR}")
+install(FILES README.md AUTHORS.md DESTINATION "${DANCERUDIMENTS_DOC_DIR}" COMPONENT Documentation)
 install(DIRECTORY docs/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/docs"
+  COMPONENT Documentation
   FILES_MATCHING PATTERN "*.md" PATTERN "*.png" PATTERN "*.svg" PATTERN "capture.json")
 install(DIRECTORY examples/bindings/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/bindings"
+  COMPONENT Documentation
   PATTERN "dist" EXCLUDE PATTERN "bin" EXCLUDE PATTERN "obj" EXCLUDE PATTERN "__pycache__" EXCLUDE)
 if(DANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES)
   install(DIRECTORY examples/rig-motion/ DESTINATION "${DANCERUDIMENTS_DOC_DIR}/examples/rig-motion"
+    COMPONENT Documentation
     PATTERN "__pycache__" EXCLUDE)
 endif()
 

@@ -97,6 +97,19 @@ def check_archive(path: Path) -> None:
             require_link(data.decode('utf-8'), str(path)+':'+name)
     if path.suffix == '.whl' and not any(n.endswith('.dist-info/METADATA') for n in names):
         raise ValueError('Wheel is missing distribution metadata')
+    if path.suffix == '.whl':
+        development = [name for name in names if
+                       'include' in PurePosixPath(name).parts
+                       or name.endswith(('.a', '.lib'))
+                       or '/cmake/' in name]
+        if development:
+            raise ValueError('Python wheel contains C++ development files: '+development[0])
+    if path.name.endswith('.tar.gz'):
+        for name in names:
+            relative = '/'.join(PurePosixPath(name).parts[1:])
+            if (relative in ('harness/index.html', 'harness/beats.json')
+                    or relative.startswith('harness/kandi-boom/assets/')):
+                raise ValueError('Python source archive contains a browser demo payload: '+relative)
     print(f'{path.name}: author links, packaged READMEs, examples and screenshots verified')
 
 
