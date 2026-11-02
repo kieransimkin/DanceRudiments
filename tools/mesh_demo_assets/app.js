@@ -71,7 +71,7 @@ function metadata() {
 }
 function updateTransport() {
   const ready = Boolean(session?.ready), playing = Boolean(session?.transport?.playing);
-  const audioDriven = Boolean(loopWorkspace?.active());
+  const audioDriven = Boolean(loopWorkspace?.active()||session?.audition);
   $('play-toggle').disabled = !ready || audioDriven; $('restart').disabled = !ready || audioDriven;
   $('seek').disabled = !ready || audioDriven; $('speed').disabled = audioDriven;
   $('unload-scene').disabled = !session;
@@ -93,7 +93,7 @@ function updateTransport() {
       : session.derivative
       ? `${session.derivativeMode === 'finished' ? 'Finished clip · numerical checks passed' : 'Original window comparison'} · ${session.transport.speed}× · visual / musical review pending`
       : rhythmReview.currentLoop() ? `Unverified loop · ${rateLabel}` : rateLabel;
-    status(session.pending ? 'Loading motion…' : playing ? 'Performing' : pip === range.last ? 'Performance complete' : 'Paused', playing);
+    status(session.pending ? 'Loading motion…' : session.audition ? 'Song clock' : playing ? 'Performing' : pip === range.last ? 'Performance complete' : 'Paused', playing||Boolean(session.audition));
   }
 }
 function playbackRange(owner) {
@@ -145,7 +145,7 @@ function initializeStage() {
 }
 async function trackedFetch(url, options = {}) {
   stats.pendingRequests++;
-  try { return await fetch(url, {...options, credentials: config.reviewWorkspace ? 'same-origin' : 'omit'}); }
+  try { return await fetch(url, {...options, credentials: config.reviewWorkspace || config.collectionAudition ? 'same-origin' : 'omit'}); }
   finally { stats.pendingRequests--; }
 }
 async function verifiedAsset(path, sha256, limit, signal) {
@@ -182,6 +182,7 @@ function unload({clearError = true} = {}) {
   if (previous) {
     previous.closed = true; previous.controller.abort(); previous.transport?.pause();
     previous.derivativeGeneration++; previous.derivative?.loaded.dispose(); previous.derivative = null;
+    previous.auditionGeneration=(previous.auditionGeneration||0)+1;previous.audition?.dispose();previous.audition=null;
     releaseChunk(previous); previous.loader?.dispose(); previous.character?.dispose();
     previous.loader = previous.character = previous.module = null;
   }
@@ -195,8 +196,8 @@ function unload({clearError = true} = {}) {
 function current(owner) { return !owner.closed && session === owner && !owner.controller.signal.aborted; }
 function applyPose(owner) {
   if (!current(owner)) return;
-  const pip = owner.desiredPip, motion = owner.derivativeMode === 'finished'
-    ? owner.derivative?.loaded.motion : owner.active?.motion;
+  const pip = owner.desiredPip, motion = owner.audition?.motion ?? (owner.derivativeMode === 'finished'
+    ? owner.derivative?.loaded.motion : owner.active?.motion);
   if (!motion) return;
   if (pip < motion.startPip || pip >= motion.startPip + motion.sampleCount || owner.lastPip === pip) return;
   const physical = motion.sample(pip); // Native C++/WASM sampling, then channel-unit decoding.
@@ -450,7 +451,7 @@ function frame() {
   if (pageClosed) return;
   const owner = session;
   if (owner?.ready) {
-    if(!loopWorkspace?.frame()) {
+    if(!owner.audition&&!loopWorkspace?.frame()) {
       const wasPlaying = owner.transport.playing;
       let pip = owner.transport.pip();
       const loop = rhythmReview.currentLoop();
@@ -518,11 +519,54 @@ window.meshDemo = Object.freeze({
         startPip: owner.derivative.loaded.motion.startPip, sampleCount: owner.derivative.loaded.motion.sampleCount,
         repeatCount: owner.derivative.repeatCount,
         numericalChecksPassed: true, visualReviewVerified: false} : null,
+      auditionMotion:owner?.audition?{profileSha256:owner.audition.motion.profileSha256,
+        startPip:owner.audition.motion.startPip,sampleCount:owner.audition.motion.sampleCount}:null,
       disposed: !owner, error: $('error').hidden ? null : $('error').textContent,
       build: config.build,
     };
   },
 });
+// Read-only, opt-in host clock adapter. Every pose still comes from the shared
+// native recording sampler; no review/export or musical approval is granted.
+if(config.collectionAudition){
+  window.meshAudition=Object.freeze({
+    async prepare(sceneId){
+      if(!scenes.has(sceneId))throw Error('Unknown prepared source scene');
+      if(selected.id!==sceneId)choose(sceneId);
+      if(!session?.ready)await loadSelected();
+      if(!session?.ready||session.scene.id!==sceneId)throw Error('Source scene did not load');
+      session.transport.pause();updateTransport();
+    },
+    async loadMotion(input,expectedHash,expectedProfile){
+      const owner=session;
+      if(!owner?.ready||owner.scene.expectedProfile.fingerprint!==expectedProfile)throw Error('Audition source profile differs');
+      if(!ArrayBuffer.isView(input)||input.byteLength<1||input.byteLength>32*1024*1024||!/^[a-f0-9]{64}$/.test(expectedHash))throw Error('Invalid audition motion bytes');
+      const token=owner.auditionGeneration=(owner.auditionGeneration||0)+1;
+      const bytes=new Uint8Array(input.buffer,input.byteOffset,input.byteLength);
+      const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+      if(hash!==expectedHash)throw Error('Audition motion hash differs');
+      if(!current(owner)||owner.auditionGeneration!==token)throw Error('Audition source changed');
+      const loaded=await owner.runtime.createStandaloneRigMotion(bytes,{profile:owner.verifiedProfile,
+        profileSha256:expectedProfile,nativeFactory:owner.nativeFactory,signal:owner.controller.signal});
+      if(!current(owner)||owner.auditionGeneration!==token){loaded.dispose();throw Error('Audition source changed');}
+      owner.audition?.dispose();owner.audition=loaded;owner.lastPip=null;owner.transport.pause();
+      status('Audio-driven loop audition',true);
+      return {startPip:loaded.motion.startPip,sampleCount:loaded.motion.sampleCount,profileSha256:loaded.motion.profileSha256};
+    },
+    pose(fraction){
+      const owner=session;if(!owner?.ready||!owner.audition)return;
+      owner.character.group.visible=Number.isFinite(fraction)&&fraction>=0&&fraction<=1;
+      if(!owner.character.group.visible)return;
+      const motion=owner.audition.motion;
+      owner.desiredPip=motion.startPip+Math.min(motion.sampleCount-1,Math.floor(fraction*motion.sampleCount));
+      applyPose(owner);
+    },
+    original(){const owner=session;if(!owner?.ready)return;owner.audition?.dispose();owner.audition=null;owner.lastPip=null;owner.transport.seek(owner.scene.startPip);owner.transport.play();status('Original source time · musical mapping unverified',true);},
+    unload(){unload();},
+  });
+  document.title='Collection mesh audition · DanceRudiments';
+  const layout=document.createElement('style');layout.textContent='body{margin:0;overflow:hidden}.topbar,.intro,.sidebar,.transport,.about-strip,footer{display:none!important}main{max-width:none;margin:0;padding:0}.workspace{display:block}.viewport{height:100vh;min-height:300px;aspect-ratio:auto;border-radius:0}';document.head.append(layout);
+}
 if(config.scenes.some(scene=>!copy[scene.id])){
   $('scene-select').replaceChildren(...config.scenes.map(scene=>{
     const option=document.createElement('option');option.value=scene.id;option.textContent=scene.title||scene.id;return option;

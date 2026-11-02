@@ -52,6 +52,22 @@ def _write_motion_fixture(path, *, samples=64, portable=True, reverse=False, mut
 
 
 class SongLoopPreviewTests(unittest.TestCase):
+    @unittest.skipUnless(importlib.util.find_spec('numpy'),'Offline world evidence needs NumPy')
+    def test_activity_distinguishes_held_pose_and_travel_without_claiming_artistic_quality(self):
+        from dataclasses import replace
+        from dancerudiments_authoring.motion import write_rig_motion
+        with tempfile.TemporaryDirectory() as temp:
+            moving=Path(temp)/'moving.json';held=Path(temp)/'held.json'
+            motion=_write_motion_fixture(moving,samples=128)
+            stationary=replace(motion,recording=replace(motion.recording,
+                samples=tuple((0.,0.,0.) for _ in motion.recording.samples)))
+            write_rig_motion(held,stationary)
+            a,b=preview.motion_activity(moving),preview.motion_activity(held)
+            self.assertGreater(a['world_body_scales_per_second'],.1)
+            self.assertAlmostEqual(a['articulated_body_scales_per_second'],0,places=9)
+            self.assertAlmostEqual(b['combined_body_scales_per_second'],0,places=9)
+            self.assertFalse(a['human_approved'])
+
     def test_grid_is_strict_about_music_phase(self):
         good=[i*.5 for i in range(20)]
         self.assertEqual(len(preview._validate_grid(good, good[::4], 10)[0]),20)
@@ -284,6 +300,18 @@ class SongLoopPreviewTests(unittest.TestCase):
                              'downbeats':[0,2,4,6],'beat_status':'synthetic',
                              'downbeat_status':'synthetic','meter_status':'synthetic'}):
                         result=preview.build(root,[job,other],Path(temp)/'output',fail_on_song_error=True)
+                        private=preview.build(root,[job],Path(temp)/'private',fail_on_song_error=True,
+                            song_ids=['arcadians'],max_motions=16,lazy_motion_assets=True,local_example_audio=True)
+                        lazy=private['motions'][0]
+                        self.assertNotIn('xyz',lazy)
+                        self.assertNotIn('_native_source_path',lazy)
+                        self.assertEqual(preview._hash(Path(temp)/'private'/lazy['native_asset']['path']),preview._hash(motion))
+                        self.assertEqual(private['songs'][0]['local_audio']['sha256'],preview._hash(file))
+                        self.assertEqual(private['selected_motion_limit'],16)
+                        with self.assertRaisesRegex(ValueError,'lazy'):
+                            preview.build(root,[job],Path(temp)/'unsafe',max_motions=16)
+                        with self.assertRaisesRegex(ValueError,'known example'):
+                            preview.build(root,[job],Path(temp)/'unknown',song_ids=['missing'])
                 finally:
                     sys.path.remove(str(root/'src'))
             self.assertEqual(len(result['songs']),1)
