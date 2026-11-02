@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
-project(DanceRudiments VERSION 0.4.8
+project(DanceRudiments VERSION 0.4.9
   DESCRIPTION "Deterministic rhythmic position functions for DanceFlow. Music: https://kieransimkin.co.uk/my-songs/"
   HOMEPAGE_URL "https://kieransimkin.co.uk/my-songs/"
   LANGUAGES CXX)
 
 option(DANCERUDIMENTS_INSTALL_RIG_MOTION_EXAMPLES "Install large optional rig-motion demo assets" ON)
+option(DANCERUDIMENTS_INSTALL_DEVELOPMENT_FILES "Install C++ headers, static library and CMake package files" ON)
 option(DANCERUDIMENTS_BUILD_DEMO_TOOLS "Build the native demo exporter" OFF)
 option(DANCERUDIMENTS_BUILD_TESTS "Build C++ tests" ON)
 option(DANCERUDIMENTS_BUILD_PYTHON "Build the pybind11 Python module" OFF)
@@ -93,15 +94,17 @@ write_basic_package_version_file(
   "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfigVersion.cmake"
   VERSION "${PROJECT_VERSION}"
   COMPATIBILITY SameMajorVersion)
-install(TARGETS DanceRudiments EXPORT DanceRudimentsTargets
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES
-  "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfig.cmake"
-  "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfigVersion.cmake"
-  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments")
-install(EXPORT DanceRudimentsTargets NAMESPACE DanceRudiments::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments)
+if(DANCERUDIMENTS_INSTALL_DEVELOPMENT_FILES)
+  install(TARGETS DanceRudiments EXPORT DanceRudimentsTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+  install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+  install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/DanceRudimentsConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments")
+  install(EXPORT DanceRudimentsTargets NAMESPACE DanceRudiments::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/DanceRudiments)
+endif()
 
 # Export the ACTUAL catalogue used by the tag, never a handwritten JS mirror.
 if(DANCERUDIMENTS_BUILD_DEMO_TOOLS)

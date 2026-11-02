@@ -47,8 +47,11 @@ def self_test() -> int:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('directory', type=Path, nargs='?', default=Path('dist'))
-    p.add_argument('--max-wheel-mib', type=float, default=8)
-    p.add_argument('--max-sdist-mib', type=float, default=12)
+    # The package deliberately ships the inspectable default-motion scores and
+    # authoring data. These caps still catch native development archives and
+    # accidental build trees without rejecting the supported payload itself.
+    p.add_argument('--max-wheel-mib', type=float, default=32)
+    p.add_argument('--max-sdist-mib', type=float, default=80)
     p.add_argument('--max-total-mib', type=float)
     p.add_argument('--self-test', action='store_true')
     args = p.parse_args()

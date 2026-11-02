@@ -512,6 +512,9 @@ python -m pip install .
 A matching prebuilt wheel does not require a local C++ compiler. A source build
 does; pip's isolated build installs the declared scikit-build-core/pybind11 build
 dependencies. Use the same Python interpreter for `-m pip` and your application.
+Python wheels contain the extension and user documentation, but deliberately omit
+the C++ headers, static archive and CMake package files; use the matching native
+release archive when developing a C++ application.
 The package metadata supports Python 3.9+; release wheel availability is narrower
 than every possible Python/OS/CPU combination.
 
