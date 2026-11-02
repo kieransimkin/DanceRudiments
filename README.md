@@ -515,6 +515,13 @@ dependencies. Use the same Python interpreter for `-m pip` and your application.
 The package metadata supports Python 3.9+; release wheel availability is narrower
 than every possible Python/OS/CPU combination.
 
+Python wheels retain the native extension, full catalogue, authoring APIs,
+binding examples and illustrated documentation. C++ headers, static libraries
+and CMake package files belong to the separate C++ distribution. The Python
+source archive retains rebuild inputs and source rig metadata; large generated
+browser pages and Kandi's mesh/texture payloads stay in the repository and demo
+downloads. See [Python distribution boundaries](docs/python-distributions.md).
+
 ```python
 import dancerudiments as d
 
@@ -787,6 +794,13 @@ before adding the optional `motion-import` extra, pytest and Pillow, then run
 `tests/python` through pytest so function-style tests are discovered. Source
 integration pins must identify published compatible commits. The PyPI publisher
 checks out its exact release source before applying distribution-size budgets.
+Archive checks also reject duplicate C++ development files in Python wheels
+and generated browser/character payloads in Python source archives. This
+packaging boundary is checked independently from the measured size policy and
+registry quota. The complete 1,731-movement package uses reviewed 32 MiB wheel,
+40 MiB source and 620 MiB release ceilings. Publication additionally verifies
+the complete eighteen-wheel matrix and its exact release version; PyPI storage
+must be available independently. See [distribution policy](docs/python-distributions.md).
 An official GitHub/PyPI mismatch remains a publication failure; preserve existing
 releases and follow the [partial-publication recovery guide](https://github.com/kieransimkin/stemlab/blob/main/docs/released-viewers.md).
 
