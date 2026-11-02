@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "max_wheel_mib": 32,
+  "max_sdist_mib": 40,
+  "max_total_mib": 620,
+  "release_wheel_count": 18,
+  "python_tags": ["cp39", "cp310", "cp311", "cp312", "cp313", "cp314"],
+  "platform_families": ["linux_x86_64", "windows_x86_64", "macos_arm64"],
+  "rationale": "Complete 1731-movement native catalogue and authoring APIs after removing duplicated C++ development and browser payloads. Measured Windows CP313 wheel 27.91 MiB and sdist 35.23 MiB at source 250d5c8. The 18-wheel compatibility matrix plus one sdist has an absolute 616 MiB per-file upper bound, with a 620 MiB aggregate ceiling. These are local release budgets, independent of PyPI account quota."
+}

@@ -138,6 +138,37 @@ class PackageDocumentationTests(unittest.TestCase):
         files=self.fixture();files['dancerudiments-0.1.3.dist-info/METADATA']=('Project-URL: Music, '+check.MUSIC_URL).encode()
         self.check_zip(files,'.whl')
 
+    def test_wheel_rejects_duplicate_cpp_development_payload(self):
+        for name in ('include/dancerudiments/dance_rudiments.hpp',
+                     'lib/libDanceRudimentsCore.a', 'lib/DanceRudimentsCore.lib',
+                     'lib/cmake/DanceRudiments/DanceRudimentsConfig.cmake'):
+            with self.subTest(name=name):
+                files = self.fixture()
+                files['dancerudiments-0.4.8.dist-info/METADATA'] = check.MUSIC_URL.encode()
+                files[name] = b'Unneeded C++ development payload'
+                with self.assertRaisesRegex(ValueError, r'C\+\+ development files'):
+                    self.check_zip(files, '.whl')
+
+    def test_python_sdist_rejects_browser_payload_but_keeps_small_source_rig(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for name in ('harness/index.html', 'harness/beats.json',
+                         'harness/kandi-boom/assets/kandi-boom.fbx',
+                         'harness/kandi-boom/source-rig.json'):
+                with self.subTest(name=name):
+                    path = Path(temp) / 'fixture.tar.gz'
+                    files = self.fixture()
+                    files['package/' + name] = b'Synthetic archive boundary fixture'
+                    with tarfile.open(path, 'w:gz') as archive:
+                        for member, data in files.items():
+                            item = tarfile.TarInfo(member)
+                            item.size = len(data)
+                            archive.addfile(item, io.BytesIO(data))
+                    if name.endswith('source-rig.json'):
+                        check.check_archive(path)
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'browser demo payload'):
+                            check.check_archive(path)
+
     def test_third_party_readme_not_rebranded(self):
         files=self.fixture();files['package/collections/initial/sources/upstream/README.md']=b'Upstream attribution'
         self.check_zip(files)
