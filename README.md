@@ -942,6 +942,8 @@ Actions from loopable clips and does not embed or redistribute masters.
 The authoring compatibility matrix pins Ubuntu 24.04, where setup-python still
 provides Python 3.9, and keeps Windows coverage. Linux/Python 3.13 continues to
 check exact regeneration; the other combinations retain portable verification.
+Rigify acceptance retains its qualified Ubuntu 24.04 host and exact skeleton
+comparison; a new native host requires separate profile qualification.
 
 Run focused tests through `pwsh ./scripts/Invoke-Tests.ps1 <test-path> [...]`.
 The wrapper probes create/read/atomic-rename/delete access before collection,

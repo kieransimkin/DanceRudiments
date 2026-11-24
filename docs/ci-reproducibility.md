@@ -7,7 +7,10 @@ The authoring matrix pins `ubuntu-24.04`. On 24 November 2026,
 required Python 3.9 interpreter. The official Python build manifest still lists
 3.9.25 for Ubuntu 24.04. Pinning that supported image preserves every interpreter
 and native test, including the exact Linux/Python 3.13 regeneration policy.
-The other jobs keep their existing host choices. The runner error and manifest
+Rigify acceptance also retains Ubuntu 24.04, the host used by its successful
+0.4.10 run, rather than silently moving frozen skeleton qualification to 26.04.
+Its exact profile comparison remains mandatory and reports the first differing
+bone when qualification fails. The other jobs keep their existing host choices. The runner error and manifest
 are the evidence; a screenshot would not add a runtime check.
 
 ## Failure corrected

@@ -111,7 +111,11 @@ def run(output_dir):
         profile = bridge.discover_profile(rig, 'Basic.basic_human', kind='metarig')
         builtin = load_builtin_profile('Basic.basic_human')
         assert profile.channels == builtin.channels
-        assert profile.source['skeleton'] == builtin.source['skeleton']
+        actual_skeleton, expected_skeleton = profile.source['skeleton'], builtin.source['skeleton']
+        mismatch = next(((actual, expected) for actual, expected in
+                         zip(actual_skeleton, expected_skeleton) if actual != expected),
+                        {'lengths': [len(actual_skeleton), len(expected_skeleton)]})
+        assert actual_skeleton == expected_skeleton, 'Exact Rigify skeleton differs: ' + json.dumps(mismatch)
         bridge.validate_target(rig, profile)
         scene = bpy.context.scene
         scene.render.fps, scene.render.fps_base = 24, 1
