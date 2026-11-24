@@ -146,5 +146,5 @@ class ReproducibilityTests(unittest.TestCase):
         job=workflow.split('  authoring-and-native:',1)[1].split('  real-wasm:',1)[0]
         self.assertIn('    defaults:\n      run:',job)
         self.assertIn('        shell: bash',job)
-        self.assertIn("matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && 'exact' || 'portable'",job)
+        self.assertIn("matrix.os == 'ubuntu-24.04' && matrix.python == '3.13' && 'exact' || 'portable'",job)
         self.assertNotIn('continue-on-error',job)

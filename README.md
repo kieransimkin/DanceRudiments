@@ -144,6 +144,8 @@ browser requires the exact local audio master before saving; beat one and meter
 remain unconfirmed unless entered. See [timing review](docs/song-loop-preview.md#source-bound-timing-review).
 
 The [local collection audition](docs/song-loop-preview.md#local-collection-audition)
+shares an in-flight source load when a dance selection is immediately followed
+by Audition, so the two requests do not cancel each other's preparation. It
 compares a complete reviewed source collection with selected StemLab example
 songs. It loads bounded, hash-verified motion assets on demand, filters by source
 Action and plays supported calibrated sources on Kandi through the same native
@@ -936,6 +938,12 @@ Actions from loopable clips and does not embed or redistribute masters.
 
 
 ## Reliable Python tests on Windows
+
+The authoring compatibility matrix pins Ubuntu 24.04, where setup-python still
+provides Python 3.9, and keeps Windows coverage. Linux/Python 3.13 continues to
+check exact regeneration; the other combinations retain portable verification.
+Rigify acceptance retains its qualified Ubuntu 24.04 host and exact skeleton
+comparison; a new native host requires separate profile qualification.
 
 Run focused tests through `pwsh ./scripts/Invoke-Tests.ps1 <test-path> [...]`.
 The wrapper probes create/read/atomic-rename/delete access before collection,

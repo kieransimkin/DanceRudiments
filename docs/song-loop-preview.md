@@ -43,7 +43,10 @@ Action, then press **Audition selected pairing**. The selected exact master is
 hash checked; the observed song beat clock drives the existing C++/WASM sampler
 and Kandi adapter. The speed label is relative to the source performance: `0.8×`
 means 20% slower, `1×` means unchanged and `1.2×` means 20% faster. The audio
-master itself is never time stretched. “Original source speed” plays the full
+master itself is never time stretched. Choosing a source and immediately
+pressing Audition shares one pending scene preparation instead of starting two
+loads that cancel each other. A different source or explicit unload still uses
+the existing cancellation and resource disposal. “Original source speed” plays the full
 observed source independently of inferred musical timing, including recordings
 with no ranked loop or qualifying complete-Action beat fit.
 

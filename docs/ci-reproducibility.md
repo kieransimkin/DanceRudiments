@@ -1,5 +1,18 @@
 # Cross-platform regeneration checks
 
+## Required interpreter availability
+
+The authoring matrix pins `ubuntu-24.04`. On 24 November 2026,
+`ubuntu-latest` selected Ubuntu 26.04 and setup-python could not provide its
+required Python 3.9 interpreter. The official Python build manifest still lists
+3.9.25 for Ubuntu 24.04. Pinning that supported image preserves every interpreter
+and native test, including the exact Linux/Python 3.13 regeneration policy.
+Rigify acceptance also retains Ubuntu 24.04, the host used by its successful
+0.4.10 run, rather than silently moving frozen skeleton qualification to 26.04.
+Its exact profile comparison remains mandatory and reports the first differing
+bone when qualification fails. The other jobs keep their existing host choices. The runner error and manifest
+are the evidence; a screenshot would not add a runtime check.
+
 ## Failure corrected
 
 Run `36634678019` (`Curve and event infrastructure`, a push of

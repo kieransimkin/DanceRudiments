@@ -12,7 +12,9 @@ permissions:
 jobs:
   blender-native:
     name: Blender 5.2.2 and native motion
-    runs-on: ubuntu-latest
+    # Keep the host used to qualify the frozen Rigify skeletons. Moving the
+    # native acceptance host requires a separate exact-profile qualification.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       DANCERUDIMENTS_REQUIRE_NATIVE: '1'
