@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.11
+
+- Share an in-flight character preparation when selecting a source and immediately
+  pressing Audition. Repeated requests no longer cancel the same scene load;
+  source changes and explicit unload preserve the existing disposal contract.
+- Add regression checks for shared loads, superseded completions, unload and retry.
+
 ## 0.4.8 - 2026-11-02
 
 - Isolate Windows pytest process, fixture and cache data in a probed per-run LocalAppData directory, with cleanup and a focused default test command.

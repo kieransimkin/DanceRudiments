@@ -144,6 +144,8 @@ browser requires the exact local audio master before saving; beat one and meter
 remain unconfirmed unless entered. See [timing review](docs/song-loop-preview.md#source-bound-timing-review).
 
 The [local collection audition](docs/song-loop-preview.md#local-collection-audition)
+shares an in-flight source load when a dance selection is immediately followed
+by Audition, so the two requests do not cancel each other's preparation. It
 compares a complete reviewed source collection with selected StemLab example
 songs. It loads bounded, hash-verified motion assets on demand, filters by source
 Action and plays supported calibrated sources on Kandi through the same native

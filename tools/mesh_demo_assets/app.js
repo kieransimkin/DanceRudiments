@@ -5,6 +5,7 @@ import {PipTransport} from './transport.js';
 import {createRhythmReview} from './rhythm-review.js';
 import {createDerivativeReview, validateFinishedMotion} from './derivative-review.js';
 import {createLoopWorkspace} from './loop-workspace.js';
+import {createScenePreparation} from './scene-preparation.js';
 
 // The builder checks these targets against the reviewed source-rig pins. They
 // are independent of the package manifest fetched when the user loads a scene.
@@ -529,14 +530,15 @@ window.meshDemo = Object.freeze({
 // Read-only, opt-in host clock adapter. Every pose still comes from the shared
 // native recording sampler; no review/export or musical approval is granted.
 if(config.collectionAudition){
+  const auditionPreparation = createScenePreparation(async sceneId => {
+    if(!scenes.has(sceneId))throw Error('Unknown prepared source scene');
+    if(selected.id!==sceneId)choose(sceneId);
+    if(!session?.ready)await loadSelected();
+    if(!session?.ready||session.scene.id!==sceneId)throw Error('Source scene did not load');
+    session.transport.pause();updateTransport();
+  });
   window.meshAudition=Object.freeze({
-    async prepare(sceneId){
-      if(!scenes.has(sceneId))throw Error('Unknown prepared source scene');
-      if(selected.id!==sceneId)choose(sceneId);
-      if(!session?.ready)await loadSelected();
-      if(!session?.ready||session.scene.id!==sceneId)throw Error('Source scene did not load');
-      session.transport.pause();updateTransport();
-    },
+    prepare(sceneId){return auditionPreparation.prepare(sceneId);},
     async loadMotion(input,expectedHash,expectedProfile){
       const owner=session;
       if(!owner?.ready||owner.scene.expectedProfile.fingerprint!==expectedProfile)throw Error('Audition source profile differs');
@@ -562,7 +564,7 @@ if(config.collectionAudition){
       applyPose(owner);
     },
     original(){const owner=session;if(!owner?.ready)return;owner.audition?.dispose();owner.audition=null;owner.lastPip=null;owner.transport.seek(owner.scene.startPip);owner.transport.play();status('Original source time · musical mapping unverified',true);},
-    unload(){unload();},
+    unload(){auditionPreparation.clear();unload();},
   });
   document.title='Collection mesh audition · DanceRudiments';
   const layout=document.createElement('style');layout.textContent='body{margin:0;overflow:hidden}.topbar,.intro,.sidebar,.transport,.about-strip,footer{display:none!important}main{max-width:none;margin:0;padding:0}.workspace{display:block}.viewport{height:100vh;min-height:300px;aspect-ratio:auto;border-radius:0}';document.head.append(layout);
