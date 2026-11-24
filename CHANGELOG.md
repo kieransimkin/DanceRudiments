@@ -6,6 +6,8 @@
   pressing Audition. Repeated requests no longer cancel the same scene load;
   source changes and explicit unload preserve the existing disposal contract.
 - Add regression checks for shared loads, superseded completions, unload and retry.
+- Pin the authoring matrix to Ubuntu 24.04 so its required Python 3.9 check can
+  run, retaining exact Linux/Python 3.13 regeneration and Windows coverage.
 
 ## 0.4.8 - 2026-11-02
 

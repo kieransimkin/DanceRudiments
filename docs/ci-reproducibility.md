@@ -1,5 +1,15 @@
 # Cross-platform regeneration checks
 
+## Required interpreter availability
+
+The authoring matrix pins `ubuntu-24.04`. On 24 November 2026,
+`ubuntu-latest` selected Ubuntu 26.04 and setup-python could not provide its
+required Python 3.9 interpreter. The official Python build manifest still lists
+3.9.25 for Ubuntu 24.04. Pinning that supported image preserves every interpreter
+and native test, including the exact Linux/Python 3.13 regeneration policy.
+The other jobs keep their existing host choices. The runner error and manifest
+are the evidence; a screenshot would not add a runtime check.
+
 ## Failure corrected
 
 Run `36634678019` (`Curve and event infrastructure`, a push of
